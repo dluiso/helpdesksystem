@@ -1,0 +1,152 @@
+export const DEFAULT_APP_NAME = "Avidity IT Management Tool";
+
+export const INITIAL_ROLES = [
+  "Super Admin",
+  "Admin",
+  "Manager",
+  "Technician",
+  "Client Manager",
+  "Client User",
+  "Auditor"
+] as const;
+
+export const INITIAL_PERMISSIONS = [
+  "users.view",
+  "users.create",
+  "users.update",
+  "users.delete",
+  "groups.view",
+  "groups.create",
+  "groups.update",
+  "groups.delete",
+  "roles.view",
+  "roles.create",
+  "roles.update",
+  "roles.delete",
+  "permissions.view",
+  "clients.view",
+  "clients.create",
+  "clients.update",
+  "clients.delete",
+  "client_domains.view",
+  "client_domains.create",
+  "client_domains.update",
+  "client_domains.delete",
+  "contacts.view",
+  "contacts.create",
+  "contacts.update",
+  "contacts.delete",
+  "tickets.view",
+  "tickets.create",
+  "tickets.update",
+  "tickets.assign",
+  "tickets.reply",
+  "tickets.close",
+  "tickets.reopen",
+  "tickets.delete",
+  "ticket_messages.view",
+  "ticket_messages.create_internal",
+  "ticket_messages.create_public",
+  "ticket_attachments.view",
+  "ticket_attachments.upload",
+  "ticket_attachments.download",
+  "ticket_attachments.delete",
+  "mailboxes.view",
+  "mailboxes.create",
+  "mailboxes.update",
+  "mailboxes.delete",
+  "auto_replies.view",
+  "auto_replies.create",
+  "auto_replies.update",
+  "auto_replies.delete",
+  "signatures.view",
+  "signatures.update",
+  "ai_assistant.use",
+  "ai_assistant.configure",
+  "knowledge_base.view",
+  "knowledge_base.create",
+  "knowledge_base.update",
+  "knowledge_base.delete",
+  "knowledge_base.publish",
+  "reports.view",
+  "reports.export",
+  "devices.view",
+  "devices.create",
+  "devices.update",
+  "devices.delete",
+  "remote_access.view",
+  "remote_access.connect",
+  "remote_access.configure",
+  "audit_logs.view",
+  "system_settings.view",
+  "system_settings.update"
+] as const;
+
+export const DEFAULT_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
+  "Super Admin": INITIAL_PERMISSIONS,
+  Admin: INITIAL_PERMISSIONS,
+  Manager: INITIAL_PERMISSIONS.filter(
+    (permission) =>
+      !permission.startsWith("system_settings.") &&
+      !permission.startsWith("mailboxes.") &&
+      !permission.startsWith("roles.") &&
+      permission !== "permissions.view" &&
+      permission !== "ai_assistant.configure" &&
+      !["users.create", "users.update", "users.delete", "groups.create", "groups.update", "groups.delete"].includes(permission)
+  ),
+  Technician: INITIAL_PERMISSIONS.filter(
+    (permission) =>
+      permission.startsWith("tickets.") ||
+      permission.startsWith("ticket_messages.") ||
+      permission.startsWith("ticket_attachments.") ||
+      permission.startsWith("knowledge_base.") ||
+      permission.startsWith("devices.") ||
+      permission === "ai_assistant.use" ||
+      permission === "clients.view" ||
+      permission === "contacts.view" ||
+      permission === "groups.view" ||
+      permission === "users.view"
+  ),
+  "Client Manager": INITIAL_PERMISSIONS.filter(
+    (permission) => permission.startsWith("clients.") || permission.startsWith("client_domains.") || permission.startsWith("contacts.") || permission.startsWith("tickets.") || permission.startsWith("ticket_messages.")
+  ),
+  "Client User": ["tickets.view", "tickets.create", "ticket_messages.view", "ticket_messages.create_public", "ticket_attachments.view", "ticket_attachments.upload", "ticket_attachments.download"],
+  Auditor: ["tickets.view", "ticket_messages.view", "ticket_attachments.view", "clients.view", "contacts.view", "devices.view", "reports.view", "audit_logs.view"]
+};
+
+export const BLOCKED_ATTACHMENT_EXTENSIONS = [
+  ".exe",
+  ".msi",
+  ".bat",
+  ".cmd",
+  ".ps1",
+  ".vbs",
+  ".js",
+  ".jse",
+  ".scr",
+  ".com",
+  ".pif",
+  ".cpl",
+  ".hta",
+  ".reg"
+] as const;
+
+export const ALLOWED_PREVIEW_MIME_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "application/pdf",
+  "text/plain"
+] as const;
+
+export type InitialPermission = (typeof INITIAL_PERMISSIONS)[number];
+
+export interface PublicBrandingSettings {
+  applicationName: string;
+  companyName: string;
+  logoUrl: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  supportEmail: string;
+}

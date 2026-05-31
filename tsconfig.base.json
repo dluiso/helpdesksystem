@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "strict": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@avidity/shared": ["packages/shared/src"],
+      "@avidity/config": ["packages/config/src"],
+      "@avidity/ui": ["packages/ui/src"]
+    }
+  }
+}

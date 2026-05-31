@@ -1,0 +1,16 @@
+export interface NavigationItem {
+  label: string;
+  href: string;
+  permission?: string;
+}
+
+export const dashboardNavigation: NavigationItem[] = [
+  { label: "Dashboard", href: "/dashboard" },
+  { label: "Tickets", href: "/tickets", permission: "tickets.view" },
+  { label: "Clients", href: "/clients", permission: "clients.view" },
+  { label: "Devices", href: "/devices", permission: "devices.view" },
+  { label: "Reports", href: "/reports", permission: "reports.view" },
+  { label: "Knowledge Base", href: "/knowledge-base", permission: "knowledge_base.view" },
+  { label: "Users", href: "/users", permission: "users.create" },
+  { label: "Settings", href: "/settings", permission: "system_settings.view" }
+];

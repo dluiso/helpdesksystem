@@ -1,0 +1,1002 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum MailboxProvider {
+  MICROSOFT365
+  MOCK
+}
+
+enum MailboxConnectionMode {
+  GRAPH_DIRECT
+  GRAPH_FORWARDED_MAILBOX
+  MOCK
+}
+
+enum MailboxOutboundMode {
+  GRAPH_SEND_AS
+  GRAPH_SEND_ON_BEHALF
+  SMTP_RELAY
+  NONE
+}
+
+enum TicketStatus {
+  NEW
+  OPEN
+  IN_PROGRESS
+  WAITING_ON_CUSTOMER
+  WAITING_ON_THIRD_PARTY
+  RESOLVED
+  CLOSED
+  REOPENED
+  CANCELLED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+  CRITICAL
+}
+
+enum TicketSource {
+  MANUAL
+  EMAIL
+  PORTAL
+  API
+  SYSTEM
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+  INTERNAL
+}
+
+enum MessageVisibility {
+  PUBLIC
+  INTERNAL
+}
+
+enum AttachmentSource {
+  INBOUND_EMAIL
+  OUTBOUND_REPLY
+  INTERNAL_UPLOAD
+  PASTED_IMAGE
+  SYSTEM
+}
+
+enum AttachmentScanStatus {
+  PENDING
+  CLEAN
+  SUSPICIOUS
+  BLOCKED
+}
+
+enum AttachmentScanResult {
+  NOT_SCANNED
+  PASSED
+  FAILED
+  SKIPPED
+}
+
+enum FileStorageProvider {
+  LOCAL
+  S3
+  MINIO
+  AZURE_BLOB
+}
+
+enum AutoReplyScope {
+  GLOBAL
+  CLIENT
+  MAILBOX
+  AFTER_HOURS
+  PRIORITY
+}
+
+enum KnowledgeVisibility {
+  INTERNAL
+  PUBLIC
+}
+
+enum KnowledgeStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum DeviceType {
+  DESKTOP
+  LAPTOP
+  SERVER
+  PHONE
+  TABLET
+  OTHER
+}
+
+enum DeviceStatus {
+  ACTIVE
+  INACTIVE
+  RETIRED
+}
+
+enum RemoteAccessProvider {
+  RUSTDESK
+  MESH_CENTRAL
+  TACTICAL_RMM
+  MANUAL
+  OTHER
+}
+
+enum AiProvider {
+  MOCK
+  OPENAI_COMPATIBLE
+  ANTHROPIC
+  GEMINI
+  AZURE_OPENAI
+  OLLAMA
+  CUSTOM_HTTP
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+}
+
+enum RoutingConditionMatch {
+  ANY
+  ALL
+}
+
+model Organization {
+  id             String             @id @default(uuid()) @db.Uuid
+  name           String
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  settings       SystemSetting?
+  users          User[]
+  groups         Group[]
+  roles          Role[]
+  clients        Client[]
+  mailboxes      Mailbox[]
+  tickets        Ticket[]
+  ticketTeams    TicketTeam[]
+  ticketRoutingRules TicketRoutingRule[]
+  unmappedEmailDomains UnmappedEmailDomain[]
+  knowledgeCategories KnowledgeCategory[]
+  knowledgeArticles   KnowledgeArticle[]
+  autoReplyTemplates  AutoReplyTemplate[]
+  aiProviders         AiProviderConfig[]
+  aiModels            AiModelConfig[]
+  aiActionSettings    AiActionSetting[]
+
+  @@map("organizations")
+}
+
+model SystemSetting {
+  id                         String   @id @default(uuid()) @db.Uuid
+  organizationId             String   @unique @db.Uuid
+  applicationName            String
+  companyName                String
+  logoUrl                    String?
+  primaryColor               String   @default("#155eef")
+  secondaryColor             String   @default("#0f172a")
+  supportEmail               String
+  defaultTimezone            String   @default("America/Chicago")
+  defaultLanguage            String   @default("en")
+  defaultTicketAutoReplyTemplate String?
+  aiAssistantEnabled         Boolean  @default(true)
+  remoteAccessProviderEnabled Boolean @default(false)
+  attachmentStorageProvider  FileStorageProvider @default(LOCAL)
+  maximumUploadSizeMb        Int      @default(25)
+  allowedAttachmentFileTypes String[] @default([])
+  blockedAttachmentFileTypes String[] @default([])
+  ticketReopenWindowDays     Int      @default(14)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+  organization               Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("system_settings")
+}
+
+model User {
+  id                  String    @id @default(uuid()) @db.Uuid
+  organizationId      String    @db.Uuid
+  email               String    @unique
+  passwordHash        String
+  firstName           String
+  lastName            String
+  isActive            Boolean   @default(true)
+  forcePasswordChange Boolean   @default(true)
+  mfaEnabled          Boolean   @default(false)
+  totpSecretEncrypted String?
+  recoveryCodesHash   String[]  @default([])
+  lastLoginAt         DateTime?
+  deletedAt           DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sessions            Session[]
+  groups              UserGroup[]
+  authoredMessages    TicketMessage[] @relation("UserAuthoredMessages")
+  assignedTickets     Ticket[] @relation("AssignedTickets")
+  routingRuleAssignments TicketRoutingRule[] @relation("RoutingRuleAssignUser")
+  watchedTickets      TicketWatcher[] @relation("TicketWatcherUser")
+  createdTicketWatchers TicketWatcher[] @relation("TicketWatcherCreatedBy")
+  ticketTeamMemberships TicketTeamMember[]
+  notificationPreference UserNotificationPreference?
+  notifications       Notification[]
+  uploadedAttachments TicketAttachment[]
+  signature           UserSignature?
+  auditLogs           AuditLog[]
+  aiRequestLogs       AiRequestLog[]
+  createdKnowledgeArticles KnowledgeArticle[] @relation("KnowledgeArticleCreatedBy")
+  updatedKnowledgeArticles KnowledgeArticle[] @relation("KnowledgeArticleUpdatedBy")
+  reportExports       ReportExport[]
+
+  @@index([organizationId])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model Session {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid
+  tokenHash   String    @unique
+  ipAddress   String?
+  userAgent   String?
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model Group {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizationId String      @db.Uuid
+  name           String
+  description    String?
+  isSystem       Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users          UserGroup[]
+  roles          GroupRole[]
+  assignedTickets Ticket[] @relation("AssignedGroupTickets")
+  routingRuleAssignments TicketRoutingRule[] @relation("RoutingRuleAssignGroup")
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("groups")
+}
+
+model TicketTeam {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizationId String      @db.Uuid
+  name           String
+  description    String?
+  isActive       Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members        TicketTeamMember[]
+  assignedTickets Ticket[] @relation("AssignedTeamTickets")
+  routingRuleAssignments TicketRoutingRule[] @relation("RoutingRuleAssignTeam")
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive])
+  @@map("ticket_teams")
+}
+
+model TicketTeamMember {
+  id           String     @id @default(uuid()) @db.Uuid
+  ticketTeamId String     @db.Uuid
+  userId       String     @db.Uuid
+  createdAt    DateTime   @default(now())
+  ticketTeam   TicketTeam @relation(fields: [ticketTeamId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketTeamId, userId])
+  @@index([userId])
+  @@map("ticket_team_members")
+}
+
+model Role {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizationId String      @db.Uuid
+  name           String
+  description    String?
+  isSystem       Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  groups         GroupRole[]
+  permissions    RolePermission[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserGroup {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  groupId   String   @db.Uuid
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupId])
+  @@map("user_groups")
+}
+
+model GroupRole {
+  id        String   @id @default(uuid()) @db.Uuid
+  groupId   String   @db.Uuid
+  roleId    String   @db.Uuid
+  createdAt DateTime @default(now())
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, roleId])
+  @@map("group_roles")
+}
+
+model RolePermission {
+  id           String     @id @default(uuid()) @db.Uuid
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
+  createdAt    DateTime   @default(now())
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model Client {
+  id                  String       @id @default(uuid()) @db.Uuid
+  organizationId      String       @db.Uuid
+  name                String
+  shortName           String?
+  status              ClientStatus @default(ACTIVE)
+  notes               String?
+  slaProfile          String?
+  billingProfile      String?
+  deletedAt           DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  domains             ClientDomain[]
+  contacts            Contact[]
+  tickets             Ticket[]
+  autoReplyTemplates  AutoReplyTemplate[]
+  devices             Device[]
+  ticketRoutingRules  TicketRoutingRule[]
+  resolvedUnmappedDomains UnmappedEmailDomain[] @relation("ResolvedUnmappedDomainClient")
+
+  @@index([organizationId, status])
+  @@index([deletedAt])
+  @@map("clients")
+}
+
+model ClientDomain {
+  id         String   @id @default(uuid()) @db.Uuid
+  clientId   String   @db.Uuid
+  domain     String   @unique
+  isVerified Boolean  @default(false)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  client     Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([domain, isActive])
+  @@map("client_domains")
+}
+
+model UnmappedEmailDomain {
+  id               String       @id @default(uuid()) @db.Uuid
+  organizationId   String       @db.Uuid
+  domain           String
+  firstSenderEmail String?
+  lastSenderEmail  String?
+  messageCount     Int          @default(0)
+  lastSeenAt       DateTime     @default(now())
+  resolvedAt       DateTime?
+  resolvedClientId String?      @db.Uuid
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  resolvedClient   Client?      @relation("ResolvedUnmappedDomainClient", fields: [resolvedClientId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, domain])
+  @@index([organizationId, resolvedAt])
+  @@map("unmapped_email_domains")
+}
+
+model Contact {
+  id                    String   @id @default(uuid()) @db.Uuid
+  clientId              String   @db.Uuid
+  firstName             String
+  lastName              String
+  email                 String
+  phone                 String?
+  title                 String?
+  isAuthorizedRequester Boolean  @default(true)
+  isBillingContact      Boolean  @default(false)
+  isTechnicalContact    Boolean  @default(false)
+  notes                 String?
+  deletedAt             DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  client                Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  ticketMessages        TicketMessage[] @relation("ContactAuthoredMessages")
+  tickets               Ticket[]
+
+  @@unique([clientId, email])
+  @@index([email])
+  @@index([deletedAt])
+  @@map("contacts")
+}
+
+model Mailbox {
+  id                             String          @id @default(uuid()) @db.Uuid
+  organizationId                 String          @db.Uuid
+  name                           String
+  emailAddress                   String          @unique
+  provider                       MailboxProvider @default(MICROSOFT365)
+  connectionMode                 MailboxConnectionMode @default(GRAPH_DIRECT)
+  publicEmailAddress             String?
+  ingestionEmailAddress          String?
+  outboundMode                   MailboxOutboundMode @default(GRAPH_SEND_AS)
+  outboundFromAddress            String?
+  outboundReplyToAddress         String?
+  preserveOriginalSenderHeaders  Boolean         @default(true)
+  tenantId                       String?
+  microsoftClientId              String?
+  encryptedClientSecretReference String?
+  isActive                       Boolean         @default(true)
+  lastSyncCursor                 String?
+  createdAt                      DateTime        @default(now())
+  updatedAt                      DateTime        @updatedAt
+  organization                   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  autoReplyTemplates             AutoReplyTemplate[]
+  ticketRoutingRules             TicketRoutingRule[]
+  tickets                        Ticket[]
+  initialSyncFrom                DateTime?
+  lastSyncedAt                   DateTime?
+  lastSyncError                  String?
+
+  @@index([organizationId])
+  @@map("mailboxes")
+}
+
+model TicketSequence {
+  key          String   @id
+  prefix       String   @default("AIT")
+  currentValue Int      @default(100000)
+  updatedAt    DateTime @updatedAt
+
+  @@map("ticket_sequences")
+}
+
+model Ticket {
+  id                         String         @id @default(uuid()) @db.Uuid
+  organizationId             String         @db.Uuid
+  ticketNumber               String         @unique
+  clientId                   String?        @db.Uuid
+  contactId                  String?        @db.Uuid
+  senderEmail                String?
+  senderDomain               String?
+  mailboxId                  String?        @db.Uuid
+  subject                    String
+  description                String?
+  status                     TicketStatus   @default(NEW)
+  priority                   TicketPriority @default(NORMAL)
+  source                     TicketSource   @default(MANUAL)
+  assignedUserId             String?        @db.Uuid
+  assignedGroupId            String?        @db.Uuid
+  assignedTeamId             String?        @db.Uuid
+  appliedRoutingRuleId        String?        @db.Uuid
+  firstResponseAt            DateTime?
+  lastCustomerResponseAt     DateTime?
+  lastTechnicianResponseAt   DateTime?
+  resolvedAt                 DateTime?
+  closedAt                   DateTime?
+  reopenedAt                 DateTime?
+  deletedAt                  DateTime?
+  createdAt                  DateTime       @default(now())
+  updatedAt                  DateTime       @updatedAt
+  organization               Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client                     Client?        @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  contact                    Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  assignedUser               User?          @relation("AssignedTickets", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  assignedGroup              Group?         @relation("AssignedGroupTickets", fields: [assignedGroupId], references: [id], onDelete: SetNull)
+  assignedTeam               TicketTeam?    @relation("AssignedTeamTickets", fields: [assignedTeamId], references: [id], onDelete: SetNull)
+  appliedRoutingRule         TicketRoutingRule? @relation("AppliedRoutingRuleTickets", fields: [appliedRoutingRuleId], references: [id], onDelete: SetNull)
+  mailbox                    Mailbox?       @relation(fields: [mailboxId], references: [id], onDelete: SetNull)
+  messages                   TicketMessage[]
+  attachments                TicketAttachment[]
+  watchers                   TicketWatcher[]
+  notifications              Notification[]
+  aiRequestLogs              AiRequestLog[]
+
+  @@index([organizationId, updatedAt])
+  @@index([clientId])
+  @@index([contactId])
+  @@index([senderDomain])
+  @@index([mailboxId])
+  @@index([status, priority])
+  @@index([assignedUserId])
+  @@index([assignedGroupId])
+  @@index([assignedTeamId])
+  @@index([appliedRoutingRuleId])
+  @@index([deletedAt])
+  @@map("tickets")
+}
+
+model TicketRoutingRule {
+  id                  String                @id @default(uuid()) @db.Uuid
+  organizationId      String                @db.Uuid
+  mailboxId           String?               @db.Uuid
+  clientId            String?               @db.Uuid
+  name                String
+  description         String?
+  isActive            Boolean               @default(true)
+  priority            Int                   @default(100)
+  conditionMatch      RoutingConditionMatch @default(ANY)
+  subjectContains     String?
+  bodyContains        String?
+  senderEmailContains String?
+  senderDomain        String?
+  assignUserId        String?               @db.Uuid
+  assignGroupId       String?               @db.Uuid
+  assignTeamId        String?               @db.Uuid
+  notifyUserIds       String[]              @default([])
+  setPriority         TicketPriority?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  organization        Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mailbox             Mailbox?              @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+  client              Client?               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  assignUser          User?                 @relation("RoutingRuleAssignUser", fields: [assignUserId], references: [id], onDelete: SetNull)
+  assignGroup         Group?                @relation("RoutingRuleAssignGroup", fields: [assignGroupId], references: [id], onDelete: SetNull)
+  assignTeam          TicketTeam?           @relation("RoutingRuleAssignTeam", fields: [assignTeamId], references: [id], onDelete: SetNull)
+  appliedTickets      Ticket[]              @relation("AppliedRoutingRuleTickets")
+
+  @@index([organizationId, isActive, priority])
+  @@index([mailboxId])
+  @@index([clientId])
+  @@index([assignTeamId])
+  @@map("ticket_routing_rules")
+}
+
+model TicketWatcher {
+  id          String   @id @default(uuid()) @db.Uuid
+  ticketId    String   @db.Uuid
+  userId      String   @db.Uuid
+  createdById String?  @db.Uuid
+  reason      String?
+  createdAt   DateTime @default(now())
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user        User     @relation("TicketWatcherUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy   User?    @relation("TicketWatcherCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([ticketId, userId])
+  @@index([userId])
+  @@map("ticket_watchers")
+}
+
+model Notification {
+  id        String             @id @default(uuid()) @db.Uuid
+  userId    String             @db.Uuid
+  ticketId  String?            @db.Uuid
+  title     String
+  body      String?
+  status    NotificationStatus @default(UNREAD)
+  metadata  Json?
+  readAt    DateTime?
+  createdAt DateTime           @default(now())
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticket    Ticket?            @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([ticketId])
+  @@map("notifications")
+}
+
+model UserNotificationPreference {
+  id                             String   @id @default(uuid()) @db.Uuid
+  userId                         String   @unique @db.Uuid
+  inAppEnabled                   Boolean  @default(true)
+  emailEnabled                   Boolean  @default(false)
+  ticketAssignedToMe             Boolean  @default(true)
+  ticketAssignedToMyTeam         Boolean  @default(true)
+  ticketReplyOnAssignedTicket    Boolean  @default(true)
+  internalNoteOnAssignedTicket   Boolean  @default(true)
+  internalNoteMention            Boolean  @default(true)
+  routingRuleMatched             Boolean  @default(true)
+  ticketReopened                 Boolean  @default(true)
+  dailyDigestEnabled             Boolean  @default(false)
+  createdAt                      DateTime @default(now())
+  updatedAt                      DateTime @updatedAt
+  user                           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_notification_preferences")
+}
+
+model TicketMessage {
+  id                    String            @id @default(uuid()) @db.Uuid
+  ticketId              String            @db.Uuid
+  authorUserId          String?           @db.Uuid
+  authorContactId       String?           @db.Uuid
+  direction             MessageDirection
+  visibility            MessageVisibility
+  bodyText              String
+  bodyHtml              String?
+  sanitizedBodyHtml     String?
+  senderEmail           String?
+  senderDomain          String?
+  emailMessageId        String?
+  emailInternetMessageId String?
+  emailConversationId   String?
+  inReplyTo             String?
+  emailReferences       String?
+  hasAttachments        Boolean           @default(false)
+  createdAt             DateTime          @default(now())
+  ticket                Ticket            @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorUser            User?             @relation("UserAuthoredMessages", fields: [authorUserId], references: [id], onDelete: SetNull)
+  authorContact         Contact?          @relation("ContactAuthoredMessages", fields: [authorContactId], references: [id], onDelete: SetNull)
+  attachments           TicketAttachment[]
+
+  @@index([ticketId, createdAt])
+  @@index([emailMessageId])
+  @@index([emailInternetMessageId])
+  @@index([emailConversationId])
+  @@index([senderDomain])
+  @@map("ticket_messages")
+}
+
+model StoredFile {
+  id               String              @id @default(uuid()) @db.Uuid
+  storageProvider  FileStorageProvider @default(LOCAL)
+  storageKey       String              @unique
+  originalFilename String
+  storedFilename   String
+  mimeType         String
+  fileExtension    String?
+  fileSize         Int
+  sha256Hash       String              @db.VarChar(64)
+  createdAt        DateTime            @default(now())
+  deletedAt        DateTime?
+  ticketAttachment TicketAttachment?
+
+  @@index([sha256Hash])
+  @@index([deletedAt])
+  @@map("stored_files")
+}
+
+model TicketAttachment {
+  id                 String                @id @default(uuid()) @db.Uuid
+  ticketId           String                @db.Uuid
+  ticketMessageId    String?               @db.Uuid
+  uploadedByUserId   String?               @db.Uuid
+  storedFileId       String                @unique @db.Uuid
+  source             AttachmentSource
+  originalFilename   String
+  storedFilename     String
+  storageProvider    FileStorageProvider   @default(LOCAL)
+  storageKey         String
+  mimeType           String
+  fileExtension      String?
+  fileSize           Int
+  sha256Hash         String                @db.VarChar(64)
+  isInline           Boolean               @default(false)
+  contentId          String?
+  emailAttachmentId  String?
+  scanStatus         AttachmentScanStatus  @default(PENDING)
+  scanResult         AttachmentScanResult  @default(NOT_SCANNED)
+  createdAt          DateTime              @default(now())
+  deletedAt          DateTime?
+  ticket             Ticket                @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketMessage      TicketMessage?        @relation(fields: [ticketMessageId], references: [id], onDelete: SetNull)
+  uploadedByUser     User?                 @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  storedFile         StoredFile            @relation(fields: [storedFileId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId])
+  @@index([ticketMessageId])
+  @@index([uploadedByUserId])
+  @@index([scanStatus])
+  @@index([deletedAt])
+  @@map("ticket_attachments")
+}
+
+model AutoReplyTemplate {
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String         @db.Uuid
+  clientId       String?        @db.Uuid
+  mailboxId      String?        @db.Uuid
+  scope          AutoReplyScope @default(GLOBAL)
+  name           String
+  subject        String
+  bodyHtml       String
+  bodyText       String
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  client         Client?        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  mailbox        Mailbox?       @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+  histories      AutoReplyHistory[]
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, scope])
+  @@index([clientId])
+  @@index([mailboxId])
+  @@map("auto_reply_templates")
+}
+
+model AutoReplyHistory {
+  id             String            @id @default(uuid()) @db.Uuid
+  templateId     String            @db.Uuid
+  ticketId       String?           @db.Uuid
+  recipientEmail String
+  threadKey      String?
+  sentAt         DateTime          @default(now())
+  metadata       Json?
+  template       AutoReplyTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([recipientEmail, threadKey])
+  @@map("auto_reply_histories")
+}
+
+model UserSignature {
+  id                    String   @id @default(uuid()) @db.Uuid
+  userId                String   @unique @db.Uuid
+  htmlSignature         String
+  plainTextSignature    String
+  useSignatureByDefault Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_signatures")
+}
+
+model AiRequestLog {
+  id                    String     @id @default(uuid()) @db.Uuid
+  userId                String     @db.Uuid
+  ticketId              String     @db.Uuid
+  actionType            String
+  provider              AiProvider @default(MOCK)
+  model                 String
+  approximateInputSize  Int
+  approximateOutputSize Int
+  metadata              Json?
+  createdAt             DateTime   @default(now())
+  user                  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticket                Ticket     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([ticketId, createdAt])
+  @@map("ai_request_logs")
+}
+
+model AiProviderConfig {
+  id                  String        @id @default(uuid()) @db.Uuid
+  organizationId      String        @db.Uuid
+  name                String
+  provider            AiProvider
+  baseUrl             String?
+  apiKeyReference     String?
+  defaultModel        String?
+  isEnabled           Boolean       @default(true)
+  timeoutMs           Int           @default(30000)
+  maxInputTokens      Int?
+  maxOutputTokens     Int?
+  supportsStreaming   Boolean       @default(false)
+  supportsTools       Boolean       @default(false)
+  supportsVision      Boolean       @default(false)
+  priority            Int           @default(100)
+  metadata            Json?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  organization        Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  models              AiModelConfig[]
+  actionSettings      AiActionSetting[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isEnabled, priority])
+  @@map("ai_provider_configs")
+}
+
+model AiModelConfig {
+  id                  String           @id @default(uuid()) @db.Uuid
+  organizationId      String           @db.Uuid
+  providerConfigId    String           @db.Uuid
+  name                String
+  displayName         String?
+  maxInputTokens      Int?
+  maxOutputTokens     Int?
+  supportsVision      Boolean          @default(false)
+  supportsTools       Boolean          @default(false)
+  isDefault           Boolean          @default(false)
+  isEnabled           Boolean          @default(true)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  organization        Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  providerConfig      AiProviderConfig @relation(fields: [providerConfigId], references: [id], onDelete: Cascade)
+  actionSettings      AiActionSetting[]
+
+  @@unique([providerConfigId, name])
+  @@index([organizationId, isEnabled])
+  @@map("ai_model_configs")
+}
+
+model AiActionSetting {
+  id                  String           @id @default(uuid()) @db.Uuid
+  organizationId      String           @db.Uuid
+  actionType          String
+  providerConfigId    String?          @db.Uuid
+  modelConfigId       String?          @db.Uuid
+  isEnabled           Boolean          @default(true)
+  systemPrompt        String?
+  temperature         Float?
+  maxOutputTokens     Int?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  organization        Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  providerConfig      AiProviderConfig? @relation(fields: [providerConfigId], references: [id], onDelete: SetNull)
+  modelConfig         AiModelConfig?    @relation(fields: [modelConfigId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, actionType])
+  @@index([organizationId, isEnabled])
+  @@map("ai_action_settings")
+}
+
+model KnowledgeCategory {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  name           String
+  slug           String
+  description    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  articles       KnowledgeArticle[]
+
+  @@unique([organizationId, slug])
+  @@map("knowledge_categories")
+}
+
+model KnowledgeArticle {
+  id             String              @id @default(uuid()) @db.Uuid
+  organizationId String              @db.Uuid
+  categoryId     String?             @db.Uuid
+  title          String
+  slug           String
+  content        String
+  visibility     KnowledgeVisibility @default(INTERNAL)
+  status         KnowledgeStatus     @default(DRAFT)
+  tags           String[]            @default([])
+  createdById    String?             @db.Uuid
+  updatedById    String?             @db.Uuid
+  publishedAt    DateTime?
+  deletedAt      DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category       KnowledgeCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdBy      User?               @relation("KnowledgeArticleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy      User?               @relation("KnowledgeArticleUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, slug])
+  @@index([status, visibility])
+  @@index([deletedAt])
+  @@map("knowledge_articles")
+}
+
+model ReportExport {
+  id             String   @id @default(uuid()) @db.Uuid
+  requestedById  String?  @db.Uuid
+  reportType     String
+  filters        Json?
+  format         String   @default("csv")
+  storageKey     String?
+  createdAt      DateTime @default(now())
+  requestedBy    User?    @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+
+  @@index([requestedById, createdAt])
+  @@map("report_exports")
+}
+
+model Device {
+  id                   String               @id @default(uuid()) @db.Uuid
+  clientId             String               @db.Uuid
+  deviceGroupId        String?
+  name                 String
+  hostname             String?
+  type                 DeviceType           @default(OTHER)
+  operatingSystem      String?
+  osVersion            String?
+  serialNumber         String?
+  assetTag             String?
+  primaryUser          String?
+  remoteAccessProvider RemoteAccessProvider?
+  remoteAccessId       String?
+  lastSeenAt           DateTime?
+  notes                String?
+  status               DeviceStatus         @default(ACTIVE)
+  deletedAt            DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  client               Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  remoteAccessProfile  RemoteAccessProfile?
+
+  @@index([clientId, status])
+  @@index([hostname])
+  @@index([deletedAt])
+  @@map("devices")
+}
+
+model RemoteAccessProfile {
+  id                      String               @id @default(uuid()) @db.Uuid
+  deviceId                String               @unique @db.Uuid
+  provider                RemoteAccessProvider
+  remoteIdentifier        String
+  connectionUrl           String?
+  notes                   String?
+  lastConnectionAttemptAt DateTime?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  device                  Device               @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([provider])
+  @@map("remote_access_profiles")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @db.Uuid
+  entityType String
+  entityId   String?
+  action     String
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}

@@ -1,0 +1,16 @@
+node_modules/
+.next/
+dist/
+coverage/
+*.tsbuildinfo
+.env
+.env.production
+.env.local
+.env.*.local
+*.log
+storage/local/attachments/*
+storage/local/exports/*
+storage/local/temp/*
+!storage/local/attachments/.gitkeep
+!storage/local/exports/.gitkeep
+!storage/local/temp/.gitkeep
