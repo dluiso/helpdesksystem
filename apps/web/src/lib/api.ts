@@ -1,4 +1,4 @@
-export const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
+export const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const isFormData = init?.body instanceof FormData;
