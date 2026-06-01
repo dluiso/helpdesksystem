@@ -14,7 +14,7 @@ import {
   SlidersHorizontal,
   Trash2
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { MouseEvent as ReactMouseEvent, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
 interface TicketListItem {
@@ -99,6 +99,7 @@ interface ColumnDefinition {
 }
 
 const COLUMN_STORAGE_KEY = "avidity.ticketTable.columns";
+const COLUMN_WIDTH_STORAGE_KEY = "avidity.ticketTable.columnWidths";
 const defaultColumnOrder: ColumnId[] = [
   "ticketNumber",
   "subject",
@@ -145,6 +146,22 @@ const allColumns: ColumnDefinition[] = [
   { id: "messages", label: "Messages" },
   { id: "attachments", label: "Attachments" }
 ];
+const defaultColumnWidths: Record<ColumnId, number> = {
+  ticketNumber: 120,
+  subject: 310,
+  client: 190,
+  requester: 220,
+  readState: 96,
+  assignees: 190,
+  team: 150,
+  status: 120,
+  priority: 110,
+  source: 110,
+  createdAt: 180,
+  updatedAt: 180,
+  messages: 110,
+  attachments: 120
+};
 const statuses = ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_THIRD_PARTY", "RESOLVED", "CLOSED", "REOPENED", "CANCELLED"];
 const priorities = ["LOW", "NORMAL", "HIGH", "URGENT", "CRITICAL"];
 
@@ -184,7 +201,27 @@ function normalizeVisibleColumns(value: unknown): ColumnId[] {
 
   const validIds = new Set(allColumns.map((column) => column.id));
   const saved = value.filter((id): id is ColumnId => typeof id === "string" && validIds.has(id as ColumnId));
-  return saved.length ? saved : defaultVisibleColumns;
+  if (!saved.length) {
+    return defaultVisibleColumns;
+  }
+
+  return [...new Set([...saved, ...defaultVisibleColumns])];
+}
+
+function normalizeColumnWidths(value: unknown): Record<ColumnId, number> {
+  if (!value || typeof value !== "object") {
+    return defaultColumnWidths;
+  }
+
+  const widths = { ...defaultColumnWidths };
+  for (const columnId of defaultColumnOrder) {
+    const rawWidth = (value as Partial<Record<ColumnId, unknown>>)[columnId];
+    if (typeof rawWidth === "number" && Number.isFinite(rawWidth)) {
+      widths[columnId] = Math.min(520, Math.max(80, rawWidth));
+    }
+  }
+
+  return widths;
 }
 
 export function TicketsList() {
@@ -203,6 +240,7 @@ export function TicketsList() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(defaultColumnOrder);
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnId>>(new Set(defaultVisibleColumns));
+  const [columnWidths, setColumnWidths] = useState<Record<ColumnId, number>>(defaultColumnWidths);
   const [showColumnsPanel, setShowColumnsPanel] = useState(false);
   const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([]);
   const [trashMode, setTrashMode] = useState(false);
@@ -429,6 +467,25 @@ export function TicketsList() {
     });
   }
 
+  function startColumnResize(columnId: ColumnId, event: ReactMouseEvent<HTMLSpanElement>) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = columnWidths[columnId] ?? defaultColumnWidths[columnId];
+
+    function handleMouseMove(moveEvent: MouseEvent) {
+      const nextWidth = Math.min(520, Math.max(80, startWidth + moveEvent.clientX - startX));
+      setColumnWidths((current) => ({ ...current, [columnId]: nextWidth }));
+    }
+
+    function handleMouseUp() {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    }
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  }
+
   function toggleTicketSelection(ticketId: string) {
     setSelectedTicketIds((current) => (current.includes(ticketId) ? current.filter((id) => id !== ticketId) : [...current, ticketId]));
   }
@@ -514,6 +571,14 @@ export function TicketsList() {
         window.localStorage.removeItem(COLUMN_STORAGE_KEY);
       }
     }
+    const savedWidths = window.localStorage.getItem(COLUMN_WIDTH_STORAGE_KEY);
+    if (savedWidths) {
+      try {
+        setColumnWidths(normalizeColumnWidths(JSON.parse(savedWidths)));
+      } catch {
+        window.localStorage.removeItem(COLUMN_WIDTH_STORAGE_KEY);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -525,6 +590,10 @@ export function TicketsList() {
       })
     );
   }, [columnOrder, visibleColumns]);
+
+  useEffect(() => {
+    window.localStorage.setItem(COLUMN_WIDTH_STORAGE_KEY, JSON.stringify(columnWidths));
+  }, [columnWidths]);
 
   useEffect(() => {
     setPage(1);
@@ -707,6 +776,13 @@ export function TicketsList() {
         </div>
         <div className="table-scroll">
           <table className="table tickets-table">
+            <colgroup>
+              <col style={{ width: 42 }} />
+              {visibleOrderedColumns.map((column) => (
+                <col key={column.id} style={{ width: columnWidths[column.id] ?? defaultColumnWidths[column.id] }} />
+              ))}
+              <col style={{ width: 54 }} />
+            </colgroup>
             <thead>
               <tr>
                 <th>
@@ -714,22 +790,25 @@ export function TicketsList() {
                 </th>
                 {visibleOrderedColumns.map((column) => (
                   <th key={column.id}>
-                    {column.sortable ? (
-                      <button className="table-sort-button" type="button" onClick={() => changeSort(column)}>
-                        <span>{column.label}</span>
-                        {sortBy === column.sortable ? (
-                          sortDirection === "asc" ? (
-                            <ArrowUp size={14} aria-hidden="true" />
+                    <div className="resizable-column-header">
+                      {column.sortable ? (
+                        <button className="table-sort-button" type="button" onClick={() => changeSort(column)}>
+                          <span>{column.label}</span>
+                          {sortBy === column.sortable ? (
+                            sortDirection === "asc" ? (
+                              <ArrowUp size={14} aria-hidden="true" />
+                            ) : (
+                              <ArrowDown size={14} aria-hidden="true" />
+                            )
                           ) : (
-                            <ArrowDown size={14} aria-hidden="true" />
-                          )
-                        ) : (
-                          <ArrowUpDown size={14} aria-hidden="true" />
-                        )}
-                      </button>
-                    ) : (
-                      column.label
-                    )}
+                            <ArrowUpDown size={14} aria-hidden="true" />
+                          )}
+                        </button>
+                      ) : (
+                        <span>{column.label}</span>
+                      )}
+                      <span className="column-resize-handle" role="separator" aria-label={`Resize ${column.label} column`} onMouseDown={(event) => startColumnResize(column.id, event)} />
+                    </div>
                   </th>
                 ))}
                 <th>

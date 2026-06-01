@@ -19,6 +19,7 @@
 body {
   margin: 0;
   min-height: 100vh;
+  overflow-x: hidden;
   color: var(--text);
   background: var(--surface-muted);
   font-family:
@@ -172,6 +173,8 @@ select {
   min-height: 100vh;
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
+  width: 100%;
+  max-width: 100vw;
 }
 
 .sidebar {
@@ -454,7 +457,9 @@ select {
 }
 
 .content {
+  min-width: 0;
   padding: 28px;
+  overflow-x: hidden;
 }
 
 .error-banner {
@@ -1158,6 +1163,7 @@ select {
 }
 
 .panel {
+  min-width: 0;
   padding: 18px;
 }
 
@@ -1273,15 +1279,20 @@ select {
 
 .table-scroll {
   overflow-x: auto;
+  max-width: 100%;
 }
 
 .tickets-table {
-  min-width: 1180px;
+  width: 100%;
+  table-layout: fixed;
 }
 
 .tickets-table th,
 .tickets-table td {
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tickets-table td:nth-child(2),
@@ -1303,11 +1314,57 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
+  max-width: 100%;
   color: inherit;
   background: transparent;
   cursor: pointer;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+.table-sort-button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.resizable-column-header {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-right: 10px;
+}
+
+.resizable-column-header > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.column-resize-handle {
+  position: absolute;
+  top: -8px;
+  right: -10px;
+  width: 12px;
+  height: calc(100% + 16px);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.column-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  right: 5px;
+  width: 1px;
+  height: calc(100% - 16px);
+  background: transparent;
+}
+
+.column-resize-handle:hover::after {
+  background: var(--brand-primary);
 }
 
 .row-actions-cell {
