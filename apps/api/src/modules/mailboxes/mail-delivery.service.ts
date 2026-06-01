@@ -11,6 +11,7 @@ export interface SendTicketReplyInput {
   organizationId: string;
   mailboxId?: string | null;
   to: string[];
+  cc?: string[];
   subject: string;
   bodyHtml: string;
   bodyText: string;
@@ -50,6 +51,7 @@ export class MailDeliveryService {
       microsoftClientId: mailbox.microsoftClientId,
       encryptedClientSecretReference: mailbox.encryptedClientSecretReference,
       to: input.to,
+      cc: input.cc,
       subject: input.subject,
       bodyHtml: input.bodyHtml,
       bodyText: input.bodyText,

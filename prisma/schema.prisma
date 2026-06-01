@@ -232,6 +232,9 @@ model User {
   groups              UserGroup[]
   authoredMessages    TicketMessage[] @relation("UserAuthoredMessages")
   assignedTickets     Ticket[] @relation("AssignedTickets")
+  ticketAssignments    TicketAssignee[] @relation("TicketAssigneeUser")
+  createdTicketAssignments TicketAssignee[] @relation("TicketAssigneeAssignedBy")
+  firstReadTickets     Ticket[] @relation("TicketFirstReadBy")
   routingRuleAssignments TicketRoutingRule[] @relation("RoutingRuleAssignUser")
   watchedTickets      TicketWatcher[] @relation("TicketWatcherUser")
   createdTicketWatchers TicketWatcher[] @relation("TicketWatcherCreatedBy")
@@ -486,6 +489,10 @@ model Mailbox {
   encryptedClientSecretReference String?
   isActive                       Boolean         @default(true)
   lastSyncCursor                 String?
+  autoSyncEnabled                Boolean         @default(false)
+  autoSyncIntervalSeconds        Int?
+  nextAutoSyncAt                 DateTime?
+  autoSyncLockedAt               DateTime?
   createdAt                      DateTime        @default(now())
   updatedAt                      DateTime        @updatedAt
   organization                   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -533,6 +540,8 @@ model Ticket {
   resolvedAt                 DateTime?
   closedAt                   DateTime?
   reopenedAt                 DateTime?
+  firstReadAt                DateTime?
+  firstReadByUserId          String?        @db.Uuid
   deletedAt                  DateTime?
   createdAt                  DateTime       @default(now())
   updatedAt                  DateTime       @updatedAt
@@ -540,12 +549,14 @@ model Ticket {
   client                     Client?        @relation(fields: [clientId], references: [id], onDelete: SetNull)
   contact                    Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
   assignedUser               User?          @relation("AssignedTickets", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  firstReadBy                User?          @relation("TicketFirstReadBy", fields: [firstReadByUserId], references: [id], onDelete: SetNull)
   assignedGroup              Group?         @relation("AssignedGroupTickets", fields: [assignedGroupId], references: [id], onDelete: SetNull)
   assignedTeam               TicketTeam?    @relation("AssignedTeamTickets", fields: [assignedTeamId], references: [id], onDelete: SetNull)
   appliedRoutingRule         TicketRoutingRule? @relation("AppliedRoutingRuleTickets", fields: [appliedRoutingRuleId], references: [id], onDelete: SetNull)
   mailbox                    Mailbox?       @relation(fields: [mailboxId], references: [id], onDelete: SetNull)
   messages                   TicketMessage[]
   attachments                TicketAttachment[]
+  assignees                  TicketAssignee[]
   watchers                   TicketWatcher[]
   notifications              Notification[]
   aiRequestLogs              AiRequestLog[]
@@ -557,11 +568,29 @@ model Ticket {
   @@index([mailboxId])
   @@index([status, priority])
   @@index([assignedUserId])
+  @@index([firstReadAt])
+  @@index([firstReadByUserId])
   @@index([assignedGroupId])
   @@index([assignedTeamId])
   @@index([appliedRoutingRuleId])
   @@index([deletedAt])
   @@map("tickets")
+}
+
+model TicketAssignee {
+  id           String   @id @default(uuid()) @db.Uuid
+  ticketId     String   @db.Uuid
+  userId       String   @db.Uuid
+  assignedById String?  @db.Uuid
+  createdAt    DateTime @default(now())
+  ticket       Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user         User     @relation("TicketAssigneeUser", fields: [userId], references: [id], onDelete: Cascade)
+  assignedBy   User?    @relation("TicketAssigneeAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@unique([ticketId, userId])
+  @@index([userId])
+  @@index([assignedById])
+  @@map("ticket_assignees")
 }
 
 model TicketRoutingRule {
@@ -671,6 +700,8 @@ model TicketMessage {
   emailConversationId   String?
   inReplyTo             String?
   emailReferences       String?
+  ccEmails              String[]          @default([])
+  notifiedUserIds       String[]          @default([])
   hasAttachments        Boolean           @default(false)
   createdAt             DateTime          @default(now())
   ticket                Ticket            @relation(fields: [ticketId], references: [id], onDelete: Cascade)

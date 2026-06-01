@@ -21,6 +21,9 @@ interface Mailbox {
   encryptedClientSecretReference: string | null;
   isActive: boolean;
   lastSyncCursor: string | null;
+  autoSyncEnabled: boolean;
+  autoSyncIntervalSeconds: number | null;
+  nextAutoSyncAt: string | null;
   initialSyncFrom: string | null;
   lastSyncedAt: string | null;
   lastSyncError: string | null;
@@ -142,6 +145,12 @@ const AI_PROVIDER_LABELS: Record<string, string> = {
   MOCK: "Mock"
 };
 
+function normalizeSyncIntervalSeconds(value: string, unit: "seconds" | "minutes") {
+  const parsed = Number(value);
+  const seconds = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed * (unit === "minutes" ? 60 : 1)) : 300;
+  return Math.min(86400, Math.max(30, seconds));
+}
+
 export function SettingsWorkspace() {
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -164,6 +173,9 @@ export function SettingsWorkspace() {
         outboundFromAddress: string;
         outboundReplyToAddress: string;
         preserveOriginalSenderHeaders: boolean;
+        autoSyncEnabled: boolean;
+        autoSyncIntervalSeconds: string;
+        autoSyncUnit: "seconds" | "minutes";
         initialSyncFrom: string;
         tenantId: string;
         microsoftClientId: string;
@@ -257,6 +269,13 @@ export function SettingsWorkspace() {
               outboundFromAddress: mailbox.outboundFromAddress ?? mailbox.publicEmailAddress ?? mailbox.emailAddress,
               outboundReplyToAddress: mailbox.outboundReplyToAddress ?? mailbox.publicEmailAddress ?? mailbox.emailAddress,
               preserveOriginalSenderHeaders: mailbox.preserveOriginalSenderHeaders,
+              autoSyncEnabled: mailbox.autoSyncEnabled,
+              autoSyncIntervalSeconds: mailbox.autoSyncIntervalSeconds
+                ? mailbox.autoSyncIntervalSeconds >= 60 && mailbox.autoSyncIntervalSeconds % 60 === 0
+                  ? String(mailbox.autoSyncIntervalSeconds / 60)
+                  : String(mailbox.autoSyncIntervalSeconds)
+                : "5",
+              autoSyncUnit: mailbox.autoSyncIntervalSeconds && mailbox.autoSyncIntervalSeconds >= 60 && mailbox.autoSyncIntervalSeconds % 60 === 0 ? "minutes" : "seconds",
               initialSyncFrom: mailbox.initialSyncFrom ? mailbox.initialSyncFrom.slice(0, 10) : "",
               tenantId: mailbox.tenantId ?? "",
               microsoftClientId: mailbox.microsoftClientId ?? "",
@@ -321,6 +340,8 @@ export function SettingsWorkspace() {
           outboundFromAddress: draft.outboundFromAddress || null,
           outboundReplyToAddress: draft.outboundReplyToAddress || null,
           preserveOriginalSenderHeaders: draft.preserveOriginalSenderHeaders,
+          autoSyncEnabled: draft.autoSyncEnabled,
+          autoSyncIntervalSeconds: draft.autoSyncEnabled ? normalizeSyncIntervalSeconds(draft.autoSyncIntervalSeconds, draft.autoSyncUnit) : null,
           initialSyncFrom: draft.initialSyncFrom || null,
           tenantId: draft.tenantId || null,
           microsoftClientId: draft.microsoftClientId || null,
@@ -773,6 +794,10 @@ export function SettingsWorkspace() {
                   <span className="muted">
                     {mailbox.emailAddress} - {mailbox.connectionMode} - {mailbox.isActive ? "Active" : "Inactive"}
                   </span>
+                  <span className="muted">
+                    Last sync: {mailbox.lastSyncedAt ? new Date(mailbox.lastSyncedAt).toLocaleString() : "Never"}
+                    {mailbox.autoSyncEnabled ? ` - Auto sync every ${mailbox.autoSyncIntervalSeconds ?? 300}s` : " - Auto sync off"}
+                  </span>
                   {mailbox.lastSyncError ? <span className="error">{mailbox.lastSyncError}</span> : null}
                   <div className="client-form-grid mailbox-form-grid">
                     <select
@@ -901,6 +926,46 @@ export function SettingsWorkspace() {
                       />
                       <span>Preserve original sender from forwarded headers</span>
                     </label>
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={mailboxDrafts[mailbox.id]?.autoSyncEnabled ?? false}
+                        onChange={(event) =>
+                          setMailboxDrafts((current) => ({
+                            ...current,
+                            [mailbox.id]: { ...current[mailbox.id], autoSyncEnabled: event.target.checked }
+                          }))
+                        }
+                      />
+                      <span>Run automatic inbound sync</span>
+                    </label>
+                    <input
+                      className="input compact-select"
+                      type="number"
+                      min={mailboxDrafts[mailbox.id]?.autoSyncUnit === "minutes" ? 1 : 30}
+                      max={mailboxDrafts[mailbox.id]?.autoSyncUnit === "minutes" ? 1440 : 86400}
+                      placeholder="Sync interval"
+                      value={mailboxDrafts[mailbox.id]?.autoSyncIntervalSeconds ?? "5"}
+                      onChange={(event) =>
+                        setMailboxDrafts((current) => ({
+                          ...current,
+                          [mailbox.id]: { ...current[mailbox.id], autoSyncIntervalSeconds: event.target.value }
+                        }))
+                      }
+                    />
+                    <select
+                      className="input compact-select"
+                      value={mailboxDrafts[mailbox.id]?.autoSyncUnit ?? "minutes"}
+                      onChange={(event) =>
+                        setMailboxDrafts((current) => ({
+                          ...current,
+                          [mailbox.id]: { ...current[mailbox.id], autoSyncUnit: event.target.value as "seconds" | "minutes" }
+                        }))
+                      }
+                    >
+                      <option value="seconds">Seconds</option>
+                      <option value="minutes">Minutes</option>
+                    </select>
                     <input
                       className="input"
                       placeholder="Tenant ID"

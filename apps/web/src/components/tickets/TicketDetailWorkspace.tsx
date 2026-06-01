@@ -62,6 +62,7 @@ interface Ticket {
   assignedGroupId: string | null;
   assignedTeamId: string | null;
   assignedUser: User | null;
+  assignees: Array<{ user: User }>;
   assignedGroup: Group | null;
   assignedTeam: TicketTeam | null;
   watchers: Array<{ user: User }>;
@@ -81,7 +82,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [ticketTeams, setTicketTeams] = useState<TicketTeam[]>([]);
-  const [assignedUserId, setAssignedUserId] = useState("");
+  const [assignedUserIds, setAssignedUserIds] = useState<string[]>([]);
   const [assignedTeamId, setAssignedTeamId] = useState("");
   const [watcherIds, setWatcherIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,7 +108,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       setTicket(ticketData);
       setUsers(userData);
       setTicketTeams(teamData);
-      setAssignedUserId(ticketData.assignedUserId ?? "");
+      setAssignedUserIds(ticketData.assignees?.length ? ticketData.assignees.map((assignment) => assignment.user.id) : ticketData.assignedUserId ? [ticketData.assignedUserId] : []);
       setAssignedTeamId(ticketData.assignedTeamId ?? "");
       setWatcherIds(ticketData.watchers.map((watcher) => watcher.user.id));
     } catch {
@@ -125,7 +126,8 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       await apiFetch(`/tickets/${ticketId}/assignment`, {
         method: "PATCH",
         body: JSON.stringify({
-          assignedUserId: assignedUserId || null,
+          assignedUserId: assignedUserIds[0] ?? null,
+          assignedUserIds,
           assignedTeamId: assignedTeamId || null
         })
       });
@@ -143,6 +145,10 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
 
   function toggleWatcher(userId: string) {
     setWatcherIds((current) => (current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId]));
+  }
+
+  function toggleAssignee(userId: string) {
+    setAssignedUserIds((current) => (current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId]));
   }
 
   useEffect(() => {
@@ -184,7 +190,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
         <div className="grid">
           <div className="panel">
             <h2>Reply Composer</h2>
-            <TicketReplyEditor ticketId={ticket.id} notifyUsers={users} onSaved={load} />
+            <TicketReplyEditor ticketId={ticket.id} notifyUsers={users} ccUsers={users} onSaved={load} />
           </div>
           <div className="panel">
             <h2>Conversation</h2>
@@ -241,15 +247,15 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
           <form className="panel form" onSubmit={saveAssignment}>
             <h3>Assignment</h3>
             <label className="field">
-              <span>Technician</span>
-              <select className="input" value={assignedUserId} onChange={(event) => setAssignedUserId(event.target.value)}>
-                <option value="">Unassigned</option>
+              <span>Specialists</span>
+              <div className="checkbox-row vertical">
                 {users.map((user) => (
-                  <option key={user.id} value={user.id}>
+                  <label key={user.id}>
+                    <input type="checkbox" checked={assignedUserIds.includes(user.id)} onChange={() => toggleAssignee(user.id)} />
                     {user.firstName} {user.lastName}
-                  </option>
+                  </label>
                 ))}
-              </select>
+              </div>
             </label>
             <label className="field">
               <span>Ticket Team</span>

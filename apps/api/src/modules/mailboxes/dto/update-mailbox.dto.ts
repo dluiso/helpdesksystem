@@ -1,5 +1,5 @@
 import { MailboxConnectionMode, MailboxOutboundMode, MailboxProvider } from "@prisma/client";
-import { IsBoolean, IsDateString, IsEmail, IsEnum, IsOptional, IsString, MaxLength } from "class-validator";
+import { IsBoolean, IsDateString, IsEmail, IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 
 export class UpdateMailboxDto {
   @IsOptional()
@@ -62,4 +62,14 @@ export class UpdateMailboxDto {
   @IsOptional()
   @IsDateString()
   initialSyncFrom?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  autoSyncEnabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(30)
+  @Max(86400)
+  autoSyncIntervalSeconds?: number | null;
 }

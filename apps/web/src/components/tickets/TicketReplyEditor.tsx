@@ -40,16 +40,20 @@ type ComposerAction = "send" | "send_and_close" | "save_note" | "send_note" | "s
 interface TicketReplyEditorProps {
   ticketId?: string;
   notifyUsers?: Array<{ id: string; firstName: string; lastName: string; email: string }>;
+  ccUsers?: Array<{ id: string; firstName: string; lastName: string; email: string }>;
   onSaved?: () => void | Promise<void>;
 }
 
-export function TicketReplyEditor({ ticketId, notifyUsers = [], onSaved }: TicketReplyEditorProps) {
+export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], onSaved }: TicketReplyEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<"public" | "internal">("public");
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [preview, setPreview] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentPreviewItem[]>([]);
   const [notifyUserIds, setNotifyUserIds] = useState<string[]>([]);
+  const [ccInput, setCcInput] = useState("");
+  const [ccEmails, setCcEmails] = useState<string[]>([]);
+  const [ccUserIds, setCcUserIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [aiBusy, setAiBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -125,12 +129,17 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], onSaved }: Ticke
           bodyText,
           attachmentIds: attachments.map((attachment) => attachment.id),
           notifyUserIds,
+          ccEmails,
+          ccUserIds,
           action: selectedAction
         })
       });
       editorRef.current.innerHTML = "";
       setAttachments([]);
       setNotifyUserIds([]);
+      setCcInput("");
+      setCcEmails([]);
+      setCcUserIds([]);
       setShowActionMenu(false);
       await onSaved?.();
     } catch (requestError) {
@@ -143,6 +152,43 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], onSaved }: Ticke
 
   function toggleNotifyUser(userId: string) {
     setNotifyUserIds((current) => (current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId]));
+  }
+
+  function addCcToken(rawValue: string) {
+    const token = rawValue.trim().replace(/,$/, "");
+    if (!token) {
+      return;
+    }
+
+    if (token.startsWith("@")) {
+      const lookup = token.slice(1).toLowerCase();
+      const matchedUser = ccUsers.find((user) =>
+        `${user.firstName} ${user.lastName} ${user.email}`.toLowerCase().includes(lookup)
+      );
+      if (matchedUser) {
+        setCcUserIds((current) => (current.includes(matchedUser.id) ? current : [...current, matchedUser.id]));
+        setCcInput("");
+        return;
+      }
+      setError(`No internal user matched ${token}.`);
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(token)) {
+      setError("CC must be an email address or @internal user name.");
+      return;
+    }
+
+    setCcEmails((current) => (current.includes(token.toLowerCase()) ? current : [...current, token.toLowerCase()]));
+    setCcInput("");
+  }
+
+  function removeCcEmail(email: string) {
+    setCcEmails((current) => current.filter((item) => item !== email));
+  }
+
+  function removeCcUser(userId: string) {
+    setCcUserIds((current) => current.filter((item) => item !== userId));
   }
 
   async function uploadPastedImage(file: File, index: number) {
@@ -288,6 +334,49 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], onSaved }: Ticke
         aria-label={mode === "public" ? "Public reply body" : "Internal note body"}
         data-placeholder={mode === "public" ? "Write a customer-facing reply..." : "Write an internal troubleshooting note..."}
       />
+      {mode === "public" ? (
+        <div className="cc-picker">
+          <label className="field">
+            <span>CC</span>
+            <input
+              className="input"
+              value={ccInput}
+              onChange={(event) => setCcInput(event.target.value)}
+              onBlur={() => addCcToken(ccInput)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === "," || event.key === "Tab") {
+                  event.preventDefault();
+                  addCcToken(ccInput);
+                }
+              }}
+              placeholder="Add email or @internal user"
+              list="ticket-cc-users"
+            />
+            <datalist id="ticket-cc-users">
+              {ccUsers.map((user) => (
+                <option key={user.id} value={`@${user.firstName} ${user.lastName}`}>
+                  {user.email}
+                </option>
+              ))}
+            </datalist>
+          </label>
+          <div className="chip-row">
+            {ccEmails.map((email) => (
+              <button className="chip" type="button" key={email} onClick={() => removeCcEmail(email)}>
+                {email} x
+              </button>
+            ))}
+            {ccUserIds.map((userId) => {
+              const user = ccUsers.find((item) => item.id === userId);
+              return user ? (
+                <button className="chip" type="button" key={userId} onClick={() => removeCcUser(userId)}>
+                  {user.firstName} {user.lastName} x
+                </button>
+              ) : null;
+            })}
+          </div>
+        </div>
+      ) : null}
       <div className="grid columns-2">
         <AttachmentDropzone ticketId={ticketId} onUploaded={(attachment) => setAttachments((current) => [...current, attachment])} />
         <div className="panel">

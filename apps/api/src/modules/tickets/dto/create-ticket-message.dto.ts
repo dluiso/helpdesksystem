@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsIn, IsOptional, IsString, IsUUID, MinLength } from "class-validator";
+import { IsArray, IsBoolean, IsEmail, IsIn, IsOptional, IsString, IsUUID, MinLength } from "class-validator";
 
 export class CreateTicketMessageDto {
   @IsIn(["public", "internal"])
@@ -25,6 +25,16 @@ export class CreateTicketMessageDto {
   @IsArray()
   @IsUUID("4", { each: true })
   notifyUserIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsEmail({}, { each: true })
+  ccEmails?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID("4", { each: true })
+  ccUserIds?: string[];
 
   @IsOptional()
   @IsIn(["send", "send_and_close", "save_note", "send_note", "send_note_and_close"])

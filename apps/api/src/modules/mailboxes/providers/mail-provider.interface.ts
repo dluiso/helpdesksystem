@@ -48,6 +48,7 @@ export interface SendMessageInput {
   microsoftClientId?: string | null;
   encryptedClientSecretReference?: string | null;
   to: string[];
+  cc?: string[];
   subject: string;
   bodyHtml: string;
   bodyText: string;

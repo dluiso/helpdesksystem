@@ -47,4 +47,12 @@ export class ListTicketsQueryDto {
   @IsOptional()
   @IsIn(["active", "deleted"])
   deletedScope?: "active" | "deleted";
+
+  @IsOptional()
+  @IsString()
+  page?: string;
+
+  @IsOptional()
+  @IsIn(["20", "50", "100", "all"])
+  pageSize?: "20" | "50" | "100" | "all";
 }

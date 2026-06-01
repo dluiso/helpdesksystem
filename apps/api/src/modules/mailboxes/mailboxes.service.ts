@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Mailbox } from "@prisma/client";
 import { AuthenticatedUser } from "../auth/auth.types";
@@ -21,7 +21,11 @@ export interface SyncMailboxResult {
 }
 
 @Injectable()
-export class MailboxesService {
+export class MailboxesService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(MailboxesService.name);
+  private readonly runningAutoSyncs = new Set<string>();
+  private autoSyncTimer?: NodeJS.Timeout;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
@@ -30,6 +34,18 @@ export class MailboxesService {
     private readonly mockMailProvider: MockMailProvider,
     private readonly microsoftGraphMailProvider: MicrosoftGraphMailProvider
   ) {}
+
+  onModuleInit() {
+    this.autoSyncTimer = setInterval(() => {
+      void this.runDueAutoSyncs();
+    }, 15_000);
+  }
+
+  onModuleDestroy() {
+    if (this.autoSyncTimer) {
+      clearInterval(this.autoSyncTimer);
+    }
+  }
 
   list(user: AuthenticatedUser) {
     return this.prisma.mailbox.findMany({
@@ -61,6 +77,14 @@ export class MailboxesService {
         encryptedClientSecretReference:
           input.encryptedClientSecretReference === undefined ? undefined : this.optionalTrim(input.encryptedClientSecretReference),
         isActive: input.isActive,
+        autoSyncEnabled: input.autoSyncEnabled,
+        autoSyncIntervalSeconds: input.autoSyncIntervalSeconds === undefined ? undefined : input.autoSyncIntervalSeconds,
+        nextAutoSyncAt:
+          input.autoSyncEnabled === false
+            ? null
+            : input.autoSyncIntervalSeconds
+              ? new Date(Date.now() + input.autoSyncIntervalSeconds * 1000)
+              : undefined,
         initialSyncFrom: input.initialSyncFrom === undefined ? undefined : input.initialSyncFrom ? new Date(input.initialSyncFrom) : null,
         lastSyncCursor: input.initialSyncFrom === undefined ? undefined : null,
         lastSyncError: null
@@ -70,6 +94,53 @@ export class MailboxesService {
 
   async syncInbound(mailboxId: string, user: AuthenticatedUser): Promise<SyncMailboxResult> {
     const mailbox = await this.getMailboxForUser(mailboxId, user);
+    return this.syncMailbox(mailbox);
+  }
+
+  private async runDueAutoSyncs() {
+    const now = new Date();
+    const mailboxes = await this.prisma.mailbox.findMany({
+      where: {
+        isActive: true,
+        autoSyncEnabled: true,
+        autoSyncIntervalSeconds: { not: null },
+        OR: [{ nextAutoSyncAt: null }, { nextAutoSyncAt: { lte: now } }]
+      },
+      take: 10,
+      orderBy: { nextAutoSyncAt: "asc" }
+    });
+
+    await Promise.all(
+      mailboxes.map(async (mailbox) => {
+        if (this.runningAutoSyncs.has(mailbox.id)) {
+          return;
+        }
+
+        this.runningAutoSyncs.add(mailbox.id);
+        try {
+          await this.prisma.mailbox.update({
+            where: { id: mailbox.id },
+            data: { autoSyncLockedAt: new Date() }
+          });
+          await this.syncMailbox(mailbox);
+        } catch (error) {
+          this.logger.warn(`Mailbox auto sync failed for ${mailbox.emailAddress}: ${error instanceof Error ? error.message : "Unknown error"}`);
+          await this.prisma.mailbox.update({
+            where: { id: mailbox.id },
+            data: {
+              lastSyncError: error instanceof Error ? error.message.slice(0, 1000) : "Mailbox auto sync failed.",
+              nextAutoSyncAt: new Date(Date.now() + (mailbox.autoSyncIntervalSeconds ?? 300) * 1000),
+              autoSyncLockedAt: null
+            }
+          });
+        } finally {
+          this.runningAutoSyncs.delete(mailbox.id);
+        }
+      })
+    );
+  }
+
+  private async syncMailbox(mailbox: Mailbox): Promise<SyncMailboxResult> {
     const { providerName, provider } = this.resolveProvider(mailbox);
     const syncResult = await provider.syncInboundMessages({
       mailboxId: mailbox.id,
@@ -137,12 +208,16 @@ export class MailboxesService {
 
     attachmentBackfillFailures += await this.backfillExistingMessageAttachments(provider, mailbox);
 
-    if (syncResult.nextSyncCursor !== undefined) {
-      await this.prisma.mailbox.update({
-        where: { id: mailbox.id },
-        data: { lastSyncCursor: syncResult.nextSyncCursor, lastSyncedAt: new Date(), lastSyncError: null }
-      });
-    }
+    await this.prisma.mailbox.update({
+      where: { id: mailbox.id },
+      data: {
+        ...(syncResult.nextSyncCursor !== undefined ? { lastSyncCursor: syncResult.nextSyncCursor } : {}),
+        lastSyncedAt: new Date(),
+        lastSyncError: null,
+        nextAutoSyncAt: mailbox.autoSyncEnabled && mailbox.autoSyncIntervalSeconds ? new Date(Date.now() + mailbox.autoSyncIntervalSeconds * 1000) : mailbox.nextAutoSyncAt,
+        autoSyncLockedAt: null
+      }
+    });
 
     return {
       mailboxId: mailbox.id,

@@ -59,6 +59,21 @@ export class TicketRoutingService {
         appliedRoutingRuleId: matchedRule.id
       }
     });
+    if (matchedRule.assignUserId) {
+      await this.prisma.ticketAssignee.upsert({
+        where: {
+          ticketId_userId: {
+            ticketId: input.ticketId,
+            userId: matchedRule.assignUserId
+          }
+        },
+        update: {},
+        create: {
+          ticketId: input.ticketId,
+          userId: matchedRule.assignUserId
+        }
+      });
+    }
 
     await Promise.all(
       [...notifyUserIds].map(async (userId) => {

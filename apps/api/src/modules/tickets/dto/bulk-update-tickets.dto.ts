@@ -19,6 +19,11 @@ export class BulkUpdateTicketsDto {
   assignedUserId?: string | null;
 
   @IsOptional()
+  @IsArray()
+  @IsUUID("4", { each: true })
+  assignedUserIds?: string[];
+
+  @IsOptional()
   @IsUUID("4")
   assignedGroupId?: string | null;
 

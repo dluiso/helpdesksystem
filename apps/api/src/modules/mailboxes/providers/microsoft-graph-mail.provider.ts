@@ -74,6 +74,9 @@ export class MicrosoftGraphMailProvider implements MailProvider {
             token,
             {
               message: {
+                ccRecipients: input.cc?.map((address) => ({
+                  emailAddress: { address }
+                })),
                 body: {
                   contentType: "HTML",
                   content: input.bodyHtml
@@ -109,6 +112,9 @@ export class MicrosoftGraphMailProvider implements MailProvider {
       if (!fallbackToSendMail) {
         await this.graphFetchNoBody(`https://graph.microsoft.com/v1.0/users/${mailboxUser}/messages/${messageId}/reply`, token, {
           message: {
+            ccRecipients: input.cc?.map((address) => ({
+              emailAddress: { address }
+            })),
             body: {
               contentType: "HTML",
               content: input.bodyHtml
@@ -133,6 +139,9 @@ export class MicrosoftGraphMailProvider implements MailProvider {
         content: input.bodyHtml
       },
       toRecipients: input.to.map((address) => ({
+        emailAddress: { address }
+      })),
+      ccRecipients: input.cc?.map((address) => ({
         emailAddress: { address }
       })),
       attachments: attachments.length ? attachments.map((attachment) => this.toGraphFileAttachment(attachment)) : undefined,

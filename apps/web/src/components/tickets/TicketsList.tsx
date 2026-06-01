@@ -31,8 +31,11 @@ interface TicketListItem {
   client: { id: string; name: string } | null;
   contact: { id: string; firstName: string; lastName: string; email: string } | null;
   assignedUser: User | null;
+  assignees: Array<{ user: User }>;
   assignedGroup: Group | null;
   assignedTeam: TicketTeam | null;
+  firstReadAt: string | null;
+  firstReadBy: User | null;
   deletedAt: string | null;
   _count: {
     messages: number;
@@ -63,6 +66,14 @@ interface TicketTeam {
   isActive: boolean;
 }
 
+interface PaginatedTickets {
+  items: TicketListItem[];
+  total: number;
+  page: number;
+  pageSize: "20" | "50" | "100" | "all";
+  totalPages: number;
+}
+
 type SortBy = "ticketNumber" | "subject" | "status" | "priority" | "source" | "createdAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
 type ColumnId =
@@ -70,6 +81,8 @@ type ColumnId =
   | "subject"
   | "client"
   | "requester"
+  | "readState"
+  | "assignees"
   | "team"
   | "status"
   | "priority"
@@ -91,6 +104,8 @@ const defaultColumnOrder: ColumnId[] = [
   "subject",
   "client",
   "requester",
+  "readState",
+  "assignees",
   "team",
   "status",
   "priority",
@@ -105,6 +120,8 @@ const defaultVisibleColumns: ColumnId[] = [
   "subject",
   "client",
   "requester",
+  "readState",
+  "assignees",
   "team",
   "status",
   "priority",
@@ -117,6 +134,8 @@ const allColumns: ColumnDefinition[] = [
   { id: "subject", label: "Subject", sortable: "subject" },
   { id: "client", label: "Client" },
   { id: "requester", label: "Requester" },
+  { id: "readState", label: "Read" },
+  { id: "assignees", label: "Specialists" },
   { id: "team", label: "Team" },
   { id: "status", label: "Status", sortable: "status" },
   { id: "priority", label: "Priority", sortable: "priority" },
@@ -188,8 +207,12 @@ export function TicketsList() {
   const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([]);
   const [trashMode, setTrashMode] = useState(false);
   const [bulkStatus, setBulkStatus] = useState("");
-  const [bulkAssignedUserId, setBulkAssignedUserId] = useState("");
+  const [bulkAssignedUserIds, setBulkAssignedUserIds] = useState<string[]>([]);
   const [bulkAssignedTeamId, setBulkAssignedTeamId] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<"20" | "50" | "100" | "all">("20");
+  const [totalTickets, setTotalTickets] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -240,7 +263,18 @@ export function TicketsList() {
       params.set("sortBy", sortBy);
       params.set("sortDirection", sortDirection);
       params.set("deletedScope", trashMode ? "deleted" : "active");
-      setTickets(await apiFetch<TicketListItem[]>(`/tickets?${params.toString()}`));
+      params.set("page", String(page));
+      params.set("pageSize", pageSize);
+      const response = await apiFetch<PaginatedTickets | TicketListItem[]>(`/tickets?${params.toString()}`);
+      if (Array.isArray(response)) {
+        setTickets(response);
+        setTotalTickets(response.length);
+        setTotalPages(1);
+      } else {
+        setTickets(response.items);
+        setTotalTickets(response.total);
+        setTotalPages(response.totalPages);
+      }
     } catch {
       setError("Unable to load tickets.");
     } finally {
@@ -270,13 +304,14 @@ export function TicketsList() {
     if (bulkStatus) {
       body.status = bulkStatus;
     }
-    if (bulkAssignedUserId) {
-      body.assignedUserId = bulkAssignedUserId;
+    if (bulkAssignedUserIds.length) {
+      body.assignedUserId = bulkAssignedUserIds[0];
+      body.assignedUserIds = bulkAssignedUserIds;
     }
     if (bulkAssignedTeamId) {
       body.assignedTeamId = bulkAssignedTeamId;
     }
-    if (!bulkStatus && !bulkAssignedUserId && !bulkAssignedTeamId) {
+    if (!bulkStatus && !bulkAssignedUserIds.length && !bulkAssignedTeamId) {
       setError("Choose a status, technician, or ticket team before applying changes.");
       return;
     }
@@ -290,7 +325,7 @@ export function TicketsList() {
       });
       setSelectedTicketIds([]);
       setBulkStatus("");
-      setBulkAssignedUserId("");
+      setBulkAssignedUserIds([]);
       setBulkAssignedTeamId("");
       await loadTickets();
     } catch (err) {
@@ -432,6 +467,18 @@ export function TicketsList() {
         ) : (
           ticket.senderEmail ?? "Unknown"
         );
+      case "readState":
+        return (
+          <span className={`status-pill ${ticket.firstReadAt ? "success" : ""}`} title={ticket.firstReadBy ? `Opened by ${ticket.firstReadBy.firstName} ${ticket.firstReadBy.lastName}` : undefined}>
+            {ticket.firstReadAt ? "Read" : "Unread"}
+          </span>
+        );
+      case "assignees":
+        return ticket.assignees?.length
+          ? ticket.assignees.map((assignment) => `${assignment.user.firstName} ${assignment.user.lastName}`).join(", ")
+          : ticket.assignedUser
+            ? `${ticket.assignedUser.firstName} ${ticket.assignedUser.lastName}`
+            : "Unassigned";
       case "team":
         return ticket.assignedTeam?.name ?? (ticket.assignedGroup ? `${ticket.assignedGroup.name} (legacy)` : "Unassigned");
       case "status":
@@ -480,13 +527,17 @@ export function TicketsList() {
   }, [columnOrder, visibleColumns]);
 
   useEffect(() => {
+    setPage(1);
+  }, [search, clientId, scope, assignedTeamId, requester, status, priority, sortBy, sortDirection, trashMode, pageSize]);
+
+  useEffect(() => {
     setSelectedTicketIds([]);
     const timeoutId = window.setTimeout(() => {
       void loadTickets();
     }, 300);
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, clientId, scope, assignedTeamId, requester, status, priority, sortBy, sortDirection, trashMode]);
+  }, [search, clientId, scope, assignedTeamId, requester, status, priority, sortBy, sortDirection, trashMode, page, pageSize]);
 
   return (
     <>
@@ -616,8 +667,13 @@ export function TicketsList() {
                 </option>
               ))}
             </select>
-            <select className="input" value={bulkAssignedUserId} onChange={(event) => setBulkAssignedUserId(event.target.value)}>
-              <option value="">Assign technician</option>
+            <select
+              className="input"
+              multiple
+              value={bulkAssignedUserIds}
+              onChange={(event) => setBulkAssignedUserIds(Array.from(event.target.selectedOptions).map((option) => option.value))}
+              aria-label="Assign specialists"
+            >
               {users.map((user) => (
                 <option key={user.id} value={user.id}>
                   {user.firstName} {user.lastName}
@@ -645,7 +701,7 @@ export function TicketsList() {
       <section className="panel tickets-table-panel">
         <div className="table-summary">
           <span>
-            {tickets.length} ticket{tickets.length === 1 ? "" : "s"}
+            {totalTickets} ticket{totalTickets === 1 ? "" : "s"}
           </span>
           <span className="muted">{loading ? "Refreshing..." : `Sorted by ${allColumns.find((column) => column.sortable === sortBy)?.label ?? "Modified"}`}</span>
         </div>
@@ -714,6 +770,28 @@ export function TicketsList() {
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="pagination-bar">
+          <div className="form-actions">
+            <span className="muted">Rows</span>
+            <select className="input compact-select" value={pageSize} onChange={(event) => setPageSize(event.target.value as "20" | "50" | "100" | "all")}>
+              <option value="20">20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="all">All</option>
+            </select>
+          </div>
+          <div className="form-actions">
+            <button className="button secondary" type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1 || pageSize === "all"}>
+              Previous
+            </button>
+            <span className="muted">
+              Page {pageSize === "all" ? 1 : page} of {totalPages}
+            </span>
+            <button className="button secondary" type="button" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={page >= totalPages || pageSize === "all"}>
+              Next
+            </button>
+          </div>
         </div>
       </section>
     </>

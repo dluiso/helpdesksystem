@@ -46,36 +46,71 @@ export class TicketsService {
     const where = this.buildTicketListWhere(user, query);
     const sortBy = query.sortBy ?? "updatedAt";
     const sortDirection = query.sortDirection ?? "desc";
-
-    return this.prisma.ticket.findMany({
-      where,
-      include: {
-        client: true,
-        contact: true,
-        assignedUser: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true
+    const page = this.parsePage(query.page);
+    const pageSize = query.pageSize ?? "20";
+    const take = pageSize === "all" ? undefined : Number(pageSize);
+    const skip = take ? (page - 1) * take : undefined;
+    const [items, total] = await Promise.all([
+      this.prisma.ticket.findMany({
+        where,
+        include: {
+          client: true,
+          contact: true,
+          assignedUser: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true
+            }
+          },
+          assignees: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true
+                }
+              }
+            },
+            orderBy: { createdAt: "asc" }
+          },
+          firstReadBy: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true
+            }
+          },
+          assignedGroup: true,
+          assignedTeam: true,
+          _count: {
+            select: {
+              messages: true,
+              attachments: true
+            }
           }
         },
-        assignedGroup: true,
-        assignedTeam: true,
-        _count: {
-          select: {
-            messages: true,
-            attachments: true
-          }
-        }
-      },
-      orderBy: { [sortBy]: sortDirection },
-      take: 200
-    });
+        orderBy: { [sortBy]: sortDirection },
+        ...(take ? { take, skip } : {})
+      }),
+      this.prisma.ticket.count({ where })
+    ]);
+
+    return {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages: take ? Math.max(1, Math.ceil(total / take)) : 1
+    };
   }
 
   async getById(ticketId: string, user: AuthenticatedUser) {
-    const ticket = await this.prisma.ticket.findFirst({
+    let ticket = await this.prisma.ticket.findFirst({
       where: {
         id: ticketId,
         organizationId: user.organizationId,
@@ -94,6 +129,20 @@ export class TicketsService {
         },
         assignedGroup: true,
         assignedTeam: true,
+        assignees: {
+          include: {
+            user: { select: { id: true, firstName: true, lastName: true, email: true } }
+          },
+          orderBy: { createdAt: "asc" }
+        },
+        firstReadBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true
+          }
+        },
         watchers: {
           include: {
             user: { select: { id: true, firstName: true, lastName: true, email: true } }
@@ -123,6 +172,69 @@ export class TicketsService {
 
     if (!ticket) {
       throw new NotFoundException("Ticket was not found.");
+    }
+
+    if (!ticket.firstReadAt) {
+      ticket = await this.prisma.ticket.update({
+        where: { id: ticket.id },
+        data: {
+          firstReadAt: new Date(),
+          firstReadByUserId: user.id,
+          updatedAt: ticket.updatedAt
+        },
+        include: {
+          client: true,
+          contact: true,
+          assignedUser: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true
+            }
+          },
+          assignedGroup: true,
+          assignedTeam: true,
+          assignees: {
+            include: {
+              user: { select: { id: true, firstName: true, lastName: true, email: true } }
+            },
+            orderBy: { createdAt: "asc" }
+          },
+          firstReadBy: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true
+            }
+          },
+          watchers: {
+            include: {
+              user: { select: { id: true, firstName: true, lastName: true, email: true } }
+            }
+          },
+          messages: {
+            include: {
+              attachments: true,
+              authorUser: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true
+                }
+              },
+              authorContact: true
+            },
+            orderBy: { createdAt: "asc" }
+          },
+          attachments: {
+            where: { deletedAt: null },
+            orderBy: { createdAt: "desc" }
+          }
+        }
+      });
     }
 
     return ticket;
@@ -172,6 +284,7 @@ export class TicketsService {
 
     if (existingTicket) {
       const shouldReopen = this.shouldReopenFromInbound(existingTicket.status);
+      const shouldMarkOpen = !shouldReopen && (await this.shouldMarkExistingTicketOpenFromInbound(existingTicket.id, existingTicket.status));
       const result = await this.prisma.$transaction(async (tx) => {
         const ticket = await tx.ticket.update({
           where: { id: existingTicket.id },
@@ -186,7 +299,8 @@ export class TicketsService {
                   resolvedAt: null,
                   closedAt: null
                 }
-              : {})
+              : {}),
+            ...(shouldMarkOpen ? { status: TicketStatus.OPEN } : {})
           }
         });
 
@@ -306,21 +420,26 @@ export class TicketsService {
 
   async updateAssignment(ticketId: string, input: UpdateTicketAssignmentDto, user: AuthenticatedUser) {
     await this.ensureTicketExists(ticketId, user);
-    await this.validateAssignmentTargets(input.assignedUserId, input.assignedTeamId, user.organizationId);
+    const assignedUserIds = this.normalizeAssignedUserIds(input.assignedUserIds ?? (input.assignedUserId ? [input.assignedUserId] : []));
+    const primaryAssignedUserId = assignedUserIds[0] ?? input.assignedUserId ?? null;
+    await this.validateAssignmentTargets(assignedUserIds, input.assignedTeamId, user.organizationId);
     const ticket = await this.prisma.ticket.update({
       where: { id: ticketId },
       data: {
-        assignedUserId: input.assignedUserId,
+        assignedUserId: primaryAssignedUserId,
         assignedGroupId: input.assignedTeamId ? null : input.assignedGroupId,
         assignedTeamId: input.assignedTeamId,
         priority: input.priority,
         status: input.status
       }
     });
+    await this.syncTicketAssignees(ticketId, assignedUserIds, user.id);
 
-    if (input.assignedUserId) {
-      await this.addWatcherAndNotify(ticketId, input.assignedUserId, user.id, "Manual assignment", `Ticket assigned: ${ticket.ticketNumber}`, "ticketAssignedToMe");
-    }
+    await Promise.all(
+      assignedUserIds.map((assignedUserId) =>
+        this.addWatcherAndNotify(ticketId, assignedUserId, user.id, "Manual assignment", `Ticket assigned: ${ticket.ticketNumber}`, "ticketAssignedToMe")
+      )
+    );
     if (input.assignedGroupId) {
       await this.notifyGroupMembers(ticketId, input.assignedGroupId, user.id, "Manual group assignment", `Ticket assigned to your group: ${ticket.ticketNumber}`);
     }
@@ -334,7 +453,8 @@ export class TicketsService {
       entityId: ticketId,
       action: "ticket.assignment_updated",
       metadata: {
-        assignedUserId: input.assignedUserId ?? null,
+        assignedUserId: primaryAssignedUserId,
+        assignedUserIds,
         assignedGroupId: input.assignedGroupId ?? null,
         assignedTeamId: input.assignedTeamId ?? null,
         priority: input.priority ?? null,
@@ -356,14 +476,16 @@ export class TicketsService {
       select: { id: true, ticketNumber: true }
     });
     const existingIds = existingTickets.map((ticket) => ticket.id);
-    await this.validateAssignmentTargets(input.assignedUserId, input.assignedTeamId, user.organizationId);
+    const assignedUserIds = this.normalizeAssignedUserIds(input.assignedUserIds ?? (input.assignedUserId ? [input.assignedUserId] : []));
+    const primaryAssignedUserId = assignedUserIds[0] ?? input.assignedUserId ?? undefined;
+    await this.validateAssignmentTargets(assignedUserIds, input.assignedTeamId, user.organizationId);
 
     await this.prisma.ticket.updateMany({
       where: { id: { in: existingIds }, organizationId: user.organizationId, deletedAt: null },
       data: {
         priority: input.priority,
         status: input.status,
-        assignedUserId: input.assignedUserId,
+        assignedUserId: primaryAssignedUserId,
         assignedGroupId: input.assignedTeamId ? null : input.assignedGroupId,
         assignedTeamId: input.assignedTeamId,
         ...(input.status === "CLOSED" ? { closedAt: new Date() } : {}),
@@ -373,9 +495,14 @@ export class TicketsService {
 
     await Promise.all(
       existingTickets.map(async (ticket) => {
-        if (input.assignedUserId) {
-          await this.addWatcherAndNotify(ticket.id, input.assignedUserId, user.id, "Bulk assignment", `Ticket assigned: ${ticket.ticketNumber}`, "ticketAssignedToMe");
+        if (input.assignedUserIds !== undefined || input.assignedUserId !== undefined) {
+          await this.syncTicketAssignees(ticket.id, assignedUserIds, user.id);
         }
+        await Promise.all(
+          assignedUserIds.map((assignedUserId) =>
+            this.addWatcherAndNotify(ticket.id, assignedUserId, user.id, "Bulk assignment", `Ticket assigned: ${ticket.ticketNumber}`, "ticketAssignedToMe")
+          )
+        );
         if (input.assignedGroupId) {
           await this.notifyGroupMembers(ticket.id, input.assignedGroupId, user.id, "Bulk group assignment", `Ticket assigned to your group: ${ticket.ticketNumber}`);
         }
@@ -394,7 +521,8 @@ export class TicketsService {
         ticketIds: existingIds,
         status: input.status ?? null,
         priority: input.priority ?? null,
-        assignedUserId: input.assignedUserId ?? null,
+        assignedUserId: primaryAssignedUserId ?? null,
+        assignedUserIds,
         assignedGroupId: input.assignedGroupId ?? null,
         assignedTeamId: input.assignedTeamId ?? null
       }
@@ -487,6 +615,8 @@ export class TicketsService {
     const isInternal = input.visibility === "internal";
     const action = input.action ?? (isInternal ? "save_note" : "send");
     const sanitizedBodyHtml = input.bodyHtml ? this.htmlSanitizer.sanitize(input.bodyHtml) : null;
+    const ccEmails = isInternal ? [] : await this.resolveCcEmails(input.ccEmails ?? [], input.ccUserIds ?? [], user.organizationId);
+    const notifiedUserIds = [...new Set(input.notifyUserIds ?? [])];
     const latestInboundMessage = isInternal
       ? null
       : await this.prisma.ticketMessage.findFirst({
@@ -504,6 +634,7 @@ export class TicketsService {
         organizationId: user.organizationId,
         mailboxId: ticket.mailboxId,
         to: [latestInboundMessage.senderEmail],
+        cc: ccEmails,
         subject: ticket.subject.startsWith("Re:") ? ticket.subject : `Re: ${ticket.subject}`,
         bodyHtml: sanitizedBodyHtml ?? `<p>${this.escapeHtml(input.bodyText).replace(/\n/g, "<br>")}</p>`,
         bodyText: input.bodyText,
@@ -526,6 +657,8 @@ export class TicketsService {
         emailMessageId: sendResult?.providerMessageId ?? null,
         emailInternetMessageId: sendResult?.internetMessageId ?? null,
         emailConversationId: sendResult?.conversationId ?? latestInboundMessage?.emailConversationId ?? null,
+        ccEmails,
+        notifiedUserIds,
         hasAttachments: Boolean(input.attachmentIds?.length)
       }
     });
@@ -559,9 +692,9 @@ export class TicketsService {
     });
 
     const shouldNotifyStaff = !isInternal || action === "send_note" || action === "send_note_and_close";
-    if (shouldNotifyStaff && input.notifyUserIds?.length) {
+    if (shouldNotifyStaff && notifiedUserIds.length) {
       await Promise.all(
-        input.notifyUserIds.map((userId) =>
+        notifiedUserIds.map((userId) =>
           this.addWatcherAndNotify(
             ticketId,
             userId,
@@ -581,6 +714,26 @@ export class TicketsService {
         isInternal ? "Internal note added to an assigned ticket" : "Customer reply sent on an assigned ticket",
         isInternal ? "Internal note added" : "Ticket reply sent",
         isInternal ? "internalNoteOnAssignedTicket" : "ticketReplyOnAssignedTicket"
+      );
+    }
+    if (shouldNotifyStaff) {
+      const assignedUsers = await this.prisma.ticketAssignee.findMany({
+        where: { ticketId },
+        select: { userId: true }
+      });
+      await Promise.all(
+        assignedUsers
+          .filter((assignment) => assignment.userId !== ticket.assignedUserId)
+          .map((assignment) =>
+            this.addWatcherAndNotify(
+              ticketId,
+              assignment.userId,
+              user.id,
+              isInternal ? "Internal note added to an assigned ticket" : "Customer reply sent on an assigned ticket",
+              isInternal ? "Internal note added" : "Ticket reply sent",
+              isInternal ? "internalNoteOnAssignedTicket" : "ticketReplyOnAssignedTicket"
+            )
+          )
       );
     }
     if (shouldNotifyStaff && ticket.assignedTeamId) {
@@ -733,14 +886,14 @@ export class TicketsService {
     return ticket;
   }
 
-  private async validateAssignmentTargets(assignedUserId: string | null | undefined, assignedTeamId: string | null | undefined, organizationId: string) {
-    if (assignedUserId) {
-      const user = await this.prisma.user.findFirst({
-        where: { id: assignedUserId, organizationId, deletedAt: null, isActive: true },
+  private async validateAssignmentTargets(assignedUserIds: string[], assignedTeamId: string | null | undefined, organizationId: string) {
+    if (assignedUserIds.length > 0) {
+      const users = await this.prisma.user.findMany({
+        where: { id: { in: assignedUserIds }, organizationId, deletedAt: null, isActive: true },
         select: { id: true }
       });
-      if (!user) {
-        throw new BadRequestException("Assigned technician is not available.");
+      if (users.length !== assignedUserIds.length) {
+        throw new BadRequestException("One or more assigned technicians are not available.");
       }
     }
 
@@ -753,6 +906,74 @@ export class TicketsService {
         throw new BadRequestException("Assigned ticket team is not available.");
       }
     }
+  }
+
+  private normalizeAssignedUserIds(userIds: Array<string | null | undefined>) {
+    return [...new Set(userIds.filter((userId): userId is string => Boolean(userId)))];
+  }
+
+  private async syncTicketAssignees(ticketId: string, assignedUserIds: string[], assignedById: string | null) {
+    const current = await this.prisma.ticketAssignee.findMany({
+      where: { ticketId },
+      select: { userId: true }
+    });
+    const currentIds = new Set(current.map((assignment) => assignment.userId));
+    const nextIds = new Set(assignedUserIds);
+
+    await this.prisma.ticketAssignee.deleteMany({
+      where: {
+        ticketId,
+        userId: { in: [...currentIds].filter((userId) => !nextIds.has(userId)) }
+      }
+    });
+
+    await Promise.all(
+      [...nextIds]
+        .filter((userId) => !currentIds.has(userId))
+        .map((userId) =>
+          this.prisma.ticketAssignee.create({
+            data: {
+              ticketId,
+              userId,
+              assignedById
+            }
+          })
+        )
+    );
+  }
+
+  private async resolveCcEmails(ccEmails: string[], ccUserIds: string[], organizationId: string) {
+    const manualEmails = ccEmails.map((email) => email.trim().toLowerCase()).filter(Boolean);
+    if (ccUserIds.length === 0) {
+      return [...new Set(manualEmails)];
+    }
+
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: [...new Set(ccUserIds)] }, organizationId, deletedAt: null, isActive: true },
+      select: { email: true }
+    });
+
+    return [...new Set([...manualEmails, ...users.map((user) => user.email.toLowerCase())])];
+  }
+
+  private async shouldMarkExistingTicketOpenFromInbound(ticketId: string, status: TicketStatus) {
+    if (status !== TicketStatus.NEW && status !== TicketStatus.WAITING_ON_CUSTOMER) {
+      return false;
+    }
+
+    const staffMessageCount = await this.prisma.ticketMessage.count({
+      where: {
+        ticketId,
+        direction: { in: [MessageDirection.OUTBOUND, MessageDirection.INTERNAL] }
+      }
+    });
+
+    return staffMessageCount > 0;
+  }
+
+  private parsePage(value: string | undefined) {
+    const parsed = Number(value ?? "1");
+    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
   }
 
   private async addWatcherAndNotify(
@@ -885,7 +1106,9 @@ export class TicketsService {
     }
 
     if (query.scope === "assigned_to_me") {
-      filters.push({ assignedUserId: user.id });
+      filters.push({
+        OR: [{ assignedUserId: user.id }, { assignees: { some: { userId: user.id } } }]
+      });
     }
 
     if (query.scope === "my_teams") {
@@ -897,7 +1120,9 @@ export class TicketsService {
     }
 
     if (query.assignedUserId) {
-      filters.push({ assignedUserId: query.assignedUserId });
+      filters.push({
+        OR: [{ assignedUserId: query.assignedUserId }, { assignees: { some: { userId: query.assignedUserId } } }]
+      });
     }
 
     if (query.assignedTeamId) {
