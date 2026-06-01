@@ -27,6 +27,7 @@ describe("TicketsService", () => {
     const routing = { applyInboundRules: jest.fn() };
     const mailDelivery = { sendTicketReply: jest.fn() };
     const notifications = { notifyUser: jest.fn() };
+    const autoReplies = { sendForNewInboundTicket: jest.fn() };
     const service = new TicketsService(
       prisma as never,
       auditLogs as never,
@@ -34,7 +35,8 @@ describe("TicketsService", () => {
       contactsService as never,
       routing as never,
       mailDelivery as never,
-      notifications as never
+      notifications as never,
+      autoReplies as never
     );
 
     await expect(
@@ -102,6 +104,7 @@ describe("TicketsService", () => {
     const routing = { applyInboundRules: jest.fn().mockResolvedValue(null) };
     const mailDelivery = { sendTicketReply: jest.fn() };
     const notifications = { notifyUser: jest.fn() };
+    const autoReplies = { sendForNewInboundTicket: jest.fn().mockResolvedValue({ sent: false, reason: "no_template" }) };
     const service = new TicketsService(
       prisma as never,
       auditLogs as never,
@@ -109,7 +112,8 @@ describe("TicketsService", () => {
       contactsService as never,
       routing as never,
       mailDelivery as never,
-      notifications as never
+      notifications as never,
+      autoReplies as never
     );
 
     await expect(
@@ -148,6 +152,14 @@ describe("TicketsService", () => {
       })
     });
     expect(auditLogs.create).toHaveBeenCalledWith(expect.objectContaining({ action: "ticket.created_from_inbound_email" }));
+    expect(autoReplies.sendForNewInboundTicket).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: "org-1",
+        ticketId: "ticket-1",
+        messageId: "message-1",
+        senderEmail: "jane@cityofharveyil.gov"
+      })
+    );
   });
 
   it("adds inbound customer replies to the existing thread and reopens closed tickets", async () => {
@@ -195,6 +207,7 @@ describe("TicketsService", () => {
     const routing = { applyInboundRules: jest.fn() };
     const mailDelivery = { sendTicketReply: jest.fn() };
     const notifications = { notifyUser: jest.fn() };
+    const autoReplies = { sendForNewInboundTicket: jest.fn() };
     const service = new TicketsService(
       prisma as never,
       auditLogs as never,
@@ -202,7 +215,8 @@ describe("TicketsService", () => {
       contactsService as never,
       routing as never,
       mailDelivery as never,
-      notifications as never
+      notifications as never,
+      autoReplies as never
     );
 
     await expect(

@@ -53,6 +53,7 @@ interface User {
   firstName: string;
   lastName: string;
   email: string;
+  isActive?: boolean;
 }
 
 interface TicketTeam {
@@ -126,6 +127,40 @@ interface AiProviderTestResult {
   responsePreview: string;
 }
 
+interface AutoReplyTemplate {
+  id: string;
+  name: string;
+  scope: "GLOBAL" | "CLIENT" | "MAILBOX" | "AFTER_HOURS" | "PRIORITY";
+  clientId: string | null;
+  mailboxId: string | null;
+  subject: string;
+  bodyHtml: string;
+  bodyText: string;
+  isActive: boolean;
+  client?: Client | null;
+  mailbox?: { id: string; name: string; emailAddress: string } | null;
+}
+
+interface NotificationPreference {
+  id: string;
+  userId: string;
+  inAppEnabled: boolean;
+  emailEnabled: boolean;
+  ticketAssignedToMe: boolean;
+  ticketAssignedToMyTeam: boolean;
+  ticketReplyOnAssignedTicket: boolean;
+  internalNoteOnAssignedTicket: boolean;
+  internalNoteMention: boolean;
+  routingRuleMatched: boolean;
+  ticketReopened: boolean;
+  dailyDigestEnabled: boolean;
+}
+
+interface UserNotificationPreferenceRow extends User {
+  isActive: boolean;
+  notificationPreference: NotificationPreference;
+}
+
 const AI_ACTIONS = [
   { type: "paraphrase", label: "Paraphrase" },
   { type: "improve_reply", label: "Improve reply" },
@@ -146,6 +181,16 @@ const AI_PROVIDER_LABELS: Record<string, string> = {
   MOCK: "Mock"
 };
 
+const NOTIFICATION_FIELDS: Array<{ key: keyof NotificationPreference; label: string }> = [
+  { key: "ticketAssignedToMe", label: "Assigned to me" },
+  { key: "ticketAssignedToMyTeam", label: "Assigned to my team" },
+  { key: "ticketReplyOnAssignedTicket", label: "Reply on assigned ticket" },
+  { key: "internalNoteOnAssignedTicket", label: "Internal note on assigned ticket" },
+  { key: "internalNoteMention", label: "Mentioned on internal note" },
+  { key: "routingRuleMatched", label: "Routing rule matched" },
+  { key: "ticketReopened", label: "Ticket reopened" }
+];
+
 function normalizeSyncIntervalSeconds(value: string, unit: "seconds" | "minutes") {
   const parsed = Number(value);
   const seconds = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed * (unit === "minutes" ? 60 : 1)) : 300;
@@ -161,6 +206,8 @@ export function SettingsWorkspace() {
   const [unmappedDomains, setUnmappedDomains] = useState<UnmappedDomain[]>([]);
   const [aiProviders, setAiProviders] = useState<AiProviderConfig[]>([]);
   const [aiActionSettings, setAiActionSettings] = useState<AiActionSetting[]>([]);
+  const [autoReplyTemplates, setAutoReplyTemplates] = useState<AutoReplyTemplate[]>([]);
+  const [notificationPreferenceRows, setNotificationPreferenceRows] = useState<UserNotificationPreferenceRow[]>([]);
   const [mailboxDrafts, setMailboxDrafts] = useState<
     Record<
       string,
@@ -211,11 +258,25 @@ export function SettingsWorkspace() {
   const [selectedAiActions, setSelectedAiActions] = useState<string[]>([]);
   const [aiBulkDraft, setAiBulkDraft] = useState({ providerConfigId: "", modelConfigId: "", isEnabled: true });
   const [showAiProviderForm, setShowAiProviderForm] = useState(false);
+  const [showAutoReplyForm, setShowAutoReplyForm] = useState(false);
+  const [editingAutoReplyId, setEditingAutoReplyId] = useState<string | null>(null);
+  const [autoReplyDraft, setAutoReplyDraft] = useState({
+    name: "",
+    scope: "GLOBAL" as "GLOBAL" | "CLIENT",
+    clientId: "",
+    mailboxId: "",
+    subject: "Re: {{ticket.subject}}",
+    bodyText:
+      "Hello {{contact.firstName}},\n\nWe received your request {{ticket.number}} and our team will review it shortly.\n\nThank you,\n{{company.name}}",
+    bodyHtml:
+      "<p>Hello {{contact.firstName}},</p><p>We received your request {{ticket.number}} and our team will review it shortly.</p><p>Thank you,<br>{{company.name}}</p>",
+    isActive: true
+  });
   const [aiTestResults, setAiTestResults] = useState<Record<string, { status: "success" | "error" | "testing"; message: string }>>({});
   const [selectedClientByDomain, setSelectedClientByDomain] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<"mailboxes" | "teams" | "routing" | "domains" | "ai">("mailboxes");
+  const [activeSection, setActiveSection] = useState<"mailboxes" | "autoReplies" | "teams" | "routing" | "domains" | "notifications" | "ai">("mailboxes");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [aiConfigError, setAiConfigError] = useState<string | null>(null);
@@ -242,13 +303,15 @@ export function SettingsWorkspace() {
     setLoading(true);
     setError(null);
     try {
-      const [mailboxData, clientData, unmappedData, userData, teamData, ruleData] = await Promise.all([
+      const [mailboxData, clientData, unmappedData, userData, teamData, ruleData, autoReplyData, notificationPreferenceData] = await Promise.all([
         apiFetch<Mailbox[]>("/mailboxes"),
         apiFetch<Client[]>("/clients"),
         apiFetch<UnmappedDomain[]>("/client-domains/unmapped"),
         apiFetch<User[]>("/users"),
         apiFetch<TicketTeam[]>("/ticket-teams"),
-        apiFetch<RoutingRule[]>("/ticket-routing-rules")
+        apiFetch<RoutingRule[]>("/ticket-routing-rules"),
+        apiFetch<AutoReplyTemplate[]>("/auto-replies"),
+        apiFetch<UserNotificationPreferenceRow[]>("/notification-preferences/users")
       ]);
       setMailboxes(mailboxData);
       setClients(clientData);
@@ -256,6 +319,8 @@ export function SettingsWorkspace() {
       setUsers(userData);
       setTicketTeams(teamData);
       setRoutingRules(ruleData);
+      setAutoReplyTemplates(autoReplyData);
+      setNotificationPreferenceRows(notificationPreferenceData);
       setMailboxDrafts(
         Object.fromEntries(
           mailboxData.map((mailbox) => [
@@ -530,6 +595,141 @@ export function SettingsWorkspace() {
     }
   }
 
+  function resetAutoReplyDraft() {
+    setEditingAutoReplyId(null);
+    setAutoReplyDraft({
+      name: "",
+      scope: "GLOBAL",
+      clientId: "",
+      mailboxId: "",
+      subject: "Re: {{ticket.subject}}",
+      bodyText:
+        "Hello {{contact.firstName}},\n\nWe received your request {{ticket.number}} and our team will review it shortly.\n\nThank you,\n{{company.name}}",
+      bodyHtml:
+        "<p>Hello {{contact.firstName}},</p><p>We received your request {{ticket.number}} and our team will review it shortly.</p><p>Thank you,<br>{{company.name}}</p>",
+      isActive: true
+    });
+  }
+
+  function startEditingAutoReply(template: AutoReplyTemplate) {
+    setEditingAutoReplyId(template.id);
+    setShowAutoReplyForm(true);
+    setAutoReplyDraft({
+      name: template.name,
+      scope: template.scope === "CLIENT" ? "CLIENT" : "GLOBAL",
+      clientId: template.clientId ?? "",
+      mailboxId: template.mailboxId ?? "",
+      subject: template.subject,
+      bodyText: template.bodyText,
+      bodyHtml: template.bodyHtml,
+      isActive: template.isActive
+    });
+  }
+
+  async function saveAutoReplyTemplate() {
+    if (!autoReplyDraft.name.trim() || !autoReplyDraft.subject.trim() || !autoReplyDraft.bodyText.trim()) {
+      setError("Auto-reply name, subject, and plain text body are required.");
+      return;
+    }
+    if (autoReplyDraft.scope === "CLIENT" && !autoReplyDraft.clientId) {
+      setError("Select a client for client-specific auto-replies.");
+      return;
+    }
+
+    setBusy("auto-reply");
+    setNotice(null);
+    setError(null);
+    try {
+      const payload = {
+        name: autoReplyDraft.name,
+        scope: autoReplyDraft.scope,
+        clientId: autoReplyDraft.scope === "CLIENT" ? autoReplyDraft.clientId : null,
+        mailboxId: autoReplyDraft.mailboxId || null,
+        subject: autoReplyDraft.subject,
+        bodyText: autoReplyDraft.bodyText,
+        bodyHtml: autoReplyDraft.bodyHtml || `<p>${autoReplyDraft.bodyText.replace(/\n/g, "<br>")}</p>`,
+        isActive: autoReplyDraft.isActive
+      };
+      await apiFetch(editingAutoReplyId ? `/auto-replies/${editingAutoReplyId}` : "/auto-replies", {
+        method: editingAutoReplyId ? "PATCH" : "POST",
+        body: JSON.stringify(payload)
+      });
+      setNotice(editingAutoReplyId ? "Auto-reply template updated." : "Auto-reply template created.");
+      resetAutoReplyDraft();
+      setShowAutoReplyForm(false);
+      await loadSettingsData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save auto-reply template.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deleteAutoReplyTemplate(templateId: string) {
+    if (!window.confirm("Deactivate this auto-reply template? It will stop sending for new tickets.")) {
+      return;
+    }
+
+    setBusy(templateId);
+    setNotice(null);
+    setError(null);
+    try {
+      await apiFetch(`/auto-replies/${templateId}`, { method: "DELETE" });
+      setNotice("Auto-reply template deactivated.");
+      await loadSettingsData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to deactivate auto-reply template.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function updateNotificationPreferenceDraft(userId: string, key: keyof NotificationPreference, value: boolean) {
+    setNotificationPreferenceRows((current) =>
+      current.map((row) =>
+        row.id === userId
+          ? {
+              ...row,
+              notificationPreference: {
+                ...row.notificationPreference,
+                [key]: value
+              }
+            }
+          : row
+      )
+    );
+  }
+
+  async function saveNotificationPreference(row: UserNotificationPreferenceRow) {
+    setBusy(`notification-${row.id}`);
+    setNotice(null);
+    setError(null);
+    try {
+      const preference = row.notificationPreference;
+      await apiFetch(`/notification-preferences/users/${row.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          inAppEnabled: preference.inAppEnabled,
+          emailEnabled: preference.emailEnabled,
+          ticketAssignedToMe: preference.ticketAssignedToMe,
+          ticketAssignedToMyTeam: preference.ticketAssignedToMyTeam,
+          ticketReplyOnAssignedTicket: preference.ticketReplyOnAssignedTicket,
+          internalNoteOnAssignedTicket: preference.internalNoteOnAssignedTicket,
+          internalNoteMention: preference.internalNoteMention,
+          routingRuleMatched: preference.routingRuleMatched,
+          ticketReopened: preference.ticketReopened,
+          dailyDigestEnabled: preference.dailyDigestEnabled
+        })
+      });
+      setNotice("Notification preferences saved.");
+      await loadSettingsData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save notification preferences.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function associateDomain(unmapped: UnmappedDomain) {
     const clientId = selectedClientByDomain[unmapped.id];
     if (!clientId) {
@@ -763,6 +963,9 @@ export function SettingsWorkspace() {
           <button className={activeSection === "mailboxes" ? "active" : ""} type="button" onClick={() => setActiveSection("mailboxes")}>
             Mailboxes
           </button>
+          <button className={activeSection === "autoReplies" ? "active" : ""} type="button" onClick={() => setActiveSection("autoReplies")}>
+            Auto Replies
+          </button>
           <button className={activeSection === "teams" ? "active" : ""} type="button" onClick={() => setActiveSection("teams")}>
             Ticket Teams
           </button>
@@ -771,6 +974,9 @@ export function SettingsWorkspace() {
           </button>
           <button className={activeSection === "domains" ? "active" : ""} type="button" onClick={() => setActiveSection("domains")}>
             Domain Mapping
+          </button>
+          <button className={activeSection === "notifications" ? "active" : ""} type="button" onClick={() => setActiveSection("notifications")}>
+            Notifications
           </button>
           <button className={activeSection === "ai" ? "active" : ""} type="button" onClick={() => setActiveSection("ai")}>
             AI & Security
@@ -1025,6 +1231,139 @@ export function SettingsWorkspace() {
       </section>
           ) : null}
 
+          {activeSection === "autoReplies" ? (
+            <section className="panel settings-section">
+              <div className="section-heading">
+                <div>
+                  <h2>Auto Replies</h2>
+                  <p className="muted">Send automatic acknowledgement emails when a new inbound ticket is created.</p>
+                </div>
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => {
+                    resetAutoReplyDraft();
+                    setShowAutoReplyForm(true);
+                  }}
+                >
+                  <Plus size={16} aria-hidden="true" />
+                  <span>Add Template</span>
+                </button>
+              </div>
+
+              {showAutoReplyForm ? (
+                <div className="access-form settings-section">
+                  <div className="client-form-grid">
+                    <input className="input" placeholder="Template name" value={autoReplyDraft.name} onChange={(event) => setAutoReplyDraft((current) => ({ ...current, name: event.target.value }))} />
+                    <select className="input" value={autoReplyDraft.scope} onChange={(event) => setAutoReplyDraft((current) => ({ ...current, scope: event.target.value as "GLOBAL" | "CLIENT" }))}>
+                      <option value="GLOBAL">Global auto-reply</option>
+                      <option value="CLIENT">Client-specific auto-reply</option>
+                    </select>
+                    <select
+                      className="input"
+                      value={autoReplyDraft.clientId}
+                      onChange={(event) => setAutoReplyDraft((current) => ({ ...current, clientId: event.target.value }))}
+                      disabled={autoReplyDraft.scope !== "CLIENT"}
+                    >
+                      <option value="">Select client</option>
+                      {clients.map((client) => (
+                        <option key={client.id} value={client.id}>
+                          {client.name}
+                        </option>
+                      ))}
+                    </select>
+                    <select className="input" value={autoReplyDraft.mailboxId} onChange={(event) => setAutoReplyDraft((current) => ({ ...current, mailboxId: event.target.value }))}>
+                      <option value="">Any mailbox</option>
+                      {mailboxes.map((mailbox) => (
+                        <option key={mailbox.id} value={mailbox.id}>
+                          {mailbox.name} ({mailbox.emailAddress})
+                        </option>
+                      ))}
+                    </select>
+                    <input className="input" placeholder="Subject" value={autoReplyDraft.subject} onChange={(event) => setAutoReplyDraft((current) => ({ ...current, subject: event.target.value }))} />
+                    <label className="checkbox-row">
+                      <input type="checkbox" checked={autoReplyDraft.isActive} onChange={(event) => setAutoReplyDraft((current) => ({ ...current, isActive: event.target.checked }))} />
+                      Active
+                    </label>
+                  </div>
+                  <label className="field-stack">
+                    <span>Plain text body</span>
+                    <textarea className="input" rows={7} value={autoReplyDraft.bodyText} onChange={(event) => setAutoReplyDraft((current) => ({ ...current, bodyText: event.target.value }))} />
+                  </label>
+                  <label className="field-stack">
+                    <span>HTML body</span>
+                    <textarea className="input" rows={7} value={autoReplyDraft.bodyHtml} onChange={(event) => setAutoReplyDraft((current) => ({ ...current, bodyHtml: event.target.value }))} />
+                  </label>
+                  <p className="muted">
+                    Variables: {"{{ticket.number}}"}, {"{{ticket.subject}}"}, {"{{client.name}}"}, {"{{contact.firstName}}"}, {"{{contact.lastName}}"}, {"{{company.name}}"}, {"{{support.email}}"}
+                  </p>
+                  <div className="form-actions">
+                    <button className="button" type="button" onClick={saveAutoReplyTemplate} disabled={busy === "auto-reply"}>
+                      {editingAutoReplyId ? "Save Template" : "Create Template"}
+                    </button>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      onClick={() => {
+                        resetAutoReplyDraft();
+                        setShowAutoReplyForm(false);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="table-scroll settings-section">
+                <table className="tickets-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Scope</th>
+                      <th>Client</th>
+                      <th>Mailbox</th>
+                      <th>Status</th>
+                      <th>Subject</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {autoReplyTemplates.length === 0 ? (
+                      <tr>
+                        <td colSpan={7}>No auto-reply templates configured.</td>
+                      </tr>
+                    ) : null}
+                    {autoReplyTemplates.map((template) => (
+                      <tr key={template.id}>
+                        <td>
+                          <strong>{template.name}</strong>
+                        </td>
+                        <td>{template.scope === "CLIENT" ? "Client" : "Global"}</td>
+                        <td>{template.client?.name ?? "All clients"}</td>
+                        <td>{template.mailbox?.name ?? "Any mailbox"}</td>
+                        <td>
+                          <span className="status-pill">{template.isActive ? "Active" : "Inactive"}</span>
+                        </td>
+                        <td>{template.subject}</td>
+                        <td>
+                          <div className="form-actions">
+                            <button className="button secondary" type="button" onClick={() => startEditingAutoReply(template)}>
+                              Edit
+                            </button>
+                            <button className="button danger" type="button" title="Deactivate template" onClick={() => deleteAutoReplyTemplate(template.id)} disabled={busy === template.id || !template.isActive}>
+                              <X size={16} aria-hidden="true" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
           {activeSection === "teams" ? (
       <section className="panel settings-section">
         <div className="section-heading">
@@ -1264,6 +1603,100 @@ export function SettingsWorkspace() {
           ))}
         </div>
       </section>
+          ) : null}
+
+          {activeSection === "notifications" ? (
+            <section className="panel settings-section">
+              <div className="section-heading">
+                <div>
+                  <h2>Notifications</h2>
+                  <p className="muted">Control which in-app and email notifications each specialist receives for ticket activity.</p>
+                </div>
+                <span className="status-pill">{notificationPreferenceRows.length} users</span>
+              </div>
+              <div className="table-scroll settings-section">
+                <table className="tickets-table">
+                  <thead>
+                    <tr>
+                      <th>User</th>
+                      <th>Channels</th>
+                      <th>Ticket Events</th>
+                      <th>Digest</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {notificationPreferenceRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={5}>No users available for notification settings.</td>
+                      </tr>
+                    ) : null}
+                    {notificationPreferenceRows.map((row) => (
+                      <tr key={row.id}>
+                        <td>
+                          <strong>
+                            {row.firstName} {row.lastName}
+                          </strong>
+                          <span className="muted">{row.email}</span>
+                        </td>
+                        <td>
+                          <div className="settings-inline-checks">
+                            <label className="checkbox-row">
+                              <input
+                                type="checkbox"
+                                checked={row.notificationPreference.inAppEnabled}
+                                onChange={(event) => updateNotificationPreferenceDraft(row.id, "inAppEnabled", event.target.checked)}
+                              />
+                              In-app
+                            </label>
+                            <label className="checkbox-row">
+                              <input
+                                type="checkbox"
+                                checked={row.notificationPreference.emailEnabled}
+                                onChange={(event) => updateNotificationPreferenceDraft(row.id, "emailEnabled", event.target.checked)}
+                              />
+                              Email
+                            </label>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="access-check-grid compact">
+                            {NOTIFICATION_FIELDS.map((field) => (
+                              <label className="checkbox-row" key={field.key}>
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(row.notificationPreference[field.key])}
+                                  onChange={(event) => updateNotificationPreferenceDraft(row.id, field.key, event.target.checked)}
+                                />
+                                {field.label}
+                              </label>
+                            ))}
+                          </div>
+                        </td>
+                        <td>
+                          <label className="checkbox-row">
+                            <input
+                              type="checkbox"
+                              checked={row.notificationPreference.dailyDigestEnabled}
+                              onChange={(event) => updateNotificationPreferenceDraft(row.id, "dailyDigestEnabled", event.target.checked)}
+                            />
+                            Daily digest
+                          </label>
+                        </td>
+                        <td>
+                          <button className="button secondary" type="button" onClick={() => saveNotificationPreference(row)} disabled={busy === `notification-${row.id}`}>
+                            Save
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="muted settings-section">
+                Email notifications use the active outbound support mailbox. If outbound mail is disabled or Graph permissions fail, in-app notifications still continue.
+              </p>
+            </section>
           ) : null}
 
           {activeSection === "ai" ? (

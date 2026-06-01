@@ -203,7 +203,8 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
         emailConversationId: message.conversationId,
         inReplyTo: message.inReplyTo,
         references: message.references,
-        hasAttachments: message.hasAttachments
+        hasAttachments: message.hasAttachments,
+        internetMessageHeaders: message.internetMessageHeaders
       });
 
       if (message.hasAttachments) {

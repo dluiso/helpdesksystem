@@ -6,6 +6,7 @@ import { ContactsService } from "../contacts/contacts.service";
 import { MailDeliveryService } from "../mailboxes/mail-delivery.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { AutoRepliesService } from "../auto-replies/auto-replies.service";
 import { TicketRoutingService } from "../ticket-routing/ticket-routing.service";
 import { HtmlSanitizerService } from "../../common/html/html-sanitizer.service";
 import { BulkUpdateTicketsDto } from "./dto/bulk-update-tickets.dto";
@@ -28,6 +29,7 @@ export interface CreateInboundEmailTicketInput {
   inReplyTo?: string | null;
   references?: string | null;
   hasAttachments?: boolean;
+  internetMessageHeaders?: Record<string, string>;
 }
 
 @Injectable()
@@ -39,7 +41,8 @@ export class TicketsService {
     private readonly contactsService: ContactsService,
     private readonly ticketRouting: TicketRoutingService,
     private readonly mailDelivery: MailDeliveryService,
-    private readonly notifications: NotificationsService
+    private readonly notifications: NotificationsService,
+    private readonly autoReplies: AutoRepliesService
   ) {}
 
   async list(user: AuthenticatedUser, query: ListTicketsQueryDto = {}) {
@@ -413,6 +416,19 @@ export class TicketsService {
         contactId: result.ticket.contactId,
         routingRuleId: matchedRule?.id ?? null
       }
+    });
+
+    await this.autoReplies.sendForNewInboundTicket({
+      organizationId: input.organizationId,
+      ticketId: result.ticket.id,
+      messageId: result.message.id,
+      senderEmail,
+      mailboxId: input.mailboxId ?? null,
+      autoSubmittedHeader: input.internetMessageHeaders?.["auto-submitted"] ?? null,
+      threadKey: input.emailConversationId ?? input.emailInternetMessageId ?? input.emailMessageId ?? result.ticket.ticketNumber,
+      inReplyTo: input.emailInternetMessageId ?? input.emailMessageId ?? null,
+      references: input.references ?? input.emailInternetMessageId ?? null,
+      replyToProviderMessageId: input.emailMessageId ?? null
     });
 
     return result;

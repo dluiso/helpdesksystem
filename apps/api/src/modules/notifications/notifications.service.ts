@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { AuthenticatedUser } from "../auth/auth.types";
+import { MailDeliveryService } from "../mailboxes/mail-delivery.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { UpdateNotificationPreferencesDto } from "./dto/update-notification-preferences.dto";
 
@@ -24,7 +25,10 @@ interface NotifyUserInput {
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mailDelivery: MailDeliveryService
+  ) {}
 
   async list(user: AuthenticatedUser) {
     return this.prisma.notification.findMany({
@@ -38,20 +42,39 @@ export class NotificationsService {
   }
 
   async notifyUser(input: NotifyUserInput) {
-    const preferences = await this.getOrCreatePreference(input.userId);
-    if (!preferences.inAppEnabled || !preferences[input.eventType]) {
+    const [preferences, targetUser] = await Promise.all([
+      this.getOrCreatePreference(input.userId),
+      this.prisma.user.findUnique({
+        where: { id: input.userId },
+        select: { id: true, organizationId: true, email: true, firstName: true, lastName: true, isActive: true, deletedAt: true }
+      })
+    ]);
+    if (!targetUser || !targetUser.isActive || targetUser.deletedAt || !preferences[input.eventType]) {
       return null;
     }
 
-    return this.prisma.notification.create({
-      data: {
-        userId: input.userId,
-        ticketId: input.ticketId ?? null,
+    const notification = preferences.inAppEnabled
+      ? await this.prisma.notification.create({
+          data: {
+            userId: input.userId,
+            ticketId: input.ticketId ?? null,
+            title: input.title,
+            body: input.body ?? null,
+            metadata: input.metadata ?? undefined
+          }
+        })
+      : null;
+
+    if (preferences.emailEnabled) {
+      await this.sendEmailNotification({
+        organizationId: targetUser.organizationId,
+        email: targetUser.email,
         title: input.title,
-        body: input.body ?? null,
-        metadata: input.metadata ?? undefined
-      }
-    });
+        body: input.body
+      });
+    }
+
+    return notification;
   }
 
   async markRead(notificationId: string, user: AuthenticatedUser) {
@@ -89,11 +112,87 @@ export class NotificationsService {
     });
   }
 
+  async listUserPreferences(user: AuthenticatedUser) {
+    const users = await this.prisma.user.findMany({
+      where: { organizationId: user.organizationId, deletedAt: null },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        isActive: true,
+        notificationPreference: true
+      },
+      orderBy: [{ firstName: "asc" }, { lastName: "asc" }]
+    });
+
+    return users.map((targetUser) => ({
+      ...targetUser,
+      notificationPreference: targetUser.notificationPreference ?? this.defaultPreference(targetUser.id)
+    }));
+  }
+
+  async updateUserPreferences(targetUserId: string, user: AuthenticatedUser, input: UpdateNotificationPreferencesDto) {
+    const targetUser = await this.prisma.user.findFirst({
+      where: { id: targetUserId, organizationId: user.organizationId, deletedAt: null },
+      select: { id: true }
+    });
+    if (!targetUser) {
+      throw new NotFoundException("User was not found.");
+    }
+
+    return this.prisma.userNotificationPreference.upsert({
+      where: { userId: targetUserId },
+      update: input,
+      create: {
+        userId: targetUserId,
+        ...input
+      }
+    });
+  }
+
   private getOrCreatePreference(userId: string) {
     return this.prisma.userNotificationPreference.upsert({
       where: { userId },
       update: {},
       create: { userId }
     });
+  }
+
+  private defaultPreference(userId: string) {
+    return {
+      id: "",
+      userId,
+      inAppEnabled: true,
+      emailEnabled: false,
+      ticketAssignedToMe: true,
+      ticketAssignedToMyTeam: true,
+      ticketReplyOnAssignedTicket: true,
+      internalNoteOnAssignedTicket: true,
+      internalNoteMention: true,
+      routingRuleMatched: true,
+      ticketReopened: true,
+      dailyDigestEnabled: false,
+      createdAt: null,
+      updatedAt: null
+    };
+  }
+
+  private async sendEmailNotification(input: { organizationId: string; email: string; title: string; body?: string | null }) {
+    try {
+      await this.mailDelivery.sendTicketReply({
+        organizationId: input.organizationId,
+        to: [input.email],
+        subject: input.title,
+        bodyText: input.body ?? input.title,
+        bodyHtml: `<p>${this.escapeHtml(input.body ?? input.title).replace(/\n/g, "<br>")}</p>`
+      });
+    } catch {
+      // Email notification failures must not block ticket workflows.
+    }
+  }
+
+  private escapeHtml(value: string) {
+    return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 }

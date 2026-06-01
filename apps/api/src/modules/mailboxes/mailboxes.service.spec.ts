@@ -87,6 +87,7 @@ describe("MailboxesService", () => {
       createdTickets: 1,
       skippedDuplicates: 0,
       attachmentBackfillFailures: 0,
+      attachmentBackfillErrors: [],
       nextSyncCursor: "cursor-1"
     });
     expect(ticketsService.createFromInboundEmail).toHaveBeenCalledWith(
@@ -154,6 +155,7 @@ describe("MailboxesService", () => {
       createdTickets: 0,
       skippedDuplicates: 1,
       attachmentBackfillFailures: 0,
+      attachmentBackfillErrors: [],
       nextSyncCursor: null
     });
     expect(ticketsService.createFromInboundEmail).not.toHaveBeenCalled();
