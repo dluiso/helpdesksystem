@@ -98,46 +98,50 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async runDueAutoSyncs() {
-    const now = new Date();
-    const mailboxes = await this.prisma.mailbox.findMany({
-      where: {
-        isActive: true,
-        autoSyncEnabled: true,
-        autoSyncIntervalSeconds: { not: null },
-        OR: [{ nextAutoSyncAt: null }, { nextAutoSyncAt: { lte: now } }]
-      },
-      take: 10,
-      orderBy: { nextAutoSyncAt: "asc" }
-    });
+    try {
+      const now = new Date();
+      const mailboxes = await this.prisma.mailbox.findMany({
+        where: {
+          isActive: true,
+          autoSyncEnabled: true,
+          autoSyncIntervalSeconds: { not: null },
+          OR: [{ nextAutoSyncAt: null }, { nextAutoSyncAt: { lte: now } }]
+        },
+        take: 10,
+        orderBy: { nextAutoSyncAt: "asc" }
+      });
 
-    await Promise.all(
-      mailboxes.map(async (mailbox) => {
-        if (this.runningAutoSyncs.has(mailbox.id)) {
-          return;
-        }
+      await Promise.all(
+        mailboxes.map(async (mailbox) => {
+          if (this.runningAutoSyncs.has(mailbox.id)) {
+            return;
+          }
 
-        this.runningAutoSyncs.add(mailbox.id);
-        try {
-          await this.prisma.mailbox.update({
-            where: { id: mailbox.id },
-            data: { autoSyncLockedAt: new Date() }
-          });
-          await this.syncMailbox(mailbox);
-        } catch (error) {
-          this.logger.warn(`Mailbox auto sync failed for ${mailbox.emailAddress}: ${error instanceof Error ? error.message : "Unknown error"}`);
-          await this.prisma.mailbox.update({
-            where: { id: mailbox.id },
-            data: {
-              lastSyncError: error instanceof Error ? error.message.slice(0, 1000) : "Mailbox auto sync failed.",
-              nextAutoSyncAt: new Date(Date.now() + (mailbox.autoSyncIntervalSeconds ?? 300) * 1000),
-              autoSyncLockedAt: null
-            }
-          });
-        } finally {
-          this.runningAutoSyncs.delete(mailbox.id);
-        }
-      })
-    );
+          this.runningAutoSyncs.add(mailbox.id);
+          try {
+            await this.prisma.mailbox.update({
+              where: { id: mailbox.id },
+              data: { autoSyncLockedAt: new Date() }
+            });
+            await this.syncMailbox(mailbox);
+          } catch (error) {
+            this.logger.warn(`Mailbox auto sync failed for ${mailbox.emailAddress}: ${error instanceof Error ? error.message : "Unknown error"}`);
+            await this.prisma.mailbox.update({
+              where: { id: mailbox.id },
+              data: {
+                lastSyncError: error instanceof Error ? error.message.slice(0, 1000) : "Mailbox auto sync failed.",
+                nextAutoSyncAt: new Date(Date.now() + (mailbox.autoSyncIntervalSeconds ?? 300) * 1000),
+                autoSyncLockedAt: null
+              }
+            });
+          } finally {
+            this.runningAutoSyncs.delete(mailbox.id);
+          }
+        })
+      );
+    } catch (error) {
+      this.logger.warn(`Mailbox auto sync scan failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
   }
 
   private async syncMailbox(mailbox: Mailbox): Promise<SyncMailboxResult> {

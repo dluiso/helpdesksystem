@@ -1,10 +1,12 @@
 import { AppShell } from "@/components/layout/AppShell";
 import { TicketDetailWorkspace } from "@/components/tickets/TicketDetailWorkspace";
 
-export default function TicketDetailPage({ params }: { params: { ticketId: string } }) {
+export default async function TicketDetailPage({ params }: { params: Promise<{ ticketId: string }> }) {
+  const { ticketId } = await params;
+
   return (
     <AppShell>
-      <TicketDetailWorkspace ticketId={params.ticketId} />
+      <TicketDetailWorkspace ticketId={ticketId} />
     </AppShell>
   );
 }

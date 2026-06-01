@@ -245,7 +245,7 @@ export function TicketsList() {
   const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([]);
   const [trashMode, setTrashMode] = useState(false);
   const [bulkStatus, setBulkStatus] = useState("");
-  const [bulkAssignedUserIds, setBulkAssignedUserIds] = useState<string[]>([]);
+  const [bulkAssignedUserId, setBulkAssignedUserId] = useState("");
   const [bulkAssignedTeamId, setBulkAssignedTeamId] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<"20" | "50" | "100" | "all">("20");
@@ -304,14 +304,15 @@ export function TicketsList() {
       params.set("page", String(page));
       params.set("pageSize", pageSize);
       const response = await apiFetch<PaginatedTickets | TicketListItem[]>(`/tickets?${params.toString()}`);
+      const nextTickets = Array.isArray(response) ? response : Array.isArray(response.items) ? response.items : [];
       if (Array.isArray(response)) {
-        setTickets(response);
-        setTotalTickets(response.length);
+        setTickets(nextTickets);
+        setTotalTickets(nextTickets.length);
         setTotalPages(1);
       } else {
-        setTickets(response.items);
-        setTotalTickets(response.total);
-        setTotalPages(response.totalPages);
+        setTickets(nextTickets);
+        setTotalTickets(response.total ?? nextTickets.length);
+        setTotalPages(response.totalPages ?? 1);
       }
     } catch {
       setError("Unable to load tickets.");
@@ -342,14 +343,14 @@ export function TicketsList() {
     if (bulkStatus) {
       body.status = bulkStatus;
     }
-    if (bulkAssignedUserIds.length) {
-      body.assignedUserId = bulkAssignedUserIds[0];
-      body.assignedUserIds = bulkAssignedUserIds;
+    if (bulkAssignedUserId) {
+      body.assignedUserId = bulkAssignedUserId;
+      body.assignedUserIds = [bulkAssignedUserId];
     }
     if (bulkAssignedTeamId) {
       body.assignedTeamId = bulkAssignedTeamId;
     }
-    if (!bulkStatus && !bulkAssignedUserIds.length && !bulkAssignedTeamId) {
+    if (!bulkStatus && !bulkAssignedUserId && !bulkAssignedTeamId) {
       setError("Choose a status, technician, or ticket team before applying changes.");
       return;
     }
@@ -363,7 +364,7 @@ export function TicketsList() {
       });
       setSelectedTicketIds([]);
       setBulkStatus("");
-      setBulkAssignedUserIds([]);
+      setBulkAssignedUserId("");
       setBulkAssignedTeamId("");
       await loadTickets();
     } catch (err) {
@@ -503,13 +504,18 @@ export function TicketsList() {
   function renderCell(ticket: TicketListItem, columnId: ColumnId) {
     switch (columnId) {
       case "ticketNumber":
-        return <Link href={`/tickets/${ticket.id}`}>{ticket.ticketNumber}</Link>;
+        return ticket.id ? <Link href={`/tickets/${ticket.id}`}>{ticket.ticketNumber}</Link> : ticket.ticketNumber;
       case "subject":
-        return (
+        return ticket.id ? (
           <Link className="table-cell-stack ticket-subject-link" href={`/tickets/${ticket.id}`}>
             <strong>{ticket.subject}</strong>
             <span>{ticket.senderEmail ?? label(ticket.source)}</span>
           </Link>
+        ) : (
+          <span className="table-cell-stack">
+            <strong>{ticket.subject}</strong>
+            <span>{ticket.senderEmail ?? label(ticket.source)}</span>
+          </span>
         );
       case "client":
         return ticket.client?.name ?? (ticket.senderDomain ? `Unmapped: ${ticket.senderDomain}` : "Unassigned");
@@ -736,13 +742,8 @@ export function TicketsList() {
                 </option>
               ))}
             </select>
-            <select
-              className="input"
-              multiple
-              value={bulkAssignedUserIds}
-              onChange={(event) => setBulkAssignedUserIds(Array.from(event.target.selectedOptions).map((option) => option.value))}
-              aria-label="Assign specialists"
-            >
+            <select className="input" value={bulkAssignedUserId} onChange={(event) => setBulkAssignedUserId(event.target.value)}>
+              <option value="">Assign technician</option>
               {users.map((user) => (
                 <option key={user.id} value={user.id}>
                   {user.firstName} {user.lastName}
@@ -827,8 +828,8 @@ export function TicketsList() {
                   <td colSpan={visibleOrderedColumns.length + 2}>No tickets match the current filters.</td>
                 </tr>
               ) : null}
-              {tickets.map((ticket) => (
-                <tr key={ticket.id}>
+              {tickets.map((ticket, index) => (
+                <tr key={ticket.id ?? `${ticket.ticketNumber}-${index}`}>
                   <td>
                     <input
                       type="checkbox"
@@ -841,9 +842,11 @@ export function TicketsList() {
                     <td key={column.id}>{renderCell(ticket, column.id)}</td>
                   ))}
                   <td className="row-actions-cell">
-                    <Link className="icon-button" href={`/tickets/${ticket.id}`} title="Open ticket">
-                      <Eye size={16} aria-hidden="true" />
-                    </Link>
+                    {ticket.id ? (
+                      <Link className="icon-button" href={`/tickets/${ticket.id}`} title="Open ticket">
+                        <Eye size={16} aria-hidden="true" />
+                      </Link>
+                    ) : null}
                   </td>
                 </tr>
               ))}
