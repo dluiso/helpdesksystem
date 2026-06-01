@@ -31,5 +31,14 @@
     "prisma": "^5.22.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
+  },
+  "overrides": {
+    "postcss": "8.5.15",
+    "next": {
+      "postcss": "8.5.15"
+    }
+  },
+  "dependencies": {
+    "postcss": "8.5.15"
   }
 }

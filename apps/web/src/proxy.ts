@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const publicPaths = ["/login"];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const isPublic = publicPaths.some((path) => request.nextUrl.pathname.startsWith(path));
   const hasSession = request.cookies.has("avidity_session");
 
