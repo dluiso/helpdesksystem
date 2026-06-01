@@ -150,6 +150,25 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
     }
   }
 
+  async function closeTicket() {
+    if (!ticketId) {
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      await apiFetch(`/tickets/${ticketId}/close`, { method: "POST" });
+      setShowActionMenu(false);
+      await onSaved?.();
+    } catch (requestError) {
+      const detail = requestError instanceof Error ? requestError.message : "";
+      setError(`Unable to close ticket.${detail ? ` ${detail}` : ""}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function toggleNotifyUser(userId: string) {
     setNotifyUserIds((current) => (current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId]));
   }
@@ -416,9 +435,14 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
           {showActionMenu ? (
             <div className="split-action-menu" role="menu">
               {mode === "public" ? (
-                <button type="button" role="menuitem" onClick={() => submitMessage("send_and_close")}>
-                  Send and Close
-                </button>
+                <>
+                  <button type="button" role="menuitem" onClick={() => submitMessage("send_and_close")}>
+                    Send and Close
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => closeTicket()}>
+                    Close
+                  </button>
+                </>
               ) : (
                 <>
                   <button type="button" role="menuitem" onClick={() => submitMessage("save_note")}>
@@ -426,6 +450,9 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
                   </button>
                   <button type="button" role="menuitem" onClick={() => submitMessage("send_note_and_close")}>
                     Send Note and Close
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => closeTicket()}>
+                    Close
                   </button>
                 </>
               )}

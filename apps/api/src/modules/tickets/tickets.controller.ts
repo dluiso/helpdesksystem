@@ -70,6 +70,12 @@ export class TicketsController {
     return this.ticketsService.updateWatchers(ticketId, body.userIds ?? [], user);
   }
 
+  @Post(":ticketId/close")
+  @RequirePermissions("tickets.close")
+  closeTicket(@Param("ticketId") ticketId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.ticketsService.closeTicket(ticketId, user);
+  }
+
   @Post(":ticketId/messages")
   @RequirePermissions("tickets.reply")
   createMessage(

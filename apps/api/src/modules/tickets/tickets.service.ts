@@ -615,6 +615,45 @@ export class TicketsService {
     return this.getById(ticketId, user);
   }
 
+  async closeTicket(ticketId: string, user: AuthenticatedUser) {
+    const ticket = await this.prisma.ticket.findFirst({
+      where: {
+        id: ticketId,
+        organizationId: user.organizationId,
+        deletedAt: null
+      },
+      select: {
+        id: true,
+        status: true
+      }
+    });
+
+    if (!ticket) {
+      throw new NotFoundException("Ticket was not found.");
+    }
+
+    if (ticket.status !== TicketStatus.CLOSED) {
+      await this.prisma.ticket.update({
+        where: { id: ticketId },
+        data: {
+          status: TicketStatus.CLOSED,
+          closedAt: new Date(),
+          updatedAt: new Date()
+        }
+      });
+
+      await this.auditLogs.create({
+        userId: user.id,
+        entityType: "Ticket",
+        entityId: ticketId,
+        action: "ticket.closed",
+        metadata: { source: "reply_composer_action" }
+      });
+    }
+
+    return this.getById(ticketId, user);
+  }
+
   async createMessage(ticketId: string, input: CreateTicketMessageDto, user: AuthenticatedUser) {
     const ticket = await this.prisma.ticket.findFirst({
       where: {

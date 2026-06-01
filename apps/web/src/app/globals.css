@@ -1452,7 +1452,7 @@ select {
 
 .split-action-menu {
   position: absolute;
-  right: 0;
+  left: 0;
   bottom: calc(100% + 6px);
   z-index: 30;
   min-width: 210px;
