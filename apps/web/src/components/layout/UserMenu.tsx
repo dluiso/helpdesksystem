@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronDown, LogOut, UserRound } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
@@ -102,6 +103,10 @@ export function UserMenu({ user: providedUser }: { user?: CurrentUser | null }) 
               <span>{user?.email ?? ""}</span>
             </div>
           </div>
+          <Link className="user-menu-item neutral" href="/profile" role="menuitem" onClick={() => setOpen(false)}>
+            <UserRound size={16} aria-hidden="true" />
+            <span>Profile</span>
+          </Link>
           <button className="user-menu-item" type="button" role="menuitem" onClick={logout} disabled={loggingOut}>
             <LogOut size={16} aria-hidden="true" />
             <span>{loggingOut ? "Signing out" : "Sign out"}</span>

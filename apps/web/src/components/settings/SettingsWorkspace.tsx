@@ -153,6 +153,7 @@ interface NotificationPreference {
   internalNoteMention: boolean;
   routingRuleMatched: boolean;
   ticketReopened: boolean;
+  newTicketCreated: boolean;
   dailyDigestEnabled: boolean;
 }
 
@@ -182,6 +183,7 @@ const AI_PROVIDER_LABELS: Record<string, string> = {
 };
 
 const NOTIFICATION_FIELDS: Array<{ key: keyof NotificationPreference; label: string }> = [
+  { key: "newTicketCreated", label: "New ticket created" },
   { key: "ticketAssignedToMe", label: "Assigned to me" },
   { key: "ticketAssignedToMyTeam", label: "Assigned to my team" },
   { key: "ticketReplyOnAssignedTicket", label: "Reply on assigned ticket" },

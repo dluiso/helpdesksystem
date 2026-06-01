@@ -12,7 +12,8 @@ export type NotificationEventType =
   | "internalNoteOnAssignedTicket"
   | "internalNoteMention"
   | "routingRuleMatched"
-  | "ticketReopened";
+  | "ticketReopened"
+  | "newTicketCreated";
 
 interface NotifyUserInput {
   userId: string;
@@ -75,6 +76,55 @@ export class NotificationsService {
     }
 
     return notification;
+  }
+
+  async notifyNewTicketCreated(input: { ticketId: string; organizationId: string }) {
+    const ticket = await this.prisma.ticket.findFirst({
+      where: { id: input.ticketId, organizationId: input.organizationId, deletedAt: null },
+      select: {
+        id: true,
+        ticketNumber: true,
+        subject: true,
+        client: { select: { name: true } },
+        contact: { select: { firstName: true, lastName: true, email: true } },
+        senderEmail: true
+      }
+    });
+    if (!ticket) {
+      return { notified: 0 };
+    }
+
+    const preferences = await this.prisma.userNotificationPreference.findMany({
+      where: {
+        newTicketCreated: true,
+        user: {
+          organizationId: input.organizationId,
+          isActive: true,
+          deletedAt: null
+        }
+      },
+      select: { userId: true }
+    });
+    const userIds = [...new Set(preferences.map((preference) => preference.userId))];
+    const requester = ticket.contact
+      ? `${ticket.contact.firstName} ${ticket.contact.lastName}`.trim()
+      : ticket.senderEmail ?? "Unknown requester";
+    const clientName = ticket.client?.name ?? "Unassigned client";
+
+    await Promise.all(
+      userIds.map((userId) =>
+        this.notifyUser({
+          userId,
+          ticketId: ticket.id,
+          eventType: "newTicketCreated",
+          title: `New ticket created: ${ticket.ticketNumber}`,
+          body: `${ticket.subject}\nRequester: ${requester}\nClient: ${clientName}`,
+          metadata: { ticketNumber: ticket.ticketNumber }
+        })
+      )
+    );
+
+    return { notified: userIds.length };
   }
 
   async markRead(notificationId: string, user: AuthenticatedUser) {
@@ -172,6 +222,7 @@ export class NotificationsService {
       internalNoteMention: true,
       routingRuleMatched: true,
       ticketReopened: true,
+      newTicketCreated: false,
       dailyDigestEnabled: false,
       createdAt: null,
       updatedAt: null

@@ -26,7 +26,7 @@ describe("TicketsService", () => {
     const contactsService = { resolveRequesterFromEmail: jest.fn() };
     const routing = { applyInboundRules: jest.fn() };
     const mailDelivery = { sendTicketReply: jest.fn() };
-    const notifications = { notifyUser: jest.fn() };
+    const notifications = { notifyUser: jest.fn(), notifyNewTicketCreated: jest.fn() };
     const autoReplies = { sendForNewInboundTicket: jest.fn() };
     const service = new TicketsService(
       prisma as never,
@@ -103,7 +103,7 @@ describe("TicketsService", () => {
     };
     const routing = { applyInboundRules: jest.fn().mockResolvedValue(null) };
     const mailDelivery = { sendTicketReply: jest.fn() };
-    const notifications = { notifyUser: jest.fn() };
+    const notifications = { notifyUser: jest.fn(), notifyNewTicketCreated: jest.fn() };
     const autoReplies = { sendForNewInboundTicket: jest.fn().mockResolvedValue({ sent: false, reason: "no_template" }) };
     const service = new TicketsService(
       prisma as never,
@@ -206,7 +206,7 @@ describe("TicketsService", () => {
     };
     const routing = { applyInboundRules: jest.fn() };
     const mailDelivery = { sendTicketReply: jest.fn() };
-    const notifications = { notifyUser: jest.fn() };
+    const notifications = { notifyUser: jest.fn(), notifyNewTicketCreated: jest.fn() };
     const autoReplies = { sendForNewInboundTicket: jest.fn() };
     const service = new TicketsService(
       prisma as never,

@@ -12,5 +12,6 @@ export const dashboardNavigation: NavigationItem[] = [
   { label: "Reports", href: "/reports", permission: "reports.view" },
   { label: "Knowledge Base", href: "/knowledge-base", permission: "knowledge_base.view" },
   { label: "Users", href: "/users", permission: "users.create" },
+  { label: "Profile", href: "/profile" },
   { label: "Settings", href: "/settings", permission: "system_settings.view" }
 ];

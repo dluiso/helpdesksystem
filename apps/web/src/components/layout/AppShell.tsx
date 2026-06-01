@@ -9,6 +9,7 @@ import {
   HardDrive,
   LifeBuoy,
   Settings,
+  UserRound,
   Ticket,
   UsersRound
 } from "lucide-react";
@@ -28,6 +29,7 @@ const iconMap = {
   Devices: HardDrive,
   Reports: BarChart3,
   "Knowledge Base": BookOpen,
+  Profile: UserRound,
   Settings
 };
 

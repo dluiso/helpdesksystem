@@ -451,6 +451,15 @@ select {
   background: #fff1f0;
 }
 
+.user-menu-item.neutral {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.user-menu-item.neutral:hover {
+  background: #eef3fb;
+}
+
 .user-menu-item:disabled {
   cursor: wait;
   opacity: 0.72;
@@ -1608,6 +1617,11 @@ select {
 .editor-surface:empty::before {
   content: attr(data-placeholder);
   color: var(--text-muted);
+}
+
+.signature-editor {
+  min-height: 220px;
+  overflow: auto;
 }
 
 .dropzone {

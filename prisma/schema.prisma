@@ -675,6 +675,7 @@ model UserNotificationPreference {
   internalNoteMention            Boolean  @default(true)
   routingRuleMatched             Boolean  @default(true)
   ticketReopened                 Boolean  @default(true)
+  newTicketCreated               Boolean  @default(false)
   dailyDigestEnabled             Boolean  @default(false)
   createdAt                      DateTime @default(now())
   updatedAt                      DateTime @updatedAt

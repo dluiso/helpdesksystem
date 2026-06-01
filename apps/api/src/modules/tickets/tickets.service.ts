@@ -270,6 +270,11 @@ export class TicketsService {
       metadata: { ticketNumber: ticket.ticketNumber }
     });
 
+    await this.notifications.notifyNewTicketCreated({
+      ticketId: ticket.id,
+      organizationId: user.organizationId
+    });
+
     return ticket;
   }
 
@@ -416,6 +421,11 @@ export class TicketsService {
         contactId: result.ticket.contactId,
         routingRuleId: matchedRule?.id ?? null
       }
+    });
+
+    await this.notifications.notifyNewTicketCreated({
+      ticketId: result.ticket.id,
+      organizationId: input.organizationId
     });
 
     await this.autoReplies.sendForNewInboundTicket({

@@ -17,7 +17,7 @@ import {
   Strikethrough,
   Underline
 } from "lucide-react";
-import { ClipboardEvent, useRef, useState } from "react";
+import { ClipboardEvent, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { AttachmentDropzone } from "./AttachmentDropzone";
 import { AttachmentPreviewItem, AttachmentPreviewList } from "./AttachmentPreviewList";
@@ -36,6 +36,11 @@ const toolbar = [
 ] as const;
 
 type ComposerAction = "send" | "send_and_close" | "save_note" | "send_note" | "send_note_and_close";
+
+interface UserSignature {
+  htmlSignature: string;
+  useSignatureByDefault: boolean;
+}
 
 interface TicketReplyEditorProps {
   ticketId?: string;
@@ -57,6 +62,24 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
   const [saving, setSaving] = useState(false);
   const [aiBusy, setAiBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    apiFetch<UserSignature>("/profile/signature")
+      .then((signature) => {
+        if (!mounted || !signature.useSignatureByDefault || !signature.htmlSignature.trim() || !editorRef.current) {
+          return;
+        }
+        if (!editorRef.current.innerText.trim() && !editorRef.current.innerHTML.trim()) {
+          editorRef.current.innerHTML = signature.htmlSignature;
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   function runCommand(command: string, value?: string) {
     editorRef.current?.focus();

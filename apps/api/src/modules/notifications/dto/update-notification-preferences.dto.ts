@@ -39,5 +39,9 @@ export class UpdateNotificationPreferencesDto {
 
   @IsOptional()
   @IsBoolean()
+  newTicketCreated?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   dailyDigestEnabled?: boolean;
 }

@@ -17,6 +17,7 @@ import { KnowledgeBaseModule } from "./modules/knowledge-base/knowledge-base.mod
 import { MailboxesModule } from "./modules/mailboxes/mailboxes.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { PermissionsModule } from "./modules/permissions/permissions.module";
+import { ProfileModule } from "./modules/profile/profile.module";
 import { PrismaModule } from "./modules/prisma/prisma.module";
 import { RemoteAccessModule } from "./modules/remote-access/remote-access.module";
 import { ReportsModule } from "./modules/reports/reports.module";
@@ -61,6 +62,7 @@ import { UsersModule } from "./modules/users/users.module";
     GroupsModule,
     RolesModule,
     PermissionsModule,
+    ProfileModule,
     ClientsModule,
     ClientDomainsModule,
     ContactsModule,
