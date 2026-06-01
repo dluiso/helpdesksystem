@@ -9,7 +9,7 @@ export class GeminiProvider implements AiProviderPort {
     }
 
     const baseUrl = (config.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/, "");
-    const requestedModel = this.normalizeModelName(input.model);
+    const requestedModel = this.normalizeConfiguredModel(input.model);
     const response = await this.generateContent(baseUrl, requestedModel, input, config);
 
     if (!response.ok && response.status === 404) {
@@ -93,7 +93,19 @@ export class GeminiProvider implements AiProviderPort {
     return model.trim().replace(/^models\//, "");
   }
 
+  private normalizeConfiguredModel(model: string) {
+    const normalized = this.normalizeModelName(model);
+    if (/^gemini-(1\.5|2\.0)-flash-lite/.test(normalized)) {
+      return "gemini-2.5-flash-lite";
+    }
+    if (/^gemini-(1\.5|2\.0)-flash/.test(normalized)) {
+      return "gemini-2.5-flash";
+    }
+
+    return normalized || "gemini-2.5-flash";
+  }
+
   private preferredGeminiModels() {
-    return ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash"];
+    return ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"];
   }
 }

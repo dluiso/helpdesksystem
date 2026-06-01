@@ -225,7 +225,7 @@ export function SettingsWorkspace() {
   function aiProviderDefaults(provider: string) {
     switch (provider) {
       case "GEMINI":
-        return { baseUrl: "https://generativelanguage.googleapis.com/v1beta", apiKeyReference: "env:GEMINI_API_KEY", defaultModel: "gemini-2.0-flash" };
+        return { baseUrl: "https://generativelanguage.googleapis.com/v1beta", apiKeyReference: "env:GEMINI_API_KEY", defaultModel: "gemini-2.5-flash" };
       case "ANTHROPIC":
         return { baseUrl: "https://api.anthropic.com/v1", apiKeyReference: "env:ANTHROPIC_API_KEY", defaultModel: "claude-3-5-sonnet-latest" };
       case "OLLAMA":

@@ -345,7 +345,7 @@ export class AiAssistantService {
       case AiProvider.ANTHROPIC:
         return "claude-3-5-sonnet-latest";
       case AiProvider.GEMINI:
-        return "gemini-2.0-flash";
+        return "gemini-2.5-flash";
       case AiProvider.OLLAMA:
         return "llama3.1";
       case AiProvider.OPENAI_COMPATIBLE:

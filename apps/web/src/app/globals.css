@@ -1289,6 +1289,8 @@ select {
 
 .tickets-table th,
 .tickets-table td {
+  padding: 9px 7px;
+  font-size: 12px;
   white-space: nowrap;
   min-width: 0;
   overflow: hidden;
@@ -1297,8 +1299,12 @@ select {
 
 .tickets-table td:nth-child(2),
 .ticket-subject-link {
-  min-width: 280px;
+  min-width: 0;
   max-width: 520px;
+}
+
+.tickets-table .table-cell-stack span {
+  font-size: 11px;
 }
 
 .ticket-subject-link strong,

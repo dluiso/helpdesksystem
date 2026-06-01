@@ -99,7 +99,7 @@ interface ColumnDefinition {
 }
 
 const COLUMN_STORAGE_KEY = "avidity.ticketTable.columns";
-const COLUMN_WIDTH_STORAGE_KEY = "avidity.ticketTable.columnWidths";
+const COLUMN_WIDTH_STORAGE_KEY = "avidity.ticketTable.columnWidths.v2";
 const defaultColumnOrder: ColumnId[] = [
   "ticketNumber",
   "subject",
@@ -147,19 +147,19 @@ const allColumns: ColumnDefinition[] = [
   { id: "attachments", label: "Attachments" }
 ];
 const defaultColumnWidths: Record<ColumnId, number> = {
-  ticketNumber: 120,
-  subject: 310,
-  client: 190,
-  requester: 220,
-  readState: 96,
-  assignees: 190,
-  team: 150,
-  status: 120,
-  priority: 110,
+  ticketNumber: 86,
+  subject: 220,
+  client: 140,
+  requester: 165,
+  readState: 60,
+  assignees: 115,
+  team: 105,
+  status: 80,
+  priority: 75,
   source: 110,
-  createdAt: 180,
-  updatedAt: 180,
-  messages: 110,
+  createdAt: 118,
+  updatedAt: 118,
+  messages: 65,
   attachments: 120
 };
 const statuses = ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_THIRD_PARTY", "RESOLVED", "CLOSED", "REOPENED", "CANCELLED"];
@@ -474,7 +474,7 @@ export function TicketsList() {
     const startWidth = columnWidths[columnId] ?? defaultColumnWidths[columnId];
 
     function handleMouseMove(moveEvent: MouseEvent) {
-      const nextWidth = Math.min(520, Math.max(80, startWidth + moveEvent.clientX - startX));
+      const nextWidth = Math.min(520, Math.max(56, startWidth + moveEvent.clientX - startX));
       setColumnWidths((current) => ({ ...current, [columnId]: nextWidth }));
     }
 
