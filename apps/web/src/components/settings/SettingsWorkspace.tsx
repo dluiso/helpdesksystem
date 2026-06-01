@@ -34,6 +34,7 @@ interface SyncResult {
   createdTickets: number;
   skippedDuplicates: number;
   attachmentBackfillFailures?: number;
+  attachmentBackfillErrors?: string[];
   nextSyncCursor?: string | null;
 }
 
@@ -517,7 +518,9 @@ export function SettingsWorkspace() {
       setNotice(
         `Mailbox sync completed: ${result.receivedMessages} received, ${result.createdTickets} tickets created, ${result.skippedDuplicates} duplicates skipped${
           result.attachmentBackfillFailures ? `, ${result.attachmentBackfillFailures} attachment backfill failures` : ""
-        }.`
+        }.${
+          result.attachmentBackfillErrors?.length ? ` Attachment errors: ${result.attachmentBackfillErrors.slice(0, 2).join(" | ")}` : ""
+        }`
       );
       await loadSettingsData();
     } catch {

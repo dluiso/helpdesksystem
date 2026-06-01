@@ -197,7 +197,7 @@ export class MicrosoftGraphMailProvider implements MailProvider {
       attachments.push({
         id: fileAttachment.id,
         originalFilename: fileAttachment.name || `attachment-${fileAttachment.id}`,
-        mimeType: fileAttachment.contentType || "application/octet-stream",
+        mimeType: this.resolveAttachmentMimeType(fileAttachment),
         sizeBytes: buffer.length || fileAttachment.size || 0,
         contentId: this.cleanContentId(fileAttachment.contentId),
         isInline: Boolean(fileAttachment.isInline || fileAttachment.contentId),
@@ -276,7 +276,10 @@ export class MicrosoftGraphMailProvider implements MailProvider {
     });
 
     if (!response.ok) {
-      throw new InternalServerErrorException(`Microsoft Graph request failed with status ${response.status}.`);
+      const details = await response.text();
+      throw new InternalServerErrorException(
+        `Microsoft Graph request failed with status ${response.status}${details ? `: ${details.slice(0, 500)}` : "."}`
+      );
     }
 
     return response.json() as Promise<T>;
@@ -350,11 +353,36 @@ export class MicrosoftGraphMailProvider implements MailProvider {
   }
 
   private isFileAttachment(attachment: GraphAttachment) {
-    return attachment["@odata.type"]?.toLowerCase().includes("fileattachment") ?? false;
+    return attachment["@odata.type"]?.toLowerCase().includes("fileattachment") ?? Boolean(attachment.contentBytes || attachment.name);
   }
 
   private cleanContentId(value: string | null | undefined) {
     return value?.trim().replace(/^<|>$/g, "") || null;
+  }
+
+  private resolveAttachmentMimeType(attachment: GraphAttachment) {
+    if (attachment.contentType) {
+      return attachment.contentType.toLowerCase();
+    }
+
+    const extension = attachment.name?.split(".").pop()?.toLowerCase();
+    switch (extension) {
+      case "png":
+        return "image/png";
+      case "jpg":
+      case "jpeg":
+        return "image/jpeg";
+      case "gif":
+        return "image/gif";
+      case "webp":
+        return "image/webp";
+      case "pdf":
+        return "application/pdf";
+      case "txt":
+        return "text/plain";
+      default:
+        return "application/octet-stream";
+    }
   }
 
   private toInboundAddress(emailAddress: GraphEmailAddress) {

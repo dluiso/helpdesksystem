@@ -17,6 +17,7 @@ export interface SyncMailboxResult {
   createdTickets: number;
   skippedDuplicates: number;
   attachmentBackfillFailures?: number;
+  attachmentBackfillErrors?: string[];
   nextSyncCursor?: string | null;
 }
 
@@ -161,6 +162,7 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
     let createdTickets = 0;
     let skippedDuplicates = 0;
     let attachmentBackfillFailures = 0;
+    const attachmentBackfillErrors: string[] = [];
 
     for (const message of syncResult.messages) {
       const exists = await this.prisma.ticketMessage.findFirst({
@@ -181,6 +183,7 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
           if (storedAttachmentCount === 0) {
             const stored = await this.storeInboundAttachments(provider, mailbox, message.providerMessageId, exists.ticketId, exists.id);
             attachmentBackfillFailures += stored.failed;
+            attachmentBackfillErrors.push(...stored.errors);
           }
         }
         skippedDuplicates += 1;
@@ -206,11 +209,14 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
       if (message.hasAttachments) {
         const stored = await this.storeInboundAttachments(provider, mailbox, message.providerMessageId, result.ticket.id, result.message.id);
         attachmentBackfillFailures += stored.failed;
+        attachmentBackfillErrors.push(...stored.errors);
       }
       createdTickets += 1;
     }
 
-    attachmentBackfillFailures += await this.backfillExistingMessageAttachments(provider, mailbox);
+    const backfill = await this.backfillExistingMessageAttachments(provider, mailbox);
+    attachmentBackfillFailures += backfill.failed;
+    attachmentBackfillErrors.push(...backfill.errors);
 
     await this.prisma.mailbox.update({
       where: { id: mailbox.id },
@@ -230,6 +236,7 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
       createdTickets,
       skippedDuplicates,
       attachmentBackfillFailures,
+      attachmentBackfillErrors: attachmentBackfillErrors.slice(0, 10),
       nextSyncCursor: syncResult.nextSyncCursor
     };
   }
@@ -308,12 +315,15 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
         microsoftClientId: mailbox.microsoftClientId,
         encryptedClientSecretReference: mailbox.encryptedClientSecretReference
       });
-    } catch {
-      return { stored: 0, failed: 1 };
+    } catch (error) {
+      const message = `Unable to retrieve attachments for message ${providerMessageId}: ${this.errorMessage(error)}`;
+      this.logger.warn(message);
+      return { stored: 0, failed: 1, errors: [message] };
     }
 
     let stored = 0;
     let failed = 0;
+    const errors: string[] = [];
 
     for (const attachment of attachments) {
       if (!attachment.contentBytes) {
@@ -332,12 +342,15 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
           emailAttachmentId: attachment.id
         });
         stored += 1;
-      } catch {
+      } catch (error) {
         failed += 1;
+        const message = `Unable to store attachment ${attachment.originalFilename} from message ${providerMessageId}: ${this.errorMessage(error)}`;
+        errors.push(message);
+        this.logger.warn(message);
       }
     }
 
-    return { stored, failed };
+    return { stored, failed, errors };
   }
 
   private async backfillExistingMessageAttachments(provider: MailProvider, mailbox: Mailbox) {
@@ -364,14 +377,20 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
       take: 100
     });
     let failures = 0;
+    const errors: string[] = [];
 
     for (const message of candidates) {
       if (message.emailMessageId) {
         const stored = await this.storeInboundAttachments(provider, mailbox, message.emailMessageId, message.ticketId, message.id);
         failures += stored.failed;
+        errors.push(...stored.errors);
       }
     }
 
-    return failures;
+    return { failed: failures, errors };
+  }
+
+  private errorMessage(error: unknown) {
+    return error instanceof Error ? error.message.slice(0, 500) : "Unknown error";
   }
 }

@@ -217,7 +217,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
                   {message.sanitizedBodyHtml ? (
                     <div
                       className="message-body"
-                      dangerouslySetInnerHTML={{ __html: renderMessageHtml(ticket.id, message.sanitizedBodyHtml, message.attachments) }}
+                      dangerouslySetInnerHTML={{ __html: renderMessageHtml(ticket.id, message.sanitizedBodyHtml, mergeAttachments(message.attachments, ticket.attachments)) }}
                     />
                   ) : (
                     <p>{message.bodyText}</p>
@@ -361,6 +361,18 @@ function renderMessageHtml(ticketId: string, html: string, attachments: TicketAt
       usedAttachmentIds.add(attachment.id);
     }
     return attachment ? `src=${quote}${apiBaseUrl}/tickets/${ticketId}/attachments/${attachment.id}/preview${quote}` : match;
+  });
+}
+
+function mergeAttachments(primary: TicketAttachment[], fallback: TicketAttachment[]) {
+  const seen = new Set<string>();
+  return [...primary, ...fallback].filter((attachment) => {
+    if (seen.has(attachment.id)) {
+      return false;
+    }
+
+    seen.add(attachment.id);
+    return true;
   });
 }
 
