@@ -17,6 +17,9 @@ export class HtmlSanitizerService {
     return sanitizeHtml(input, {
       allowedTags: [
         "p",
+        "h1",
+        "h2",
+        "h3",
         "br",
         "strong",
         "b",

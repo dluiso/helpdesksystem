@@ -1,6 +1,27 @@
 "use client";
 
-import { Bold, Eye, Italic, KeyRound, Link, List, ListOrdered, Mail, PenLine, RemoveFormatting, Save, Strikethrough, Underline, UserRound } from "lucide-react";
+import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  Bold,
+  Eye,
+  Italic,
+  KeyRound,
+  Link,
+  List,
+  ListOrdered,
+  Mail,
+  PenLine,
+  Redo2,
+  RemoveFormatting,
+  Save,
+  Strikethrough,
+  Underline,
+  Undo2,
+  UserRound
+} from "lucide-react";
+import { ClipboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
@@ -68,12 +89,17 @@ const SECTIONS: Array<{ key: ProfileSection; label: string; icon: typeof UserRou
 ];
 
 const SIGNATURE_TOOLBAR = [
+  { label: "Undo", icon: Undo2, command: "undo" },
+  { label: "Redo", icon: Redo2, command: "redo" },
   { label: "Bold", icon: Bold, command: "bold" },
   { label: "Italic", icon: Italic, command: "italic" },
   { label: "Underline", icon: Underline, command: "underline" },
   { label: "Strikethrough", icon: Strikethrough, command: "strikeThrough" },
   { label: "Ordered list", icon: ListOrdered, command: "insertOrderedList" },
   { label: "Unordered list", icon: List, command: "insertUnorderedList" },
+  { label: "Align left", icon: AlignLeft, command: "justifyLeft" },
+  { label: "Align center", icon: AlignCenter, command: "justifyCenter" },
+  { label: "Align right", icon: AlignRight, command: "justifyRight" },
   { label: "Remove formatting", icon: RemoveFormatting, command: "removeFormat" }
 ] as const;
 
@@ -92,6 +118,7 @@ export function ProfileWorkspace() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const signatureEditorRef = useRef<HTMLDivElement>(null);
+  const signatureDirtyRef = useRef(false);
 
   useEffect(() => {
     void loadProfile();
@@ -104,7 +131,7 @@ export function ProfileWorkspace() {
     setFirstName(response.user.firstName);
     setLastName(response.user.lastName);
     setNotificationDraft(response.notificationPreference);
-    setSignatureHtml(response.signature.htmlSignature);
+    syncSignatureEditor(response.signature.htmlSignature);
     setUseSignatureByDefault(response.signature.useSignatureByDefault);
   }
 
@@ -188,11 +215,8 @@ export function ProfileWorkspace() {
         method: "PATCH",
         body: JSON.stringify({ htmlSignature, useSignatureByDefault })
       });
-      setSignatureHtml(response.htmlSignature);
+      syncSignatureEditor(response.htmlSignature);
       setUseSignatureByDefault(response.useSignatureByDefault);
-      if (signatureEditorRef.current) {
-        signatureEditorRef.current.innerHTML = response.htmlSignature;
-      }
       setMessage("Signature saved.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to save signature.");
@@ -205,10 +229,37 @@ export function ProfileWorkspace() {
     setNotificationDraft((current) => (current ? { ...current, [key]: value } : current));
   }
 
+  function syncSignatureEditor(html: string) {
+    signatureDirtyRef.current = false;
+    setSignatureHtml(html);
+    if (signatureEditorRef.current) {
+      signatureEditorRef.current.innerHTML = html;
+    }
+  }
+
+  function updateSignatureDraft(html: string) {
+    signatureDirtyRef.current = true;
+    setSignatureHtml(html);
+  }
+
   function runSignatureCommand(command: string, value?: string) {
     signatureEditorRef.current?.focus();
     document.execCommand(command, false, value);
-    setSignatureHtml(signatureEditorRef.current?.innerHTML ?? signatureHtml);
+    updateSignatureDraft(signatureEditorRef.current?.innerHTML ?? signatureHtml);
+  }
+
+  function setSignatureBlock(value: string) {
+    if (!value) {
+      return;
+    }
+    runSignatureCommand("formatBlock", value);
+  }
+
+  function setSignatureFontSize(value: string) {
+    if (!value) {
+      return;
+    }
+    runSignatureCommand("fontSize", value);
   }
 
   function addSignatureLink() {
@@ -218,6 +269,21 @@ export function ProfileWorkspace() {
     }
     runSignatureCommand("createLink", href);
   }
+
+  function handleSignaturePaste(event: ClipboardEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const html = event.clipboardData.getData("text/html");
+    const text = event.clipboardData.getData("text/plain");
+    const pasted = html ? normalizePastedSignatureHtml(html) : escapeHtml(text).replace(/\n/g, "<br>");
+    document.execCommand("insertHTML", false, pasted);
+    updateSignatureDraft(signatureEditorRef.current?.innerHTML ?? signatureHtml);
+  }
+
+  useEffect(() => {
+    if (activeSection === "signature" && signatureEditorRef.current && !signatureDirtyRef.current) {
+      signatureEditorRef.current.innerHTML = signatureHtml;
+    }
+  }, [activeSection, signatureHtml]);
 
   return (
     <div className="stack">
@@ -231,8 +297,8 @@ export function ProfileWorkspace() {
       {message ? <div className="success-banner">{message}</div> : null}
       {error ? <div className="error-banner">{error}</div> : null}
 
-      <div className="settings-layout">
-        <aside className="settings-nav" aria-label="Profile sections">
+      <div className="settings-layout profile-layout">
+        <aside className="settings-nav profile-nav" aria-label="Profile sections">
           {SECTIONS.map((section) => {
             const Icon = section.icon;
             return (
@@ -249,16 +315,16 @@ export function ProfileWorkspace() {
           })}
         </aside>
 
-        <div className="settings-content">
+        <div className="settings-content profile-content">
           {activeSection === "account" ? (
-            <section className="panel">
+            <section className="panel profile-panel">
               <div className="section-heading">
                 <div>
                   <h2>Account Information</h2>
                   <p className="muted">Your email address is managed by an administrator.</p>
                 </div>
               </div>
-              <div className="grid columns-2">
+              <div className="profile-form-grid">
                 <label>
                   First name
                   <input className="input" value={firstName} onChange={(event) => setFirstName(event.target.value)} />
@@ -286,9 +352,14 @@ export function ProfileWorkspace() {
           ) : null}
 
           {activeSection === "password" ? (
-            <section className="panel">
-              <h2>Password</h2>
-              <div className="grid columns-2">
+            <section className="panel profile-panel">
+              <div className="section-heading">
+                <div>
+                  <h2>Password & Security</h2>
+                  <p className="muted">Change your password without exposing the plain text value.</p>
+                </div>
+              </div>
+              <div className="profile-form-grid">
                 <label>
                   Current password
                   <input className="input" type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
@@ -303,7 +374,7 @@ export function ProfileWorkspace() {
                   <input className="input" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
                 </label>
               </div>
-              <p className="muted settings-section">Use at least 12 characters. Changing this password does not expose or store the plain text value.</p>
+              <p className="muted settings-section">Use at least 12 characters.</p>
               <div className="settings-actions">
                 <button className="button" type="button" onClick={savePassword} disabled={busy === "password"}>
                   <KeyRound size={16} aria-hidden="true" />
@@ -314,29 +385,40 @@ export function ProfileWorkspace() {
           ) : null}
 
           {activeSection === "notifications" && notificationDraft ? (
-            <section className="panel">
-              <h2>Notifications</h2>
-              <div className="grid columns-2">
-                <label className="checkbox-row">
+            <section className="panel profile-panel">
+              <div className="section-heading">
+                <div>
+                  <h2>Notifications</h2>
+                  <p className="muted">Choose which ticket events can reach you and through which channels.</p>
+                </div>
+              </div>
+              <div className="profile-card-grid">
+                <label className="profile-toggle-card">
                   <input type="checkbox" checked={notificationDraft.inAppEnabled} onChange={(event) => updateNotificationDraft("inAppEnabled", event.target.checked)} />
-                  In-app notifications
+                  <span>
+                    <strong>In-app notifications</strong>
+                    <small>Show alerts in the helpdesk UI.</small>
+                  </span>
                 </label>
-                <label className="checkbox-row">
+                <label className="profile-toggle-card">
                   <input type="checkbox" checked={notificationDraft.emailEnabled} onChange={(event) => updateNotificationDraft("emailEnabled", event.target.checked)} />
-                  Email notifications
+                  <span>
+                    <strong>Email notifications</strong>
+                    <small>Send matching events by email later.</small>
+                  </span>
                 </label>
               </div>
-              <div className="access-check-grid settings-section">
+              <div className="profile-check-grid settings-section">
                 {NOTIFICATION_FIELDS.map((field) => (
-                  <label className="checkbox-row" key={field.key}>
+                  <label className="profile-check-card" key={field.key}>
                     <input type="checkbox" checked={Boolean(notificationDraft[field.key])} onChange={(event) => updateNotificationDraft(field.key, event.target.checked)} />
-                    {field.label}
+                    <span>{field.label}</span>
                   </label>
                 ))}
               </div>
-              <label className="checkbox-row settings-section">
+              <label className="profile-check-card settings-section profile-digest-row">
                 <input type="checkbox" checked={notificationDraft.dailyDigestEnabled} onChange={(event) => updateNotificationDraft("dailyDigestEnabled", event.target.checked)} />
-                Daily digest
+                <span>Daily digest</span>
               </label>
               <div className="settings-actions">
                 <button className="button" type="button" onClick={saveNotifications} disabled={busy === "notifications"}>
@@ -348,14 +430,26 @@ export function ProfileWorkspace() {
           ) : null}
 
           {activeSection === "signature" ? (
-            <section className="panel">
+            <section className="panel profile-panel">
               <div className="section-heading">
                 <div>
                   <h2>Ticket Reply Signature</h2>
                   <p className="muted">Safe HTML is allowed. Scripts, unsafe URLs, and unsupported tags are removed when saved.</p>
                 </div>
               </div>
-              <div className="editor-toolbar" aria-label="Signature tools">
+              <div className="editor-toolbar signature-toolbar" aria-label="Signature tools">
+                <select className="editor-select" aria-label="Signature block style" defaultValue="" onChange={(event) => setSignatureBlock(event.target.value)}>
+                  <option value="">Paragraph</option>
+                  <option value="h3">Heading</option>
+                  <option value="blockquote">Quote</option>
+                  <option value="pre">Code block</option>
+                </select>
+                <select className="editor-select" aria-label="Signature text size" defaultValue="" onChange={(event) => setSignatureFontSize(event.target.value)}>
+                  <option value="">Size</option>
+                  <option value="1">Small</option>
+                  <option value="3">Normal</option>
+                  <option value="5">Large</option>
+                </select>
                 {SIGNATURE_TOOLBAR.map((item) => {
                   const Icon = item.icon;
                   return (
@@ -381,14 +475,14 @@ export function ProfileWorkspace() {
                 contentEditable
                 dir="ltr"
                 suppressContentEditableWarning
-                onInput={(event) => setSignatureHtml(event.currentTarget.innerHTML)}
-                dangerouslySetInnerHTML={{ __html: signatureHtml }}
+                onInput={(event) => updateSignatureDraft(event.currentTarget.innerHTML)}
+                onPaste={handleSignaturePaste}
               />
-              <label className="checkbox-row settings-section">
+              <label className="profile-check-card settings-section profile-digest-row">
                 <input type="checkbox" checked={useSignatureByDefault} onChange={(event) => setUseSignatureByDefault(event.target.checked)} />
-                Use this signature by default for ticket replies
+                <span>Use this signature by default for ticket replies</span>
               </label>
-              <div className="panel subtle-panel settings-section">
+              <div className="panel subtle-panel signature-preview-panel settings-section">
                 <h3>
                   <Eye size={16} aria-hidden="true" />
                   Preview
@@ -407,4 +501,20 @@ export function ProfileWorkspace() {
       </div>
     </div>
   );
+}
+
+function normalizePastedSignatureHtml(html: string) {
+  return html
+    .replace(/\sdir=(["'])(rtl|auto)\1/gi, "")
+    .replace(/direction\s*:\s*rtl\s*;?/gi, "")
+    .replace(/unicode-bidi\s*:\s*[^;"']+;?/gi, "");
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }

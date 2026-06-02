@@ -889,6 +889,146 @@ select {
   min-width: 0;
 }
 
+.profile-layout {
+  grid-template-columns: 236px minmax(0, 1fr);
+  gap: 18px;
+}
+
+.profile-nav {
+  gap: 8px;
+  padding: 10px;
+  border-color: #d6dfec;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
+}
+
+.profile-nav button {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  font-size: 15px;
+}
+
+.profile-nav button svg {
+  flex: 0 0 auto;
+}
+
+.profile-nav button.active,
+.profile-nav button:hover {
+  border-color: #dbe6ff;
+  background: #f2f6ff;
+  box-shadow: inset 3px 0 0 var(--brand-primary);
+}
+
+.profile-content {
+  display: grid;
+  gap: 16px;
+}
+
+.profile-panel {
+  padding: 22px;
+  border-color: #d6dfec;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.05);
+}
+
+.profile-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.profile-form-grid label {
+  display: grid;
+  gap: 7px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.profile-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.profile-toggle-card,
+.profile-check-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  background: #fbfcfe;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.profile-toggle-card:hover,
+.profile-check-card:hover {
+  border-color: #b9c8ff;
+  background: #f6f8ff;
+}
+
+.profile-toggle-card input,
+.profile-check-card input {
+  margin-top: 3px;
+}
+
+.profile-toggle-card span,
+.profile-check-card span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.profile-toggle-card small {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.profile-check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.profile-digest-row {
+  width: fit-content;
+  max-width: 100%;
+}
+
+.signature-toolbar {
+  margin-bottom: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: #f8fafc;
+}
+
+.signature-toolbar + .signature-editor {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.editor-select {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 10px;
+  background: #ffffff;
+  color: var(--text);
+  font-weight: 650;
+}
+
+.signature-preview-panel {
+  background: #fbfcfe;
+}
+
 .compact-heading {
   margin-bottom: 8px;
 }
@@ -1779,6 +1919,12 @@ select {
   .access-layout,
   .grid.columns-2,
   .grid.columns-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-form-grid,
+  .profile-card-grid,
+  .profile-check-grid {
     grid-template-columns: 1fr;
   }
 
