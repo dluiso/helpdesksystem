@@ -379,6 +379,7 @@ export function ProfileWorkspace() {
                 ref={signatureEditorRef}
                 className="input editor-surface signature-editor signature-render"
                 contentEditable
+                dir="ltr"
                 suppressContentEditableWarning
                 onInput={(event) => setSignatureHtml(event.currentTarget.innerHTML)}
                 dangerouslySetInnerHTML={{ __html: signatureHtml }}

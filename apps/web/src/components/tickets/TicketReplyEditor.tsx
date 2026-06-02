@@ -369,6 +369,7 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
       <div
         className="editor-surface signature-render"
         contentEditable={!preview}
+        dir="ltr"
         suppressContentEditableWarning
         ref={editorRef}
         onPaste={handlePaste}
