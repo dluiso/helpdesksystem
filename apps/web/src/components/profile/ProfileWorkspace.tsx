@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, KeyRound, Mail, PenLine, Save, UserRound } from "lucide-react";
+import { Bold, Eye, Italic, KeyRound, Link, List, ListOrdered, Mail, PenLine, RemoveFormatting, Save, Strikethrough, Underline, UserRound } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
@@ -66,6 +66,16 @@ const SECTIONS: Array<{ key: ProfileSection; label: string; icon: typeof UserRou
   { key: "notifications", label: "Notifications", icon: Mail },
   { key: "signature", label: "Signature", icon: PenLine }
 ];
+
+const SIGNATURE_TOOLBAR = [
+  { label: "Bold", icon: Bold, command: "bold" },
+  { label: "Italic", icon: Italic, command: "italic" },
+  { label: "Underline", icon: Underline, command: "underline" },
+  { label: "Strikethrough", icon: Strikethrough, command: "strikeThrough" },
+  { label: "Ordered list", icon: ListOrdered, command: "insertOrderedList" },
+  { label: "Unordered list", icon: List, command: "insertUnorderedList" },
+  { label: "Remove formatting", icon: RemoveFormatting, command: "removeFormat" }
+] as const;
 
 export function ProfileWorkspace() {
   const [activeSection, setActiveSection] = useState<ProfileSection>("account");
@@ -193,6 +203,20 @@ export function ProfileWorkspace() {
 
   function updateNotificationDraft(key: keyof NotificationPreference, value: boolean) {
     setNotificationDraft((current) => (current ? { ...current, [key]: value } : current));
+  }
+
+  function runSignatureCommand(command: string, value?: string) {
+    signatureEditorRef.current?.focus();
+    document.execCommand(command, false, value);
+    setSignatureHtml(signatureEditorRef.current?.innerHTML ?? signatureHtml);
+  }
+
+  function addSignatureLink() {
+    const href = window.prompt("Link URL");
+    if (!href) {
+      return;
+    }
+    runSignatureCommand("createLink", href);
   }
 
   return (
@@ -331,9 +355,29 @@ export function ProfileWorkspace() {
                   <p className="muted">Safe HTML is allowed. Scripts, unsafe URLs, and unsupported tags are removed when saved.</p>
                 </div>
               </div>
+              <div className="editor-toolbar" aria-label="Signature tools">
+                {SIGNATURE_TOOLBAR.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      className="icon-button"
+                      type="button"
+                      title={item.label}
+                      aria-label={item.label}
+                      key={item.label}
+                      onClick={() => runSignatureCommand(item.command)}
+                    >
+                      <Icon size={17} aria-hidden="true" />
+                    </button>
+                  );
+                })}
+                <button className="icon-button" type="button" title="Link" aria-label="Link" onClick={addSignatureLink}>
+                  <Link size={17} aria-hidden="true" />
+                </button>
+              </div>
               <div
                 ref={signatureEditorRef}
-                className="input editor-surface signature-editor"
+                className="input editor-surface signature-editor signature-render"
                 contentEditable
                 suppressContentEditableWarning
                 onInput={(event) => setSignatureHtml(event.currentTarget.innerHTML)}
@@ -348,7 +392,7 @@ export function ProfileWorkspace() {
                   <Eye size={16} aria-hidden="true" />
                   Preview
                 </h3>
-                {signatureHtml.trim() ? <div className="message-body" dangerouslySetInnerHTML={{ __html: signatureHtml }} /> : <p className="muted">No signature configured.</p>}
+                {signatureHtml.trim() ? <div className="message-body signature-render" dangerouslySetInnerHTML={{ __html: signatureHtml }} /> : <p className="muted">No signature configured.</p>}
               </div>
               <div className="settings-actions">
                 <button className="button" type="button" onClick={saveSignature} disabled={busy === "signature"}>

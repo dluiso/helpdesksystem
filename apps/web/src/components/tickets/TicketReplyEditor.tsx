@@ -367,7 +367,7 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
         </button>
       </div>
       <div
-        className="editor-surface"
+        className="editor-surface signature-render"
         contentEditable={!preview}
         suppressContentEditableWarning
         ref={editorRef}

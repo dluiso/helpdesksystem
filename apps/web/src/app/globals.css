@@ -1115,6 +1115,39 @@ select {
   line-height: 1.5;
 }
 
+.signature-render table,
+.message-body table {
+  width: auto;
+  max-width: 100%;
+  border-collapse: collapse;
+}
+
+.signature-render td,
+.signature-render th,
+.message-body td,
+.message-body th {
+  vertical-align: top;
+}
+
+.signature-render img,
+.message-body img {
+  max-width: 100%;
+  height: auto;
+  vertical-align: top;
+}
+
+.signature-render p,
+.signature-render div,
+.message-body p,
+.message-body div {
+  margin-top: 0;
+}
+
+.signature-render a,
+.message-body a {
+  color: #3158ff;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -1622,6 +1655,10 @@ select {
 .signature-editor {
   min-height: 220px;
   overflow: auto;
+}
+
+.signature-editor table {
+  margin: 0;
 }
 
 .dropzone {
