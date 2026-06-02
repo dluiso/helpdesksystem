@@ -40,6 +40,7 @@ enum TicketStatus {
   CLOSED
   REOPENED
   CANCELLED
+  MERGED
 }
 
 enum TicketPriority {
@@ -174,6 +175,7 @@ model Organization {
   tickets        Ticket[]
   ticketTeams    TicketTeam[]
   ticketRoutingRules TicketRoutingRule[]
+  ticketMerges   TicketMerge[]
   unmappedEmailDomains UnmappedEmailDomain[]
   knowledgeCategories KnowledgeCategory[]
   knowledgeArticles   KnowledgeArticle[]
@@ -235,6 +237,7 @@ model User {
   ticketAssignments    TicketAssignee[] @relation("TicketAssigneeUser")
   createdTicketAssignments TicketAssignee[] @relation("TicketAssigneeAssignedBy")
   firstReadTickets     Ticket[] @relation("TicketFirstReadBy")
+  mergedTickets        Ticket[] @relation("TicketMergedBy")
   routingRuleAssignments TicketRoutingRule[] @relation("RoutingRuleAssignUser")
   watchedTickets      TicketWatcher[] @relation("TicketWatcherUser")
   createdTicketWatchers TicketWatcher[] @relation("TicketWatcherCreatedBy")
@@ -248,6 +251,7 @@ model User {
   createdKnowledgeArticles KnowledgeArticle[] @relation("KnowledgeArticleCreatedBy")
   updatedKnowledgeArticles KnowledgeArticle[] @relation("KnowledgeArticleUpdatedBy")
   reportExports       ReportExport[]
+  performedTicketMerges TicketMerge[]
 
   @@index([organizationId])
   @@index([deletedAt])
@@ -542,6 +546,10 @@ model Ticket {
   reopenedAt                 DateTime?
   firstReadAt                DateTime?
   firstReadByUserId          String?        @db.Uuid
+  mergedIntoTicketId         String?        @db.Uuid
+  mergedAt                   DateTime?
+  mergedByUserId             String?        @db.Uuid
+  mergeReason                String?
   deletedAt                  DateTime?
   createdAt                  DateTime       @default(now())
   updatedAt                  DateTime       @updatedAt
@@ -554,7 +562,12 @@ model Ticket {
   assignedTeam               TicketTeam?    @relation("AssignedTeamTickets", fields: [assignedTeamId], references: [id], onDelete: SetNull)
   appliedRoutingRule         TicketRoutingRule? @relation("AppliedRoutingRuleTickets", fields: [appliedRoutingRuleId], references: [id], onDelete: SetNull)
   mailbox                    Mailbox?       @relation(fields: [mailboxId], references: [id], onDelete: SetNull)
+  mergedIntoTicket           Ticket?        @relation("TicketMergeHierarchy", fields: [mergedIntoTicketId], references: [id], onDelete: SetNull)
+  mergedTickets              Ticket[]       @relation("TicketMergeHierarchy")
+  mergedBy                   User?          @relation("TicketMergedBy", fields: [mergedByUserId], references: [id], onDelete: SetNull)
+  mergeOperationsAsPrimary   TicketMerge[]  @relation("TicketMergePrimary")
   messages                   TicketMessage[]
+  messagesMergedFromThisTicket TicketMessage[] @relation("MergedFromTicketMessages")
   attachments                TicketAttachment[]
   assignees                  TicketAssignee[]
   watchers                   TicketWatcher[]
@@ -573,8 +586,28 @@ model Ticket {
   @@index([assignedGroupId])
   @@index([assignedTeamId])
   @@index([appliedRoutingRuleId])
+  @@index([mergedIntoTicketId])
+  @@index([mergedByUserId])
   @@index([deletedAt])
   @@map("tickets")
+}
+
+model TicketMerge {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @db.Uuid
+  primaryTicketId String   @db.Uuid
+  mergedTicketIds String[] @default([]) @db.Uuid
+  performedByUserId String? @db.Uuid
+  reason          String?
+  createdAt       DateTime @default(now())
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  primaryTicket   Ticket   @relation("TicketMergePrimary", fields: [primaryTicketId], references: [id], onDelete: Cascade)
+  performedByUser User?    @relation(fields: [performedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([primaryTicketId])
+  @@index([performedByUserId])
+  @@map("ticket_merges")
 }
 
 model TicketAssignee {
@@ -703,14 +736,19 @@ model TicketMessage {
   emailReferences       String?
   ccEmails              String[]          @default([])
   notifiedUserIds       String[]          @default([])
+  mergedFromTicketId    String?           @db.Uuid
+  mergedFromTicketNumber String?
+  mergedFromTicketSubject String?
   hasAttachments        Boolean           @default(false)
   createdAt             DateTime          @default(now())
   ticket                Ticket            @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   authorUser            User?             @relation("UserAuthoredMessages", fields: [authorUserId], references: [id], onDelete: SetNull)
   authorContact         Contact?          @relation("ContactAuthoredMessages", fields: [authorContactId], references: [id], onDelete: SetNull)
+  mergedFromTicket      Ticket?           @relation("MergedFromTicketMessages", fields: [mergedFromTicketId], references: [id], onDelete: SetNull)
   attachments           TicketAttachment[]
 
   @@index([ticketId, createdAt])
+  @@index([mergedFromTicketId])
   @@index([emailMessageId])
   @@index([emailInternetMessageId])
   @@index([emailConversationId])

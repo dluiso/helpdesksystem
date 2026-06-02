@@ -9,6 +9,7 @@ import { BulkUpdateTicketsDto } from "./dto/bulk-update-tickets.dto";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
 import { CreateTicketMessageDto } from "./dto/create-ticket-message.dto";
 import { ListTicketsQueryDto } from "./dto/list-tickets-query.dto";
+import { MergeTicketsDto } from "./dto/merge-tickets.dto";
 import { UpdateTicketAssignmentDto } from "./dto/update-ticket-assignment.dto";
 import { UpdateTicketWatchersDto } from "./dto/update-ticket-watchers.dto";
 import { TicketsService } from "./tickets.service";
@@ -46,6 +47,18 @@ export class TicketsController {
   @RequirePermissions("tickets.update")
   bulkRestore(@Body() body: BulkTicketIdsDto, @CurrentUser() user: AuthenticatedUser) {
     return this.ticketsService.bulkRestore(body.ticketIds, user);
+  }
+
+  @Get(":ticketId/merge-candidates")
+  @RequirePermissions("tickets.view")
+  mergeCandidates(@Param("ticketId") ticketId: string, @Query("search") search: string | undefined, @CurrentUser() user: AuthenticatedUser) {
+    return this.ticketsService.mergeCandidates(ticketId, user, search);
+  }
+
+  @Post(":ticketId/merge")
+  @RequirePermissions("tickets.merge")
+  mergeTickets(@Param("ticketId") ticketId: string, @Body() body: MergeTicketsDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.ticketsService.mergeTickets(ticketId, body, user);
   }
 
   @Get(":ticketId")

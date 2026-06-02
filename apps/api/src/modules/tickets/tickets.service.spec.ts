@@ -262,4 +262,158 @@ describe("TicketsService", () => {
     expect(routing.applyInboundRules).not.toHaveBeenCalled();
     expect(auditLogs.create).toHaveBeenCalledWith(expect.objectContaining({ action: "ticket.reopened_from_customer_reply" }));
   });
+
+  it("merges selected source tickets into a primary ticket", async () => {
+    const user = {
+      id: "user-1",
+      organizationId: "org-1",
+      email: "tech@example.com",
+      firstName: "Tech",
+      lastName: "User",
+      forcePasswordChange: false,
+      permissions: ["tickets.merge"]
+    };
+    const primaryTicket = {
+      id: "primary-ticket",
+      ticketNumber: "AIT-100001",
+      subject: "Network issue",
+      clientId: "client-1",
+      status: "OPEN"
+    };
+    const sourceTickets = [
+      {
+        id: "source-ticket",
+        ticketNumber: "AIT-100002",
+        subject: "Related outage",
+        clientId: "client-1",
+        status: "NEW",
+        mergedIntoTicketId: null
+      }
+    ];
+    const tx = {
+      ticketMerge: {
+        create: jest.fn()
+      },
+      ticketWatcher: {
+        findMany: jest.fn().mockResolvedValue([{ userId: "watcher-1", reason: "Assigned" }]),
+        upsert: jest.fn()
+      },
+      ticketMessage: {
+        updateMany: jest.fn(),
+        create: jest.fn()
+      },
+      ticketAttachment: {
+        updateMany: jest.fn()
+      },
+      ticket: {
+        update: jest.fn()
+      }
+    };
+    const prisma = {
+      ticket: {
+        findFirst: jest.fn().mockResolvedValue(primaryTicket),
+        findMany: jest.fn().mockResolvedValue(sourceTickets)
+      },
+      $transaction: jest.fn((callback: (txClient: typeof tx) => unknown) => callback(tx))
+    };
+    const auditLogs = { create: jest.fn() };
+    const sanitizer = { sanitize: jest.fn((value: string) => value) };
+    const contactsService = { resolveRequesterFromEmail: jest.fn() };
+    const routing = { applyInboundRules: jest.fn() };
+    const mailDelivery = { sendTicketReply: jest.fn() };
+    const notifications = { notifyUser: jest.fn(), notifyNewTicketCreated: jest.fn() };
+    const autoReplies = { sendForNewInboundTicket: jest.fn() };
+    const service = new TicketsService(
+      prisma as never,
+      auditLogs as never,
+      sanitizer as never,
+      contactsService as never,
+      routing as never,
+      mailDelivery as never,
+      notifications as never,
+      autoReplies as never
+    );
+    jest.spyOn(service, "getById").mockResolvedValue({ id: "primary-ticket" } as never);
+
+    await expect(service.mergeTickets("primary-ticket", { sourceTicketIds: ["source-ticket"], reason: "Same outage" }, user)).resolves.toEqual({ id: "primary-ticket" });
+
+    expect(tx.ticketMerge.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        organizationId: "org-1",
+        primaryTicketId: "primary-ticket",
+        mergedTicketIds: ["source-ticket"],
+        performedByUserId: "user-1",
+        reason: "Same outage"
+      })
+    });
+    expect(tx.ticketMessage.updateMany).toHaveBeenCalledWith({
+      where: { ticketId: "source-ticket" },
+      data: expect.objectContaining({
+        ticketId: "primary-ticket",
+        mergedFromTicketId: "source-ticket",
+        mergedFromTicketNumber: "AIT-100002"
+      })
+    });
+    expect(tx.ticketAttachment.updateMany).toHaveBeenCalledWith({
+      where: { ticketId: "source-ticket" },
+      data: { ticketId: "primary-ticket" }
+    });
+    expect(tx.ticket.update).toHaveBeenCalledWith({
+      where: { id: "source-ticket" },
+      data: expect.objectContaining({
+        status: "MERGED",
+        mergedIntoTicketId: "primary-ticket",
+        mergedByUserId: "user-1",
+        mergeReason: "Same outage"
+      })
+    });
+    expect(auditLogs.create).toHaveBeenCalledWith(expect.objectContaining({ action: "ticket.merged" }));
+  });
+
+  it("rejects replies on tickets that were merged into another ticket", async () => {
+    const prisma = {
+      ticket: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "source-ticket",
+          status: "MERGED"
+        })
+      }
+    };
+    const auditLogs = { create: jest.fn() };
+    const sanitizer = { sanitize: jest.fn((value: string) => value) };
+    const contactsService = { resolveRequesterFromEmail: jest.fn() };
+    const routing = { applyInboundRules: jest.fn() };
+    const mailDelivery = { sendTicketReply: jest.fn() };
+    const notifications = { notifyUser: jest.fn(), notifyNewTicketCreated: jest.fn() };
+    const autoReplies = { sendForNewInboundTicket: jest.fn() };
+    const service = new TicketsService(
+      prisma as never,
+      auditLogs as never,
+      sanitizer as never,
+      contactsService as never,
+      routing as never,
+      mailDelivery as never,
+      notifications as never,
+      autoReplies as never
+    );
+
+    await expect(
+      service.createMessage(
+        "source-ticket",
+        {
+          bodyText: "Reply",
+          visibility: "public"
+        },
+        {
+          id: "user-1",
+          organizationId: "org-1",
+          email: "tech@example.com",
+          firstName: "Tech",
+          lastName: "User",
+          forcePasswordChange: false,
+          permissions: []
+        }
+      )
+    ).rejects.toThrow("Reply from the primary ticket");
+  });
 });

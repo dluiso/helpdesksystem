@@ -1,6 +1,7 @@
 "use client";
 
-import { Download, Eye, RefreshCcw, Save, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { Download, ExternalLink, Eye, GitMerge, RefreshCcw, Save, Search, Sparkles, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
 import { TicketReplyEditor } from "./TicketReplyEditor";
@@ -31,9 +32,31 @@ interface TicketMessage {
   sanitizedBodyHtml: string | null;
   senderEmail: string | null;
   createdAt: string;
+  mergedFromTicketId: string | null;
+  mergedFromTicketNumber: string | null;
+  mergedFromTicketSubject: string | null;
   authorUser: User | null;
   authorContact: { firstName: string; lastName: string; email: string } | null;
   attachments: TicketAttachment[];
+}
+
+interface MergedTicketReference {
+  id: string;
+  ticketNumber: string;
+  subject: string;
+  status?: string;
+  mergedAt?: string | null;
+}
+
+interface MergeCandidate extends MergedTicketReference {
+  status: string;
+  priority: string;
+  createdAt: string;
+  clientId: string | null;
+  client: { id: string; name: string } | null;
+  contact: { id: string; firstName: string; lastName: string; email: string } | null;
+  senderEmail: string | null;
+  _count: { messages: number; attachments: number };
 }
 
 interface TicketAttachment {
@@ -68,6 +91,10 @@ interface Ticket {
   watchers: Array<{ user: User }>;
   messages: TicketMessage[];
   attachments: TicketAttachment[];
+  mergedIntoTicket: MergedTicketReference | null;
+  mergedTickets: MergedTicketReference[];
+  mergedAt: string | null;
+  mergeReason: string | null;
 }
 
 function label(value: string) {
@@ -87,6 +114,14 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const [watcherIds, setWatcherIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [mergeSearch, setMergeSearch] = useState("");
+  const [mergeCandidates, setMergeCandidates] = useState<MergeCandidate[]>([]);
+  const [selectedMergeIds, setSelectedMergeIds] = useState<string[]>([]);
+  const [mergeReason, setMergeReason] = useState("");
+  const [mergeAllowDifferentClient, setMergeAllowDifferentClient] = useState(false);
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [mergeSearchBusy, setMergeSearchBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const requester = useMemo(() => {
@@ -95,6 +130,8 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
     }
     return ticket.contact ? `${ticket.contact.firstName} ${ticket.contact.lastName}` : ticket.senderEmail ?? "Unknown";
   }, [ticket]);
+  const isMergedTicket = ticket?.status === "MERGED";
+  const selectedMergeTickets = useMemo(() => selectedMergeIds.map((id) => mergeCandidates.find((candidate) => candidate.id === id)).filter((candidate): candidate is MergeCandidate => Boolean(candidate)), [selectedMergeIds, mergeCandidates]);
 
   async function load() {
     setLoading(true);
@@ -151,9 +188,82 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
     setAssignedUserIds((current) => (current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId]));
   }
 
+  function toggleMergeCandidate(ticketId: string) {
+    setSelectedMergeIds((current) => (current.includes(ticketId) ? current.filter((id) => id !== ticketId) : [...current, ticketId]));
+  }
+
+  function openMergeModal() {
+    setMergeSearch("");
+    setMergeCandidates([]);
+    setSelectedMergeIds([]);
+    setMergeReason("");
+    setMergeAllowDifferentClient(false);
+    setShowMergeModal(true);
+  }
+
+  async function loadMergeCandidates(searchValue = mergeSearch) {
+    if (!searchValue.trim()) {
+      setMergeCandidates([]);
+      return;
+    }
+
+    setMergeSearchBusy(true);
+    setError(null);
+    try {
+      const candidates = await apiFetch<MergeCandidate[]>(`/tickets/${ticketId}/merge-candidates?search=${encodeURIComponent(searchValue.trim())}`);
+      setMergeCandidates(candidates);
+      setSelectedMergeIds((current) => current.filter((id) => candidates.some((candidate) => candidate.id === id)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to search merge candidates.");
+    } finally {
+      setMergeSearchBusy(false);
+    }
+  }
+
+  async function mergeTickets() {
+    if (selectedMergeIds.length === 0) {
+      setError("Choose at least one ticket to merge into this ticket.");
+      return;
+    }
+
+    setMergeBusy(true);
+    setError(null);
+    try {
+      const updatedTicket = await apiFetch<Ticket>(`/tickets/${ticketId}/merge`, {
+        method: "POST",
+        body: JSON.stringify({
+          sourceTicketIds: selectedMergeIds,
+          reason: mergeReason.trim() || undefined,
+          allowDifferentClient: mergeAllowDifferentClient
+        })
+      });
+      setTicket(updatedTicket);
+      setShowMergeModal(false);
+      setSelectedMergeIds([]);
+      setMergeCandidates([]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to merge tickets.");
+    } finally {
+      setMergeBusy(false);
+    }
+  }
+
   useEffect(() => {
     void load();
   }, [ticketId]);
+
+  useEffect(() => {
+    if (!showMergeModal || mergeSearch.trim().length < 2) {
+      setMergeCandidates([]);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void loadMergeCandidates(mergeSearch);
+    }, 300);
+    return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showMergeModal, mergeSearch]);
 
   if (loading) {
     return <div className="panel">Loading ticket...</div>;
@@ -179,6 +289,12 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
             <RefreshCcw size={16} aria-hidden="true" />
             <span>Refresh</span>
           </button>
+          {!isMergedTicket ? (
+            <button className="button secondary" type="button" onClick={openMergeModal}>
+              <GitMerge size={16} aria-hidden="true" />
+              <span>Merge</span>
+            </button>
+          ) : null}
           <button className="button secondary" type="button">
             <Sparkles size={16} aria-hidden="true" />
             <span>AI Assist</span>
@@ -186,12 +302,25 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
         </div>
       </div>
       {error ? <div className="error-banner">{error}</div> : null}
+      {isMergedTicket ? (
+        <div className="info-banner">
+          This ticket was merged{ticket.mergedIntoTicket ? " into " : "."}
+          {ticket.mergedIntoTicket ? (
+            <>
+              {" "}
+              <Link href={`/tickets/${ticket.mergedIntoTicket.id}`}>{ticket.mergedIntoTicket.ticketNumber}</Link>. Replies should be sent from the primary ticket.
+            </>
+          ) : null}
+        </div>
+      ) : null}
       <section className="ticket-detail-layout">
         <div className="grid">
-          <div className="panel">
-            <h2>Reply Composer</h2>
-            <TicketReplyEditor ticketId={ticket.id} notifyUsers={users} ccUsers={users} onSaved={load} />
-          </div>
+          {!isMergedTicket ? (
+            <div className="panel">
+              <h2>Reply Composer</h2>
+              <TicketReplyEditor ticketId={ticket.id} notifyUsers={users} ccUsers={users} onSaved={load} />
+            </div>
+          ) : null}
           <div className="panel">
             <h2>Conversation</h2>
             <p className="muted">Newest messages appear first.</p>
@@ -214,6 +343,15 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
                     </div>
                     <span className="muted">{new Date(message.createdAt).toLocaleString()}</span>
                   </header>
+                  {message.mergedFromTicketNumber ? (
+                    <div className="merge-origin-badge">
+                      <GitMerge size={14} aria-hidden="true" />
+                      <span>
+                        Merged from {message.mergedFromTicketNumber}
+                        {message.mergedFromTicketSubject ? ` - ${message.mergedFromTicketSubject}` : ""}
+                      </span>
+                    </div>
+                  ) : null}
                   {message.sanitizedBodyHtml ? (
                     <div
                       className="message-body"
@@ -233,6 +371,19 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
           </div>
         </div>
         <aside className="ticket-side-panel">
+          <div className="panel ticket-tools-panel">
+            <h3>Ticket Tools</h3>
+            <button className="button secondary full-width-button" type="button" onClick={openMergeModal} disabled={isMergedTicket}>
+              <GitMerge size={16} aria-hidden="true" />
+              <span>Merge Tickets</span>
+            </button>
+            {isMergedTicket && ticket.mergedIntoTicket ? (
+              <Link className="button secondary full-width-button" href={`/tickets/${ticket.mergedIntoTicket.id}`}>
+                <ExternalLink size={16} aria-hidden="true" />
+                <span>Open Primary</span>
+              </Link>
+            ) : null}
+          </div>
           <div className="panel ticket-summary-panel">
             <h3>Ticket Details</h3>
             <dl className="detail-list">
@@ -242,8 +393,23 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
               <div><dt>Sender</dt><dd>{ticket.senderEmail ?? "Not set"}</dd></div>
               <div><dt>Inline images</dt><dd>{inlineImageCount}</dd></div>
               <div><dt>Files</dt><dd>{realAttachments.length}</dd></div>
+              {ticket.mergedAt ? <div><dt>Merged</dt><dd>{new Date(ticket.mergedAt).toLocaleString()}</dd></div> : null}
             </dl>
           </div>
+          {ticket.mergedTickets.length > 0 ? (
+            <div className="panel">
+              <h3>Merged Tickets</h3>
+              <div className="merge-reference-list">
+                {ticket.mergedTickets.map((mergedTicket) => (
+                  <Link className="merge-reference-card" href={`/tickets/${mergedTicket.id}`} key={mergedTicket.id}>
+                    <strong>{mergedTicket.ticketNumber}</strong>
+                    <span>{mergedTicket.subject}</span>
+                    <span className="muted">{mergedTicket.mergedAt ? new Date(mergedTicket.mergedAt).toLocaleString() : "Merged"}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <form className="panel form" onSubmit={saveAssignment}>
             <h3>Assignment</h3>
             <label className="field">
@@ -295,6 +461,63 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
           </div>
         </aside>
       </section>
+      {showMergeModal ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="ticket-detail-merge-modal-title">
+            <div className="modal-header">
+              <div>
+                <h2 id="ticket-detail-merge-modal-title">Merge Into {ticket.ticketNumber}</h2>
+                <p className="muted">Search tickets by number, subject, client, domain, or requester. Selected tickets will be moved into this ticket.</p>
+              </div>
+              <button className="icon-button" type="button" onClick={() => setShowMergeModal(false)} aria-label="Close merge dialog">
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+            <label className="input-with-icon merge-search-field">
+              <Search size={16} aria-hidden="true" />
+              <input value={mergeSearch} onChange={(event) => setMergeSearch(event.target.value)} placeholder="Search tickets to merge" />
+            </label>
+            <div className="merge-candidate-list">
+              {mergeSearchBusy ? <p className="muted">Searching tickets...</p> : null}
+              {!mergeSearchBusy && mergeSearch.trim().length >= 2 && mergeCandidates.length === 0 ? <p className="muted">No merge candidates found.</p> : null}
+              {!mergeSearchBusy && mergeSearch.trim().length < 2 ? <p className="muted">Type at least 2 characters to search.</p> : null}
+              {mergeCandidates.map((candidate) => (
+                <label className="merge-candidate-card" key={candidate.id}>
+                  <input type="checkbox" checked={selectedMergeIds.includes(candidate.id)} onChange={() => toggleMergeCandidate(candidate.id)} />
+                  <span className="merge-candidate-main">
+                    <strong>{candidate.ticketNumber} - {candidate.subject}</strong>
+                    <span>{candidate.client?.name ?? "Unassigned"} - {candidate.contact ? `${candidate.contact.firstName} ${candidate.contact.lastName}` : candidate.senderEmail ?? "Unknown requester"}</span>
+                    <span className="muted">{label(candidate.status ?? "OPEN")} - {candidate._count.messages} messages - {candidate._count.attachments} files</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            {selectedMergeTickets.length > 0 ? (
+              <div className="merge-selection-summary">
+                <strong>{selectedMergeTickets.length} selected</strong>
+                <span>{selectedMergeTickets.map((candidate) => candidate.ticketNumber).join(", ")}</span>
+              </div>
+            ) : null}
+            <label className="field">
+              <span>Merge reason</span>
+              <textarea className="input" rows={3} value={mergeReason} onChange={(event) => setMergeReason(event.target.value)} placeholder="Optional internal note" />
+            </label>
+            <label className="checkbox-card">
+              <input type="checkbox" checked={mergeAllowDifferentClient} onChange={(event) => setMergeAllowDifferentClient(event.target.checked)} />
+              <span>Allow merge if selected tickets belong to different clients</span>
+            </label>
+            <div className="modal-actions">
+              <button className="button secondary" type="button" onClick={() => setShowMergeModal(false)} disabled={mergeBusy}>
+                Cancel
+              </button>
+              <button className="button" type="button" onClick={mergeTickets} disabled={mergeBusy || selectedMergeIds.length === 0}>
+                <GitMerge size={16} aria-hidden="true" />
+                <span>{mergeBusy ? "Merging..." : "Merge Tickets"}</span>
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </>
   );
 }

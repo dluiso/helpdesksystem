@@ -491,6 +491,20 @@ select {
   font-weight: 700;
 }
 
+.info-banner {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid #b7cef7;
+  border-radius: var(--radius);
+  color: #24416f;
+  background: #eef5ff;
+  font-weight: 700;
+}
+
+.info-banner a {
+  color: var(--brand);
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;
@@ -1337,6 +1351,17 @@ select {
   margin-top: 4px;
 }
 
+.checkbox-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfcfe;
+  font-weight: 650;
+}
+
 .input-with-icon {
   min-height: 44px;
   border: 1px solid var(--line);
@@ -1416,7 +1441,7 @@ select {
 
 .bulk-actions-grid {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr) auto auto;
+  grid-template-columns: minmax(160px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr) auto auto auto;
   gap: 10px;
   align-items: center;
 }
@@ -1704,6 +1729,11 @@ select {
   align-content: start;
 }
 
+.ticket-tools-panel {
+  display: grid;
+  gap: 10px;
+}
+
 .ticket-summary-panel {
   display: grid;
   gap: 12px;
@@ -1756,6 +1786,74 @@ select {
 .message.internal {
   border-color: #f2c36b;
   background: #fff8ea;
+}
+
+.merge-origin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 5px 8px;
+  border: 1px solid #b7cef7;
+  border-radius: 999px;
+  color: #24416f;
+  background: #eef5ff;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.merge-reference-list,
+.merge-ticket-list,
+.merge-candidate-list {
+  display: grid;
+  gap: 8px;
+}
+
+.merge-reference-card,
+.merge-ticket-option,
+.merge-candidate-card {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfcfe;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.merge-ticket-option > span,
+.merge-candidate-main,
+.merge-reference-card {
+  min-width: 0;
+}
+
+.merge-ticket-option > span,
+.merge-candidate-main,
+.merge-reference-card {
+  display: grid;
+  gap: 3px;
+}
+
+.merge-reference-card:hover,
+.merge-ticket-option:hover,
+.merge-candidate-card:hover {
+  border-color: #b7cef7;
+  background: #f5f8ff;
+}
+
+.merge-search-field,
+.merge-selection-summary {
+  margin-bottom: 12px;
+}
+
+.merge-selection-summary {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  color: #24416f;
+  background: #eef5ff;
 }
 
 .editor {

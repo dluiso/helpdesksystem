@@ -13,6 +13,7 @@ import { BulkUpdateTicketsDto } from "./dto/bulk-update-tickets.dto";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
 import { CreateTicketMessageDto } from "./dto/create-ticket-message.dto";
 import { ListTicketsQueryDto } from "./dto/list-tickets-query.dto";
+import { MergeTicketsDto } from "./dto/merge-tickets.dto";
 import { UpdateTicketAssignmentDto } from "./dto/update-ticket-assignment.dto";
 
 export interface CreateInboundEmailTicketInput {
@@ -90,6 +91,23 @@ export class TicketsService {
           },
           assignedGroup: true,
           assignedTeam: true,
+          mergedIntoTicket: {
+            select: {
+              id: true,
+              ticketNumber: true,
+              subject: true
+            }
+          },
+          mergedTickets: {
+            select: {
+              id: true,
+              ticketNumber: true,
+              subject: true,
+              status: true,
+              mergedAt: true
+            },
+            orderBy: { mergedAt: "desc" }
+          },
           _count: {
             select: {
               messages: true,
@@ -130,9 +148,26 @@ export class TicketsService {
             email: true
           }
         },
-        assignedGroup: true,
-        assignedTeam: true,
-        assignees: {
+          assignedGroup: true,
+          assignedTeam: true,
+        mergedIntoTicket: {
+          select: {
+            id: true,
+            ticketNumber: true,
+            subject: true
+          }
+        },
+        mergedTickets: {
+          select: {
+            id: true,
+            ticketNumber: true,
+            subject: true,
+            status: true,
+            mergedAt: true
+          },
+          orderBy: { mergedAt: "desc" }
+        },
+          assignees: {
           include: {
             user: { select: { id: true, firstName: true, lastName: true, email: true } }
           },
@@ -196,9 +231,26 @@ export class TicketsService {
               email: true
             }
           },
-          assignedGroup: true,
-          assignedTeam: true,
-          assignees: {
+        assignedGroup: true,
+        assignedTeam: true,
+          mergedIntoTicket: {
+            select: {
+              id: true,
+              ticketNumber: true,
+              subject: true
+            }
+          },
+          mergedTickets: {
+            select: {
+              id: true,
+              ticketNumber: true,
+              subject: true,
+              status: true,
+              mergedAt: true
+            },
+            orderBy: { mergedAt: "desc" }
+          },
+        assignees: {
             include: {
               user: { select: { id: true, firstName: true, lastName: true, email: true } }
             },
@@ -291,14 +343,28 @@ export class TicketsService {
     const existingTicket = await this.findExistingTicketForInbound(input);
 
     if (existingTicket) {
-      const shouldReopen = this.shouldReopenFromInbound(existingTicket.status);
-      const shouldMarkOpen = !shouldReopen && (await this.shouldMarkExistingTicketOpenFromInbound(existingTicket.id, existingTicket.status));
+      const targetTicket =
+        existingTicket.status === TicketStatus.MERGED && existingTicket.mergedIntoTicketId
+          ? await this.prisma.ticket.findFirst({
+              where: {
+                id: existingTicket.mergedIntoTicketId,
+                organizationId: input.organizationId,
+                deletedAt: null
+              }
+            })
+          : existingTicket;
+      if (!targetTicket) {
+        throw new NotFoundException("Merged primary ticket was not found.");
+      }
+      const mergeOrigin = targetTicket.id === existingTicket.id ? null : existingTicket;
+      const shouldReopen = this.shouldReopenFromInbound(targetTicket.status);
+      const shouldMarkOpen = !shouldReopen && (await this.shouldMarkExistingTicketOpenFromInbound(targetTicket.id, targetTicket.status));
       const result = await this.prisma.$transaction(async (tx) => {
         const ticket = await tx.ticket.update({
-          where: { id: existingTicket.id },
+          where: { id: targetTicket.id },
           data: {
-            ...(existingTicket.clientId ? {} : { clientId: requester?.client.id ?? null }),
-            ...(existingTicket.contactId ? {} : { contactId: requester?.contact?.id ?? null }),
+            ...(targetTicket.clientId ? {} : { clientId: requester?.client.id ?? null }),
+            ...(targetTicket.contactId ? {} : { contactId: requester?.contact?.id ?? null }),
             lastCustomerResponseAt: new Date(),
             ...(shouldReopen
               ? {
@@ -328,6 +394,9 @@ export class TicketsService {
             emailConversationId: input.emailConversationId ?? null,
             inReplyTo: input.inReplyTo ?? null,
             emailReferences: input.references ?? null,
+            mergedFromTicketId: mergeOrigin?.id ?? null,
+            mergedFromTicketNumber: mergeOrigin?.ticketNumber ?? null,
+            mergedFromTicketSubject: mergeOrigin?.subject ?? null,
             hasAttachments: input.hasAttachments ?? false
           }
         });
@@ -346,7 +415,8 @@ export class TicketsService {
           senderEmail: input.senderEmail,
           emailMessageId: input.emailMessageId ?? null,
           emailInternetMessageId: input.emailInternetMessageId ?? null,
-          emailConversationId: input.emailConversationId ?? null
+          emailConversationId: input.emailConversationId ?? null,
+          matchedMergedTicketNumber: mergeOrigin?.ticketNumber ?? null
         }
       });
 
@@ -445,6 +515,10 @@ export class TicketsService {
   }
 
   async updateAssignment(ticketId: string, input: UpdateTicketAssignmentDto, user: AuthenticatedUser) {
+    if (input.status === TicketStatus.MERGED) {
+      throw new BadRequestException("Use the merge workflow to mark tickets as merged.");
+    }
+
     await this.ensureTicketExists(ticketId, user);
     const assignedUserIds = this.normalizeAssignedUserIds(input.assignedUserIds ?? (input.assignedUserId ? [input.assignedUserId] : []));
     const primaryAssignedUserId = assignedUserIds[0] ?? input.assignedUserId ?? null;
@@ -495,6 +569,10 @@ export class TicketsService {
     const ticketIds = [...new Set(input.ticketIds)];
     if (ticketIds.length === 0) {
       return { updated: 0 };
+    }
+
+    if (input.status === TicketStatus.MERGED) {
+      throw new BadRequestException("Use the merge workflow to mark tickets as merged.");
     }
 
     const existingTickets = await this.prisma.ticket.findMany({
@@ -601,6 +679,208 @@ export class TicketsService {
     return { restored: result.count };
   }
 
+  async mergeCandidates(primaryTicketId: string, user: AuthenticatedUser, search?: string) {
+    const primary = await this.ensureTicketExists(primaryTicketId, user);
+    const trimmedSearch = search?.trim();
+    if (!trimmedSearch) {
+      return [];
+    }
+
+    return this.prisma.ticket.findMany({
+      where: {
+        organizationId: user.organizationId,
+        deletedAt: null,
+        id: { not: primary.id },
+        status: { not: TicketStatus.MERGED },
+        OR: [
+          { ticketNumber: { contains: trimmedSearch, mode: "insensitive" } },
+          { subject: { contains: trimmedSearch, mode: "insensitive" } },
+          { senderEmail: { contains: trimmedSearch, mode: "insensitive" } },
+          { senderDomain: { contains: trimmedSearch, mode: "insensitive" } },
+          { client: { name: { contains: trimmedSearch, mode: "insensitive" } } },
+          { contact: { email: { contains: trimmedSearch, mode: "insensitive" } } },
+          { contact: { firstName: { contains: trimmedSearch, mode: "insensitive" } } },
+          { contact: { lastName: { contains: trimmedSearch, mode: "insensitive" } } }
+        ]
+      },
+      select: {
+        id: true,
+        ticketNumber: true,
+        subject: true,
+        status: true,
+        priority: true,
+        createdAt: true,
+        clientId: true,
+        client: { select: { id: true, name: true } },
+        contact: { select: { id: true, firstName: true, lastName: true, email: true } },
+        senderEmail: true,
+        _count: { select: { messages: true, attachments: true } }
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 12
+    });
+  }
+
+  async mergeTickets(primaryTicketId: string, input: MergeTicketsDto, user: AuthenticatedUser) {
+    const sourceTicketIds = [...new Set(input.sourceTicketIds)].filter((id) => id !== primaryTicketId);
+    if (sourceTicketIds.length === 0) {
+      throw new BadRequestException("Choose at least one ticket to merge.");
+    }
+
+    const [primary, sourceTickets] = await Promise.all([
+      this.prisma.ticket.findFirst({
+        where: { id: primaryTicketId, organizationId: user.organizationId, deletedAt: null },
+        select: { id: true, ticketNumber: true, subject: true, clientId: true, status: true }
+      }),
+      this.prisma.ticket.findMany({
+        where: { id: { in: sourceTicketIds }, organizationId: user.organizationId, deletedAt: null },
+        select: {
+          id: true,
+          ticketNumber: true,
+          subject: true,
+          clientId: true,
+          status: true,
+          mergedIntoTicketId: true
+        }
+      })
+    ]);
+
+    if (!primary) {
+      throw new NotFoundException("Primary ticket was not found.");
+    }
+
+    if (primary.status === TicketStatus.MERGED) {
+      throw new BadRequestException("A merged ticket cannot be used as the primary ticket.");
+    }
+
+    if (sourceTickets.length !== sourceTicketIds.length) {
+      throw new BadRequestException("One or more selected tickets are not available.");
+    }
+
+    const alreadyMerged = sourceTickets.find((ticket) => ticket.status === TicketStatus.MERGED || ticket.mergedIntoTicketId);
+    if (alreadyMerged) {
+      throw new BadRequestException(`${alreadyMerged.ticketNumber} is already merged into another ticket.`);
+    }
+
+    const differentClient = sourceTickets.find((ticket) => ticket.clientId !== primary.clientId);
+    if (differentClient && !input.allowDifferentClient) {
+      throw new BadRequestException("One or more selected tickets belong to a different client. Confirm cross-client merge to continue.");
+    }
+
+    const reason = input.reason?.trim() || null;
+    const now = new Date();
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.ticketMerge.create({
+        data: {
+          organizationId: user.organizationId,
+          primaryTicketId: primary.id,
+          mergedTicketIds: sourceTickets.map((ticket) => ticket.id),
+          performedByUserId: user.id,
+          reason
+        }
+      });
+
+      const watcherRows = await tx.ticketWatcher.findMany({
+        where: { ticketId: { in: sourceTicketIds } },
+        select: { userId: true, reason: true }
+      });
+
+      for (const watcher of watcherRows) {
+        await tx.ticketWatcher.upsert({
+          where: {
+            ticketId_userId: {
+              ticketId: primary.id,
+              userId: watcher.userId
+            }
+          },
+          update: {},
+          create: {
+            ticketId: primary.id,
+            userId: watcher.userId,
+            createdById: user.id,
+            reason: watcher.reason ?? "Merged ticket watcher"
+          }
+        });
+      }
+
+      for (const sourceTicket of sourceTickets) {
+        await tx.ticketMessage.updateMany({
+          where: { ticketId: sourceTicket.id },
+          data: {
+            ticketId: primary.id,
+            mergedFromTicketId: sourceTicket.id,
+            mergedFromTicketNumber: sourceTicket.ticketNumber,
+            mergedFromTicketSubject: sourceTicket.subject
+          }
+        });
+
+        await tx.ticketAttachment.updateMany({
+          where: { ticketId: sourceTicket.id },
+          data: { ticketId: primary.id }
+        });
+
+        await tx.ticket.update({
+          where: { id: sourceTicket.id },
+          data: {
+            status: TicketStatus.MERGED,
+            mergedIntoTicketId: primary.id,
+            mergedAt: now,
+            mergedByUserId: user.id,
+            mergeReason: reason,
+            closedAt: now,
+            updatedAt: now
+          }
+        });
+      }
+
+      const summaryText = [
+        `Tickets merged into ${primary.ticketNumber}: ${sourceTickets.map((ticket) => ticket.ticketNumber).join(", ")}.`,
+        reason ? `Reason: ${reason}` : null
+      ]
+        .filter(Boolean)
+        .join("\n");
+      const summaryHtml = this.htmlSanitizer.sanitize(
+        `<p><strong>Tickets merged into ${this.escapeHtml(primary.ticketNumber)}:</strong> ${this.escapeHtml(sourceTickets.map((ticket) => ticket.ticketNumber).join(", "))}</p>${
+          reason ? `<p><strong>Reason:</strong> ${this.escapeHtml(reason)}</p>` : ""
+        }`
+      );
+
+      await tx.ticketMessage.create({
+        data: {
+          ticketId: primary.id,
+          authorUserId: user.id,
+          direction: MessageDirection.INTERNAL,
+          visibility: MessageVisibility.INTERNAL,
+          bodyText: summaryText,
+          bodyHtml: summaryHtml,
+          sanitizedBodyHtml: summaryHtml,
+          hasAttachments: false
+        }
+      });
+
+      await tx.ticket.update({
+        where: { id: primary.id },
+        data: { updatedAt: now }
+      });
+    });
+
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "Ticket",
+      entityId: primary.id,
+      action: "ticket.merged",
+      metadata: {
+        primaryTicketNumber: primary.ticketNumber,
+        mergedTicketIds: sourceTickets.map((ticket) => ticket.id),
+        mergedTicketNumbers: sourceTickets.map((ticket) => ticket.ticketNumber),
+        reason
+      }
+    });
+
+    return this.getById(primary.id, user);
+  }
+
   async updateWatchers(ticketId: string, userIds: string[], user: AuthenticatedUser) {
     await this.ensureTicketExists(ticketId, user);
     const existing = await this.prisma.ticketWatcher.findMany({
@@ -675,6 +955,10 @@ export class TicketsService {
 
     if (!ticket) {
       throw new NotFoundException("Ticket was not found.");
+    }
+
+    if (ticket.status === TicketStatus.MERGED) {
+      throw new BadRequestException("This ticket was merged into another ticket. Reply from the primary ticket.");
     }
 
     const isInternal = input.visibility === "internal";
@@ -1207,6 +1491,8 @@ export class TicketsService {
 
     if (query.status) {
       filters.push({ status: query.status });
+    } else {
+      filters.push({ status: { not: TicketStatus.MERGED } });
     }
 
     if (query.priority) {

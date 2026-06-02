@@ -43,6 +43,7 @@ export const INITIAL_PERMISSIONS = [
   "tickets.reply",
   "tickets.close",
   "tickets.reopen",
+  "tickets.merge",
   "tickets.delete",
   "ticket_messages.view",
   "ticket_messages.create_internal",
