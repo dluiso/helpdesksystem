@@ -12,6 +12,7 @@ import {
   Save,
   Trash2,
   UserPlus,
+  Users,
   X
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
@@ -46,6 +47,9 @@ interface Client {
   notes: string | null;
   domains: ClientDomain[];
   contacts: Contact[];
+  _count?: {
+    contacts: number;
+  };
 }
 
 interface ClientFormState {
@@ -125,16 +129,24 @@ function activeDomainLabels(client: Client): string {
   return activeDomains.length ? activeDomains.join(", ") : "No routing domains";
 }
 
+function requesterCount(client: Client): number {
+  return client._count?.contacts ?? client.contacts.length;
+}
+
 export function ClientsWorkspace() {
   const [clients, setClients] = useState<Client[]>([]);
+  const [selectedClientContacts, setSelectedClientContacts] = useState<Contact[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [clientForm, setClientForm] = useState<ClientFormState>(emptyClientForm);
   const [contactForm, setContactForm] = useState<ContactFormState>(emptyContactForm);
   const [clientModalMode, setClientModalMode] = useState<"create" | "edit" | null>(null);
   const [contactModalMode, setContactModalMode] = useState<"create" | "edit" | null>(null);
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
+  const [activeClientTab, setActiveClientTab] = useState<"overview" | "domains" | "requesters">("overview");
+  const [requesterSearch, setRequesterSearch] = useState("");
   const [domain, setDomain] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadingContacts, setLoadingContacts] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -142,6 +154,29 @@ export function ClientsWorkspace() {
     () => clients.find((client) => client.id === selectedClientId) ?? clients[0] ?? null,
     [clients, selectedClientId]
   );
+  const selectedClientRequesterCount = selectedClientContacts.length || (selectedClient ? requesterCount(selectedClient) : 0);
+  const filteredRequesters = useMemo(() => {
+    const query = requesterSearch.trim().toLowerCase();
+    if (!query) {
+      return selectedClientContacts;
+    }
+
+    return selectedClientContacts.filter((contact) =>
+      [
+        contact.firstName,
+        contact.lastName,
+        contact.email,
+        contact.phone ?? "",
+        contact.title ?? "",
+        contact.isAuthorizedRequester ? "authorized" : "",
+        contact.isTechnicalContact ? "technical" : "",
+        contact.isBillingContact ? "billing" : ""
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(query)
+    );
+  }, [requesterSearch, selectedClientContacts]);
 
   useEffect(() => {
     void loadClients();
@@ -151,6 +186,12 @@ export function ClientsWorkspace() {
     setDomain("");
     setEditingContactId(null);
     setContactForm(emptyContactForm);
+    setRequesterSearch("");
+    if (selectedClient?.id) {
+      void loadClientContacts(selectedClient.id);
+    } else {
+      setSelectedClientContacts([]);
+    }
   }, [selectedClient?.id]);
 
   async function loadClients() {
@@ -164,6 +205,20 @@ export function ClientsWorkspace() {
       setError("Unable to load clients.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadClientContacts(clientId: string) {
+    setLoadingContacts(true);
+    setError(null);
+    try {
+      const contacts = await apiFetch<Contact[]>(`/clients/${clientId}/contacts`);
+      setSelectedClientContacts(contacts);
+    } catch {
+      setError("Unable to load requesters.");
+      setSelectedClientContacts([]);
+    } finally {
+      setLoadingContacts(false);
     }
   }
 
@@ -327,6 +382,7 @@ export function ClientsWorkspace() {
       closeContactModal();
       await loadClients();
       setSelectedClientId(selectedClient.id);
+      await loadClientContacts(selectedClient.id);
     } catch {
       setError("Unable to save contact. Check required fields and duplicate email.");
     } finally {
@@ -342,6 +398,9 @@ export function ClientsWorkspace() {
       await apiFetch(`/contacts/${contact.id}`, { method: "DELETE" });
       await loadClients();
       setSelectedClientId(selectedClient?.id ?? null);
+      if (selectedClient?.id) {
+        await loadClientContacts(selectedClient.id);
+      }
     } catch {
       setError("Unable to delete contact.");
     } finally {
@@ -419,7 +478,7 @@ export function ClientsWorkspace() {
                         <span>{activeDomainLabels(client)}</span>
                       </div>
                     </td>
-                    <td>{client.contacts.length}</td>
+                    <td>{requesterCount(client)}</td>
                     <td>
                       <span className={`status-pill ${client.status === "ACTIVE" ? "success" : "muted-pill"}`}>
                         {client.status === "ACTIVE" ? "Active" : "Inactive"}
@@ -457,14 +516,14 @@ export function ClientsWorkspace() {
                   </div>
                 </div>
                 <div className="client-detail-grid">
-                  <div>
+                  <button type="button" onClick={() => setActiveClientTab("domains")}>
                     <span>Routing domains</span>
                     <strong>{selectedClient.domains.filter((item) => item.isActive).length}</strong>
-                  </div>
-                  <div>
+                  </button>
+                  <button type="button" onClick={() => setActiveClientTab("requesters")}>
                     <span>Requesters</span>
-                    <strong>{selectedClient.contacts.length}</strong>
-                  </div>
+                    <strong>{selectedClientRequesterCount}</strong>
+                  </button>
                   <div>
                     <span>Main domain</span>
                     <strong>{selectedClient.domains.find((item) => item.isActive)?.domain ?? "Not set"}</strong>
@@ -481,70 +540,164 @@ export function ClientsWorkspace() {
                 </button>
               </section>
 
-              <section className="panel">
-                <div className="section-heading">
-                  <h2>Domains</h2>
-                  <Globe2 size={18} aria-hidden="true" />
-                </div>
-                <form className="inline-form" onSubmit={addDomain}>
-                  <input className="input" placeholder="example.com" value={domain} onChange={(event) => setDomain(event.target.value)} required />
-                  <button className="button" type="submit" disabled={saving}>
-                    <Plus size={16} aria-hidden="true" />
-                    <span>Add</span>
+              <section className="panel client-detail-panel">
+                <div className="client-detail-tabs" role="tablist" aria-label="Client detail sections">
+                  <button className={activeClientTab === "overview" ? "active" : ""} type="button" onClick={() => setActiveClientTab("overview")}>
+                    <Building2 size={16} aria-hidden="true" />
+                    <span>Overview</span>
                   </button>
-                </form>
-                <div className="stack-list compact">
-                  {selectedClient.domains.length === 0 ? <p className="muted">No domains added.</p> : null}
-                  {selectedClient.domains.map((clientDomain) => (
-                    <div className="stack-row compact" key={clientDomain.id}>
-                      <div>
-                        <strong>{clientDomain.domain}</strong>
-                        <span className="muted">
-                          {clientDomain.isActive ? "Active" : "Inactive"} - {clientDomain.isVerified ? "Verified" : "Unverified"}
-                        </span>
-                      </div>
-                      <div className="row-actions">
-                        <button className="icon-button" type="button" title="Toggle verification" aria-label="Toggle verification" onClick={() => updateDomain(clientDomain, { isVerified: !clientDomain.isVerified })}>
-                          <CheckCircle2 size={16} aria-hidden="true" />
-                        </button>
-                        <button className="icon-button danger-icon" type="button" title="Deactivate domain" aria-label="Deactivate domain" onClick={() => deleteDomain(clientDomain)}>
-                          <Trash2 size={16} aria-hidden="true" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                  <button className={activeClientTab === "domains" ? "active" : ""} type="button" onClick={() => setActiveClientTab("domains")}>
+                    <Globe2 size={16} aria-hidden="true" />
+                    <span>Domains</span>
+                  </button>
+                  <button className={activeClientTab === "requesters" ? "active" : ""} type="button" onClick={() => setActiveClientTab("requesters")}>
+                    <Users size={16} aria-hidden="true" />
+                    <span>Requesters</span>
+                  </button>
                 </div>
-              </section>
 
-              <section className="panel">
-                <div className="section-heading">
-                  <h2>Requesters</h2>
-                  <button className="button secondary" type="button" onClick={openCreateContact}>
-                    <UserPlus size={16} aria-hidden="true" />
-                    <span>Add</span>
-                  </button>
-                </div>
-                <div className="stack-list compact">
-                  {selectedClient.contacts.length === 0 ? <p className="muted">No requesters added.</p> : null}
-                  {selectedClient.contacts.map((contact) => (
-                    <div className="stack-row compact" key={contact.id}>
+                {activeClientTab === "overview" ? (
+                  <div className="client-overview-grid">
+                    <section>
+                      <h3>Routing Summary</h3>
+                      <p className="muted">{activeDomainLabels(selectedClient)}</p>
+                      <button className="button secondary" type="button" onClick={() => setActiveClientTab("domains")}>
+                        <Globe2 size={16} aria-hidden="true" />
+                        <span>Manage Domains</span>
+                      </button>
+                    </section>
+                    <section>
+                      <h3>Requester Directory</h3>
+                      <p className="muted">
+                        {selectedClientRequesterCount} requester{selectedClientRequesterCount === 1 ? "" : "s"} assigned to this institution.
+                      </p>
+                      <button className="button secondary" type="button" onClick={() => setActiveClientTab("requesters")}>
+                        <Users size={16} aria-hidden="true" />
+                        <span>View Requesters</span>
+                      </button>
+                    </section>
+                  </div>
+                ) : null}
+
+                {activeClientTab === "domains" ? (
+                  <div className="client-tab-content">
+                    <div className="section-heading">
                       <div>
-                        <strong>
-                          {contact.firstName} {contact.lastName}
-                        </strong>
-                        <span className="muted">{contact.email}</span>
+                        <h2>Domains</h2>
+                        <p className="muted">Domains used to route inbound email requesters to this institution.</p>
                       </div>
-                      <div className="row-actions">
-                        <button className="icon-button" type="button" title="Edit requester" aria-label="Edit requester" onClick={() => openEditContact(contact)}>
-                          <Edit3 size={16} aria-hidden="true" />
-                        </button>
-                        <button className="icon-button danger-icon" type="button" title="Delete requester" aria-label="Delete requester" onClick={() => deleteContact(contact)}>
-                          <Trash2 size={16} aria-hidden="true" />
-                        </button>
-                      </div>
+                      <Globe2 size={18} aria-hidden="true" />
                     </div>
-                  ))}
-                </div>
+                    <form className="inline-form" onSubmit={addDomain}>
+                      <input className="input" placeholder="example.com" value={domain} onChange={(event) => setDomain(event.target.value)} required />
+                      <button className="button" type="submit" disabled={saving}>
+                        <Plus size={16} aria-hidden="true" />
+                        <span>Add Domain</span>
+                      </button>
+                    </form>
+                    <div className="stack-list compact">
+                      {selectedClient.domains.length === 0 ? <p className="muted">No domains added.</p> : null}
+                      {selectedClient.domains.map((clientDomain) => (
+                        <div className="stack-row compact" key={clientDomain.id}>
+                          <div>
+                            <strong>{clientDomain.domain}</strong>
+                            <span className="muted">
+                              {clientDomain.isActive ? "Active" : "Inactive"} - {clientDomain.isVerified ? "Verified" : "Unverified"}
+                            </span>
+                          </div>
+                          <div className="row-actions">
+                            <button className="icon-button" type="button" title="Toggle verification" aria-label="Toggle verification" onClick={() => updateDomain(clientDomain, { isVerified: !clientDomain.isVerified })}>
+                              <CheckCircle2 size={16} aria-hidden="true" />
+                            </button>
+                            <button className="icon-button danger-icon" type="button" title="Deactivate domain" aria-label="Deactivate domain" onClick={() => deleteDomain(clientDomain)}>
+                              <Trash2 size={16} aria-hidden="true" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeClientTab === "requesters" ? (
+                  <div className="client-tab-content">
+                    <div className="section-heading">
+                      <div>
+                        <h2>Requesters</h2>
+                        <p className="muted">Full requester list for {selectedClient.name}.</p>
+                      </div>
+                      <button className="button secondary" type="button" onClick={openCreateContact}>
+                        <UserPlus size={16} aria-hidden="true" />
+                        <span>Add Requester</span>
+                      </button>
+                    </div>
+                    <div className="client-requester-toolbar">
+                      <div className="input-with-icon">
+                        <Users size={16} aria-hidden="true" />
+                        <input value={requesterSearch} onChange={(event) => setRequesterSearch(event.target.value)} placeholder="Search requesters by name, email, phone, title, or role" />
+                      </div>
+                      <span className="status-pill">
+                        {filteredRequesters.length} of {selectedClientRequesterCount}
+                      </span>
+                    </div>
+                    <div className="client-table-wrap requesters-table-wrap">
+                      <table className="client-table requesters-table">
+                        <thead>
+                          <tr>
+                            <th>Requester</th>
+                            <th>Email</th>
+                            <th>Phone</th>
+                            <th>Title</th>
+                            <th>Roles</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {loadingContacts ? (
+                            <tr>
+                              <td colSpan={6}>Loading requesters...</td>
+                            </tr>
+                          ) : null}
+                          {!loadingContacts && filteredRequesters.length === 0 ? (
+                            <tr>
+                              <td colSpan={6}>{requesterSearch ? "No requesters match the current search." : "No requesters added."}</td>
+                            </tr>
+                          ) : null}
+                          {filteredRequesters.map((contact) => (
+                            <tr key={contact.id}>
+                              <td>
+                                <strong>
+                                  {contact.firstName} {contact.lastName}
+                                </strong>
+                              </td>
+                              <td>{contact.email}</td>
+                              <td>{contact.phone ?? "Not set"}</td>
+                              <td>{contact.title ?? "Not set"}</td>
+                              <td>
+                                <div className="requester-role-list">
+                                  {contact.isAuthorizedRequester ? <span className="status-pill success">Authorized</span> : null}
+                                  {contact.isTechnicalContact ? <span className="status-pill">Technical</span> : null}
+                                  {contact.isBillingContact ? <span className="status-pill muted-pill">Billing</span> : null}
+                                  {!contact.isAuthorizedRequester && !contact.isTechnicalContact && !contact.isBillingContact ? <span className="muted">None</span> : null}
+                                </div>
+                              </td>
+                              <td>
+                                <div className="row-actions">
+                                  <button className="icon-button" type="button" title="Edit requester" aria-label="Edit requester" onClick={() => openEditContact(contact)}>
+                                    <Edit3 size={16} aria-hidden="true" />
+                                  </button>
+                                  <button className="icon-button danger-icon" type="button" title="Delete requester" aria-label="Delete requester" onClick={() => deleteContact(contact)}>
+                                    <Trash2 size={16} aria-hidden="true" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : null}
               </section>
             </>
           ) : (

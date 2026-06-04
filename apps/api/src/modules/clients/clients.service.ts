@@ -26,6 +26,11 @@ export class ClientsService {
           where: { deletedAt: null },
           take: 5,
           orderBy: { createdAt: "desc" }
+        },
+        _count: {
+          select: {
+            contacts: { where: { deletedAt: null } }
+          }
         }
       },
       orderBy: { name: "asc" },

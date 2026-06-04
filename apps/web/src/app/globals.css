@@ -547,7 +547,7 @@ select {
 
 .clients-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
+  grid-template-columns: minmax(360px, 420px) minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -693,12 +693,24 @@ select {
   gap: 10px;
 }
 
-.client-detail-grid div {
+.client-detail-grid div,
+.client-detail-grid button {
   min-width: 0;
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: #fbfcfe;
+}
+
+.client-detail-grid button {
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.client-detail-grid button:hover {
+  border-color: var(--brand-primary);
+  background: #f4f7ff;
 }
 
 .client-detail-grid span,
@@ -728,6 +740,87 @@ select {
   background: #fbfcfe;
   color: var(--text-muted);
   line-height: 1.5;
+}
+
+.client-detail-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.client-detail-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.client-detail-tabs button {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  color: var(--text-muted);
+  background: #ffffff;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.client-detail-tabs button.active,
+.client-detail-tabs button:hover {
+  border-color: var(--brand-primary);
+  color: var(--brand-primary);
+  background: #f4f7ff;
+}
+
+.client-tab-content {
+  display: grid;
+  gap: 14px;
+}
+
+.client-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.client-overview-grid section {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfcfe;
+}
+
+.client-overview-grid h3,
+.client-overview-grid p {
+  margin: 0;
+}
+
+.client-requester-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.requesters-table-wrap {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.requesters-table {
+  min-width: 860px;
+}
+
+.requester-role-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .full-width-button {
@@ -2089,6 +2182,11 @@ select {
   }
 
   .client-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .client-overview-grid,
+  .client-requester-toolbar {
     grid-template-columns: 1fr;
   }
 
