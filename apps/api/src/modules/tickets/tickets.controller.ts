@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { AuthenticatedUser } from "../auth/auth.types";
@@ -12,6 +12,7 @@ import { ListTicketsQueryDto } from "./dto/list-tickets-query.dto";
 import { MergeTicketsDto } from "./dto/merge-tickets.dto";
 import { UpdateTicketAssignmentDto } from "./dto/update-ticket-assignment.dto";
 import { UpdateTicketWatchersDto } from "./dto/update-ticket-watchers.dto";
+import { UpsertTicketViewDto } from "./dto/upsert-ticket-view.dto";
 import { TicketsService } from "./tickets.service";
 
 @Controller("tickets")
@@ -29,6 +30,30 @@ export class TicketsController {
   @RequirePermissions("tickets.create")
   create(@Body() body: CreateTicketDto, @CurrentUser() user: AuthenticatedUser) {
     return this.ticketsService.create(body, user);
+  }
+
+  @Get("views")
+  @RequirePermissions("tickets.view")
+  listViews(@CurrentUser() user: AuthenticatedUser) {
+    return this.ticketsService.listViews(user);
+  }
+
+  @Post("views")
+  @RequirePermissions("tickets.view")
+  createView(@Body() body: UpsertTicketViewDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.ticketsService.saveView(body, user);
+  }
+
+  @Patch("views/:viewId")
+  @RequirePermissions("tickets.view")
+  updateView(@Param("viewId") viewId: string, @Body() body: UpsertTicketViewDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.ticketsService.updateView(viewId, body, user);
+  }
+
+  @Delete("views/:viewId")
+  @RequirePermissions("tickets.view")
+  deleteView(@Param("viewId") viewId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.ticketsService.deleteView(viewId, user);
   }
 
   @Patch("bulk")

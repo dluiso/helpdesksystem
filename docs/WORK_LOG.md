@@ -7,3 +7,12 @@
 - Fixed the settings save payload so `New ticket created` preferences are persisted.
 - Expanded ticket notification emails with ticket context and a direct `/tickets/{ticketNumber}` link.
 - Added a Prisma migration for per-channel notification preference columns.
+
+## 2026-06-04 - Tickets workspace productivity updates
+
+- Compact ticket page header with search, saved views, filter toggle, new ticket action, columns, refresh, and recycle bin controls.
+- Moved ticket filters into a collapsible advanced panel while preserving existing query behavior.
+- Made bulk actions conditional on selected tickets and added priority to the bulk update controls.
+- Added manual ticket creation from the ticket list using existing ticket creation and assignment endpoints.
+- Added user-persisted ticket views for filters, sorting, columns, page size, and table density.
+- Added inline specialist assignment from the ticket table using the existing assignment workflow.

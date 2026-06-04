@@ -9,8 +9,10 @@ import {
   ArrowUpDown,
   Eye,
   GitMerge,
+  Plus,
   RefreshCcw,
   RotateCcw,
+  Save,
   Search,
   SlidersHorizontal,
   Trash2,
@@ -51,6 +53,13 @@ interface Client {
   name: string;
 }
 
+interface Contact {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
 interface User {
   id: string;
   firstName: string;
@@ -79,6 +88,7 @@ interface PaginatedTickets {
 
 type SortBy = "ticketNumber" | "subject" | "status" | "priority" | "source" | "createdAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
+type TableDensity = "compact" | "comfortable";
 type ColumnId =
   | "ticketNumber"
   | "subject"
@@ -101,8 +111,32 @@ interface ColumnDefinition {
   sortable?: SortBy;
 }
 
+interface TicketViewState {
+  search: string;
+  clientId: string;
+  scope: string;
+  assignedTeamId: string;
+  requester: string;
+  status: string;
+  priority: string;
+  sortBy: SortBy;
+  sortDirection: SortDirection;
+  pageSize: "20" | "50" | "100" | "all";
+  density: TableDensity;
+  columnOrder: ColumnId[];
+  visibleColumns: ColumnId[];
+}
+
+interface TicketView {
+  id: string;
+  name: string;
+  state: TicketViewState;
+  isDefault: boolean;
+}
+
 const COLUMN_STORAGE_KEY = "avidity.ticketTable.columns";
 const COLUMN_WIDTH_STORAGE_KEY = "avidity.ticketTable.columnWidths.v2";
+const DENSITY_STORAGE_KEY = "avidity.ticketTable.density.v1";
 const defaultColumnOrder: ColumnId[] = [
   "ticketNumber",
   "subject",
@@ -168,6 +202,15 @@ const defaultColumnWidths: Record<ColumnId, number> = {
 const statuses = ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_THIRD_PARTY", "RESOLVED", "CLOSED", "REOPENED", "CANCELLED", "MERGED"];
 const mutableStatuses = statuses.filter((value) => value !== "MERGED");
 const priorities = ["LOW", "NORMAL", "HIGH", "URGENT", "CRITICAL"];
+const builtInViews: Array<{ id: string; name: string; state: Partial<TicketViewState> }> = [
+  { id: "all", name: "All tickets", state: { scope: "all", status: "", priority: "" } },
+  { id: "new", name: "New tickets", state: { status: "NEW", scope: "all" } },
+  { id: "open", name: "Open tickets", state: { status: "OPEN", scope: "all" } },
+  { id: "closed", name: "Closed tickets", state: { status: "CLOSED", scope: "all" } },
+  { id: "mine", name: "My tickets", state: { scope: "assigned_to_me", status: "" } },
+  { id: "unassigned", name: "Unassigned", state: { scope: "unassigned", status: "" } },
+  { id: "high", name: "High priority", state: { priority: "HIGH", scope: "all" } }
+];
 
 function label(value: string) {
   return value
@@ -209,7 +252,7 @@ function normalizeVisibleColumns(value: unknown): ColumnId[] {
     return defaultVisibleColumns;
   }
 
-  return [...new Set([...saved, ...defaultVisibleColumns])];
+  return [...new Set(saved)];
 }
 
 function normalizeColumnWidths(value: unknown): Record<ColumnId, number> {
@@ -228,11 +271,40 @@ function normalizeColumnWidths(value: unknown): Record<ColumnId, number> {
   return widths;
 }
 
+function normalizeDensity(value: unknown): TableDensity {
+  return value === "compact" || value === "comfortable" ? value : "comfortable";
+}
+
+function normalizeTicketViewState(value: unknown): TicketViewState {
+  const state = value && typeof value === "object" ? (value as Partial<TicketViewState>) : {};
+  const nextSortBy = allColumns.some((column) => column.sortable === state.sortBy) ? state.sortBy as SortBy : "updatedAt";
+  const nextPageSize = state.pageSize === "20" || state.pageSize === "50" || state.pageSize === "100" || state.pageSize === "all" ? state.pageSize : "20";
+
+  return {
+    search: typeof state.search === "string" ? state.search : "",
+    clientId: typeof state.clientId === "string" ? state.clientId : "",
+    scope: typeof state.scope === "string" ? state.scope : "all",
+    assignedTeamId: typeof state.assignedTeamId === "string" ? state.assignedTeamId : "",
+    requester: typeof state.requester === "string" ? state.requester : "",
+    status: typeof state.status === "string" ? state.status : "",
+    priority: typeof state.priority === "string" ? state.priority : "",
+    sortBy: nextSortBy,
+    sortDirection: state.sortDirection === "asc" || state.sortDirection === "desc" ? state.sortDirection : "desc",
+    pageSize: nextPageSize,
+    density: normalizeDensity(state.density),
+    columnOrder: normalizeColumnOrder(state.columnOrder),
+    visibleColumns: normalizeVisibleColumns(state.visibleColumns)
+  };
+}
+
 export function TicketsList() {
   const [tickets, setTickets] = useState<TicketListItem[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [ticketTeams, setTicketTeams] = useState<TicketTeam[]>([]);
+  const [ticketViews, setTicketViews] = useState<TicketView[]>([]);
+  const [selectedViewId, setSelectedViewId] = useState("built-in:all");
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [scope, setScope] = useState("all");
   const [assignedTeamId, setAssignedTeamId] = useState("");
   const [search, setSearch] = useState("");
@@ -246,11 +318,13 @@ export function TicketsList() {
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnId>>(new Set(defaultVisibleColumns));
   const [columnWidths, setColumnWidths] = useState<Record<ColumnId, number>>(defaultColumnWidths);
   const [showColumnsPanel, setShowColumnsPanel] = useState(false);
+  const [density, setDensity] = useState<TableDensity>("comfortable");
   const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([]);
   const [trashMode, setTrashMode] = useState(false);
   const [bulkStatus, setBulkStatus] = useState("");
   const [bulkAssignedUserId, setBulkAssignedUserId] = useState("");
   const [bulkAssignedTeamId, setBulkAssignedTeamId] = useState("");
+  const [bulkPriority, setBulkPriority] = useState("");
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [mergePrimaryTicketId, setMergePrimaryTicketId] = useState("");
   const [mergeReason, setMergeReason] = useState("");
@@ -261,6 +335,18 @@ export function TicketsList() {
   const [totalPages, setTotalPages] = useState(1);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [mergeBusy, setMergeBusy] = useState(false);
+  const [showNewTicketModal, setShowNewTicketModal] = useState(false);
+  const [newTicketClientId, setNewTicketClientId] = useState("");
+  const [newTicketContactId, setNewTicketContactId] = useState("");
+  const [newTicketContacts, setNewTicketContacts] = useState<Contact[]>([]);
+  const [newTicketSubject, setNewTicketSubject] = useState("");
+  const [newTicketDescription, setNewTicketDescription] = useState("");
+  const [newTicketPriority, setNewTicketPriority] = useState("NORMAL");
+  const [newTicketStatus, setNewTicketStatus] = useState("NEW");
+  const [newTicketAssignedUserId, setNewTicketAssignedUserId] = useState("");
+  const [newTicketAssignedTeamId, setNewTicketAssignedTeamId] = useState("");
+  const [newTicketBusy, setNewTicketBusy] = useState(false);
+  const [inlineAssignmentTicketId, setInlineAssignmentTicketId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -346,6 +432,110 @@ export function TicketsList() {
     }
   }
 
+  async function loadTicketViews(applyDefault = false) {
+    try {
+      const viewData = await apiFetch<TicketView[]>("/tickets/views");
+      const normalizedViews = viewData.map((view) => ({ ...view, state: normalizeTicketViewState(view.state) }));
+      setTicketViews(normalizedViews);
+      if (applyDefault) {
+        const defaultView = normalizedViews.find((view) => view.isDefault);
+        if (defaultView) {
+          applyViewState(defaultView.state);
+          setSelectedViewId(`saved:${defaultView.id}`);
+        }
+      }
+    } catch {
+      setTicketViews([]);
+    }
+  }
+
+  function currentViewState(): TicketViewState {
+    return {
+      search,
+      clientId,
+      scope,
+      assignedTeamId,
+      requester,
+      status,
+      priority,
+      sortBy,
+      sortDirection,
+      pageSize,
+      density,
+      columnOrder,
+      visibleColumns: [...visibleColumns]
+    };
+  }
+
+  function applyViewState(nextState: Partial<TicketViewState>) {
+    const normalized = normalizeTicketViewState({ ...currentViewState(), ...nextState });
+    setSearch(normalized.search);
+    setClientId(normalized.clientId);
+    setScope(normalized.scope);
+    setAssignedTeamId(normalized.assignedTeamId);
+    setRequester(normalized.requester);
+    setStatus(normalized.status);
+    setPriority(normalized.priority);
+    setSortBy(normalized.sortBy);
+    setSortDirection(normalized.sortDirection);
+    setPageSize(normalized.pageSize);
+    setDensity(normalized.density);
+    setColumnOrder(normalized.columnOrder);
+    setVisibleColumns(new Set(normalized.visibleColumns));
+    setPage(1);
+  }
+
+  function changeView(value: string) {
+    setSelectedViewId(value);
+    if (value.startsWith("built-in:")) {
+      const builtIn = builtInViews.find((view) => `built-in:${view.id}` === value);
+      if (builtIn) {
+        applyViewState(builtIn.state);
+      }
+      return;
+    }
+
+    const savedView = ticketViews.find((view) => `saved:${view.id}` === value);
+    if (savedView) {
+      applyViewState(savedView.state);
+    }
+  }
+
+  async function saveCurrentView() {
+    const existingView = selectedViewId.startsWith("saved:")
+      ? ticketViews.find((view) => `saved:${view.id}` === selectedViewId)
+      : null;
+    const name = window.prompt("View name", existingView?.name ?? "");
+    if (!name?.trim()) {
+      return;
+    }
+
+    const isDefault = window.confirm("Make this your default ticket view?");
+    const saved = await apiFetch<TicketView>(existingView ? `/tickets/views/${existingView.id}` : "/tickets/views", {
+      method: existingView ? "PATCH" : "POST",
+      body: JSON.stringify({
+        name: name.trim(),
+        state: currentViewState(),
+        isDefault
+      })
+    });
+    await loadTicketViews();
+    setSelectedViewId(`saved:${saved.id}`);
+  }
+
+  async function deleteCurrentView() {
+    const savedView = selectedViewId.startsWith("saved:")
+      ? ticketViews.find((view) => `saved:${view.id}` === selectedViewId)
+      : null;
+    if (!savedView || !window.confirm(`Delete saved view "${savedView.name}"?`)) {
+      return;
+    }
+
+    await apiFetch(`/tickets/views/${savedView.id}`, { method: "DELETE" });
+    setSelectedViewId("built-in:all");
+    await loadTicketViews();
+  }
+
   async function applyBulkUpdate() {
     if (selectedCount === 0) {
       return;
@@ -362,8 +552,11 @@ export function TicketsList() {
     if (bulkAssignedTeamId) {
       body.assignedTeamId = bulkAssignedTeamId;
     }
-    if (!bulkStatus && !bulkAssignedUserId && !bulkAssignedTeamId) {
-      setError("Choose a status, technician, or ticket team before applying changes.");
+    if (bulkPriority) {
+      body.priority = bulkPriority;
+    }
+    if (!bulkStatus && !bulkAssignedUserId && !bulkAssignedTeamId && !bulkPriority) {
+      setError("Choose a status, technician, ticket team, or priority before applying changes.");
       return;
     }
 
@@ -378,6 +571,7 @@ export function TicketsList() {
       setBulkStatus("");
       setBulkAssignedUserId("");
       setBulkAssignedTeamId("");
+      setBulkPriority("");
       await loadTickets();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to apply bulk update.");
@@ -425,6 +619,95 @@ export function TicketsList() {
       setError("Unable to restore tickets.");
     } finally {
       setBulkBusy(false);
+    }
+  }
+
+  function resetNewTicketForm() {
+    setNewTicketClientId("");
+    setNewTicketContactId("");
+    setNewTicketContacts([]);
+    setNewTicketSubject("");
+    setNewTicketDescription("");
+    setNewTicketPriority("NORMAL");
+    setNewTicketStatus("NEW");
+    setNewTicketAssignedUserId("");
+    setNewTicketAssignedTeamId("");
+  }
+
+  async function loadNewTicketContacts(clientIdValue: string) {
+    setNewTicketContactId("");
+    if (!clientIdValue) {
+      setNewTicketContacts([]);
+      return;
+    }
+
+    try {
+      const contactData = await apiFetch<Contact[]>(`/clients/${clientIdValue}/contacts`);
+      setNewTicketContacts(contactData);
+    } catch {
+      setNewTicketContacts([]);
+    }
+  }
+
+  async function createManualTicket() {
+    if (!newTicketSubject.trim()) {
+      setError("Subject is required to create a ticket.");
+      return;
+    }
+
+    setNewTicketBusy(true);
+    setError(null);
+    try {
+      const created = await apiFetch<TicketListItem>("/tickets", {
+        method: "POST",
+        body: JSON.stringify({
+          subject: newTicketSubject.trim(),
+          description: newTicketDescription.trim() || undefined,
+          clientId: newTicketClientId || undefined,
+          contactId: newTicketContactId || undefined,
+          priority: newTicketPriority,
+          source: "MANUAL"
+        })
+      });
+
+      if (newTicketStatus !== "NEW" || newTicketAssignedUserId || newTicketAssignedTeamId) {
+        await apiFetch(`/tickets/${created.ticketNumber}/assignment`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: newTicketStatus,
+            assignedUserId: newTicketAssignedUserId || null,
+            assignedUserIds: newTicketAssignedUserId ? [newTicketAssignedUserId] : [],
+            assignedTeamId: newTicketAssignedTeamId || null
+          })
+        });
+      }
+
+      resetNewTicketForm();
+      setShowNewTicketModal(false);
+      await loadTickets();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create ticket.");
+    } finally {
+      setNewTicketBusy(false);
+    }
+  }
+
+  async function assignTicketInline(ticket: TicketListItem, assignedUserId: string) {
+    setInlineAssignmentTicketId(ticket.id);
+    setError(null);
+    try {
+      await apiFetch(`/tickets/${ticket.ticketNumber}/assignment`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          assignedUserId: assignedUserId || null,
+          assignedUserIds: assignedUserId ? [assignedUserId] : []
+        })
+      });
+      await loadTickets();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to assign ticket.");
+    } finally {
+      setInlineAssignmentTicketId(null);
     }
   }
 
@@ -588,11 +871,22 @@ export function TicketsList() {
           </span>
         );
       case "assignees":
-        return ticket.assignees?.length
-          ? ticket.assignees.map((assignment) => `${assignment.user.firstName} ${assignment.user.lastName}`).join(", ")
-          : ticket.assignedUser
-            ? `${ticket.assignedUser.firstName} ${ticket.assignedUser.lastName}`
-            : "Unassigned";
+        return (
+          <select
+            className="input inline-ticket-select"
+            value={ticket.assignees?.[0]?.user.id ?? ticket.assignedUser?.id ?? ""}
+            onChange={(event) => void assignTicketInline(ticket, event.target.value)}
+            disabled={inlineAssignmentTicketId === ticket.id || ticket.status === "MERGED" || trashMode}
+            title="Assign specialist"
+          >
+            <option value="">Unassigned</option>
+            {users.map((user) => (
+              <option key={user.id} value={user.id}>
+                {user.firstName} {user.lastName}
+              </option>
+            ))}
+          </select>
+        );
       case "team":
         return ticket.assignedTeam?.name ?? (ticket.assignedGroup ? `${ticket.assignedGroup.name} (legacy)` : "Unassigned");
       case "status":
@@ -616,6 +910,7 @@ export function TicketsList() {
 
   useEffect(() => {
     void loadClients();
+    void loadTicketViews(true);
     const savedColumns = window.localStorage.getItem(COLUMN_STORAGE_KEY);
     if (savedColumns) {
       try {
@@ -636,6 +931,8 @@ export function TicketsList() {
         window.localStorage.removeItem(COLUMN_WIDTH_STORAGE_KEY);
       }
     }
+    const savedDensity = window.localStorage.getItem(DENSITY_STORAGE_KEY);
+    setDensity(normalizeDensity(savedDensity));
   }, []);
 
   useEffect(() => {
@@ -653,6 +950,10 @@ export function TicketsList() {
   }, [columnWidths]);
 
   useEffect(() => {
+    window.localStorage.setItem(DENSITY_STORAGE_KEY, density);
+  }, [density]);
+
+  useEffect(() => {
     setPage(1);
   }, [search, clientId, scope, assignedTeamId, requester, status, priority, sortBy, sortDirection, trashMode, pageSize]);
 
@@ -665,14 +966,58 @@ export function TicketsList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, clientId, scope, assignedTeamId, requester, status, priority, sortBy, sortDirection, trashMode, page, pageSize]);
 
+  useEffect(() => {
+    void loadNewTicketContacts(newTicketClientId);
+  }, [newTicketClientId]);
+
   return (
     <>
-      <div className="page-header">
-        <div>
+      <div className="tickets-compact-header">
+        <div className="tickets-compact-title">
           <h1>Tickets</h1>
-          <p className="muted">Live ticket list from manual and email-created requests.</p>
+          <span className="status-pill">{totalTickets} total</span>
         </div>
-        <div className="form-actions">
+        <label className="input-with-icon tickets-search-field">
+          <Search size={16} aria-hidden="true" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search number, subject, body, client, domain, or requester" />
+        </label>
+        <select className="input tickets-view-select" value={selectedViewId} onChange={(event) => changeView(event.target.value)}>
+          <optgroup label="Standard views">
+            {builtInViews.map((view) => (
+              <option key={view.id} value={`built-in:${view.id}`}>
+                {view.name}
+              </option>
+            ))}
+          </optgroup>
+          {ticketViews.length ? (
+            <optgroup label="Saved views">
+              {ticketViews.map((view) => (
+                <option key={view.id} value={`saved:${view.id}`}>
+                  {view.isDefault ? "* " : ""}{view.name}
+                </option>
+              ))}
+            </optgroup>
+          ) : null}
+        </select>
+        <div className="form-actions tickets-header-actions">
+          <button className={`button ${hasActiveFilters ? "" : "secondary"}`} type="button" onClick={() => setShowAdvancedFilters((current) => !current)}>
+            <SlidersHorizontal size={16} aria-hidden="true" />
+            <span>{hasActiveFilters ? "Filters Active" : "Filters"}</span>
+          </button>
+          <button className="button" type="button" onClick={() => setShowNewTicketModal(true)}>
+            <Plus size={16} aria-hidden="true" />
+            <span>New Ticket</span>
+          </button>
+          <button className="button secondary" type="button" onClick={saveCurrentView}>
+            <Save size={16} aria-hidden="true" />
+            <span>Save View</span>
+          </button>
+          {selectedViewId.startsWith("saved:") ? (
+            <button className="button secondary" type="button" onClick={deleteCurrentView}>
+              <X size={16} aria-hidden="true" />
+              <span>Delete View</span>
+            </button>
+          ) : null}
           <button className="button secondary" type="button" onClick={() => void loadTickets()} disabled={loading}>
             <RefreshCcw size={16} aria-hidden="true" />
             <span>Refresh</span>
@@ -688,12 +1033,9 @@ export function TicketsList() {
         </div>
       </div>
       {error ? <div className="error-banner">{error}</div> : null}
-      <section className="panel tickets-toolbar-panel">
-        <div className="tickets-filter-grid">
-          <label className="input-with-icon tickets-search-field">
-            <Search size={16} aria-hidden="true" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search number, subject, body, client, domain, or requester" />
-          </label>
+      {showAdvancedFilters ? (
+        <section className="panel tickets-toolbar-panel">
+          <div className="tickets-filter-grid">
           <select className="input" value={clientId} onChange={(event) => setClientId(event.target.value)}>
             <option value="">All clients</option>
             {clients.map((client) => (
@@ -736,8 +1078,17 @@ export function TicketsList() {
           <button className="button secondary" type="button" onClick={clearFilters} disabled={!hasActiveFilters}>
             Clear
           </button>
-        </div>
-        {showColumnsPanel ? (
+          </div>
+        </section>
+      ) : null}
+      {showColumnsPanel ? (
+        <section className="panel tickets-toolbar-panel">
+          <div className="column-config-toolbar">
+            <select className="input compact-select" value={density} onChange={(event) => setDensity(event.target.value as TableDensity)}>
+              <option value="comfortable">Comfortable rows</option>
+              <option value="compact">Compact rows</option>
+            </select>
+          </div>
           <div className="column-config-panel">
             {columnOrder.map((columnId, index) => {
               const column = allColumns.find((item) => item.id === columnId);
@@ -763,8 +1114,9 @@ export function TicketsList() {
               );
             })}
           </div>
-        ) : null}
-      </section>
+        </section>
+      ) : null}
+      {selectedCount > 0 ? (
       <section className="panel bulk-actions-panel">
         <div className="bulk-actions-summary">
           <strong>
@@ -809,6 +1161,14 @@ export function TicketsList() {
                 </option>
               ))}
             </select>
+            <select className="input" value={bulkPriority} onChange={(event) => setBulkPriority(event.target.value)}>
+              <option value="">Set priority</option>
+              {priorities.map((value) => (
+                <option key={value} value={value}>
+                  {label(value)}
+                </option>
+              ))}
+            </select>
             <button className="button" type="button" onClick={applyBulkUpdate} disabled={selectedCount === 0 || bulkBusy}>
               Apply
             </button>
@@ -823,6 +1183,7 @@ export function TicketsList() {
           </div>
         )}
       </section>
+      ) : null}
       <section className="panel tickets-table-panel">
         <div className="table-summary">
           <span>
@@ -831,7 +1192,7 @@ export function TicketsList() {
           <span className="muted">{loading ? "Refreshing..." : `Sorted by ${allColumns.find((column) => column.sortable === sortBy)?.label ?? "Modified"}`}</span>
         </div>
         <div className="table-scroll">
-          <table className="table tickets-table">
+          <table className={`table tickets-table ${density}`}>
             <colgroup>
               <col style={{ width: 42 }} />
               {visibleOrderedColumns.map((column) => (
@@ -931,6 +1292,104 @@ export function TicketsList() {
           </div>
         </div>
       </section>
+      {showNewTicketModal ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-panel compact-modal" role="dialog" aria-modal="true" aria-labelledby="new-ticket-modal-title">
+            <div className="modal-header">
+              <div>
+                <h2 id="new-ticket-modal-title">New Ticket</h2>
+                <p className="muted">Create a manual ticket using the existing ticket workflow.</p>
+              </div>
+              <button className="icon-button" type="button" onClick={() => setShowNewTicketModal(false)} aria-label="Close new ticket dialog">
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="ticket-create-grid">
+              <label className="field">
+                <span>Client</span>
+                <select className="input" value={newTicketClientId} onChange={(event) => setNewTicketClientId(event.target.value)}>
+                  <option value="">No client</option>
+                  {clients.map((client) => (
+                    <option key={client.id} value={client.id}>
+                      {client.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Requester</span>
+                <select className="input" value={newTicketContactId} onChange={(event) => setNewTicketContactId(event.target.value)} disabled={!newTicketClientId}>
+                  <option value="">No requester</option>
+                  {newTicketContacts.map((contact) => (
+                    <option key={contact.id} value={contact.id}>
+                      {contact.firstName} {contact.lastName} - {contact.email}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field ticket-create-wide">
+                <span>Subject</span>
+                <input className="input" value={newTicketSubject} onChange={(event) => setNewTicketSubject(event.target.value)} />
+              </label>
+              <label className="field ticket-create-wide">
+                <span>Description</span>
+                <textarea className="input" rows={4} value={newTicketDescription} onChange={(event) => setNewTicketDescription(event.target.value)} />
+              </label>
+              <label className="field">
+                <span>Priority</span>
+                <select className="input" value={newTicketPriority} onChange={(event) => setNewTicketPriority(event.target.value)}>
+                  {priorities.map((value) => (
+                    <option key={value} value={value}>
+                      {label(value)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Status</span>
+                <select className="input" value={newTicketStatus} onChange={(event) => setNewTicketStatus(event.target.value)}>
+                  {mutableStatuses.map((value) => (
+                    <option key={value} value={value}>
+                      {label(value)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Assigned technician</span>
+                <select className="input" value={newTicketAssignedUserId} onChange={(event) => setNewTicketAssignedUserId(event.target.value)}>
+                  <option value="">Unassigned</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.firstName} {user.lastName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Ticket team</span>
+                <select className="input" value={newTicketAssignedTeamId} onChange={(event) => setNewTicketAssignedTeamId(event.target.value)}>
+                  <option value="">No team</option>
+                  {ticketTeams.filter((team) => team.isActive).map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {team.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button className="button secondary" type="button" onClick={() => setShowNewTicketModal(false)} disabled={newTicketBusy}>
+                Cancel
+              </button>
+              <button className="button" type="button" onClick={createManualTicket} disabled={newTicketBusy || !newTicketSubject.trim()}>
+                <Plus size={16} aria-hidden="true" />
+                <span>{newTicketBusy ? "Creating..." : "Create Ticket"}</span>
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
       {showMergeModal ? (
         <div className="modal-backdrop" role="presentation">
           <section className="modal-panel compact-modal" role="dialog" aria-modal="true" aria-labelledby="ticket-merge-modal-title">

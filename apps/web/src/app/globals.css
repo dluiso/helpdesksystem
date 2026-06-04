@@ -1552,6 +1552,35 @@ select {
   margin-bottom: 14px;
 }
 
+.tickets-compact-header {
+  display: grid;
+  grid-template-columns: auto minmax(320px, 1fr) minmax(190px, 240px) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.tickets-compact-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tickets-compact-title h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.tickets-header-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.tickets-view-select {
+  min-width: 190px;
+}
+
 .bulk-actions-panel {
   margin-bottom: 14px;
 }
@@ -1567,14 +1596,14 @@ select {
 
 .bulk-actions-grid {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr) auto auto auto;
+  grid-template-columns: minmax(150px, 1fr) minmax(170px, 1fr) minmax(170px, 1fr) minmax(140px, 1fr) auto auto auto;
   gap: 10px;
   align-items: center;
 }
 
 .tickets-filter-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 2fr) repeat(6, minmax(150px, 1fr)) auto;
+  grid-template-columns: repeat(6, minmax(150px, 1fr)) auto;
   gap: 10px;
   align-items: center;
 }
@@ -1588,6 +1617,11 @@ select {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 8px;
+}
+
+.column-config-toolbar {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .column-config-row {
@@ -1648,6 +1682,34 @@ select {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.tickets-table.compact th,
+.tickets-table.compact td {
+  padding: 5px 6px;
+  font-size: 11px;
+}
+
+.tickets-table.comfortable th,
+.tickets-table.comfortable td {
+  padding: 10px 8px;
+}
+
+.inline-ticket-select {
+  min-height: 30px;
+  width: 100%;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.ticket-create-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ticket-create-wide {
+  grid-column: 1 / -1;
 }
 
 .tickets-table td:nth-child(2),
@@ -2139,6 +2201,7 @@ select {
   .clients-workspace,
   .ticket-layout,
   .ticket-detail-layout,
+  .tickets-compact-header,
   .settings-layout,
   .access-layout,
   .grid.columns-2,
@@ -2204,6 +2267,10 @@ select {
   }
 
   .tickets-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-create-grid {
     grid-template-columns: 1fr;
   }
 

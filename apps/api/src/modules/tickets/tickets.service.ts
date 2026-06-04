@@ -15,6 +15,7 @@ import { CreateTicketMessageDto } from "./dto/create-ticket-message.dto";
 import { ListTicketsQueryDto } from "./dto/list-tickets-query.dto";
 import { MergeTicketsDto } from "./dto/merge-tickets.dto";
 import { UpdateTicketAssignmentDto } from "./dto/update-ticket-assignment.dto";
+import { UpsertTicketViewDto } from "./dto/upsert-ticket-view.dto";
 
 export interface CreateInboundEmailTicketInput {
   organizationId: string;
@@ -326,6 +327,86 @@ export class TicketsService {
     });
 
     return ticket;
+  }
+
+  listViews(user: AuthenticatedUser) {
+    return this.prisma.userTicketView.findMany({
+      where: { userId: user.id },
+      orderBy: [{ isDefault: "desc" }, { name: "asc" }]
+    });
+  }
+
+  async saveView(input: UpsertTicketViewDto, user: AuthenticatedUser) {
+    const name = input.name.trim();
+    return this.prisma.$transaction(async (tx) => {
+      if (input.isDefault) {
+        await tx.userTicketView.updateMany({
+          where: { userId: user.id },
+          data: { isDefault: false }
+        });
+      }
+
+      return tx.userTicketView.upsert({
+        where: {
+          userId_name: {
+            userId: user.id,
+            name
+          }
+        },
+        update: {
+          state: input.state as Prisma.InputJsonValue,
+          isDefault: input.isDefault ?? false
+        },
+        create: {
+          userId: user.id,
+          name,
+          state: input.state as Prisma.InputJsonValue,
+          isDefault: input.isDefault ?? false
+        }
+      });
+    });
+  }
+
+  async updateView(viewId: string, input: UpsertTicketViewDto, user: AuthenticatedUser) {
+    const existing = await this.prisma.userTicketView.findFirst({
+      where: { id: viewId, userId: user.id },
+      select: { id: true }
+    });
+    if (!existing) {
+      throw new NotFoundException("Ticket view was not found.");
+    }
+
+    const name = input.name.trim();
+    return this.prisma.$transaction(async (tx) => {
+      if (input.isDefault) {
+        await tx.userTicketView.updateMany({
+          where: { userId: user.id, id: { not: viewId } },
+          data: { isDefault: false }
+        });
+      }
+
+      return tx.userTicketView.update({
+        where: { id: viewId },
+        data: {
+          name,
+          state: input.state as Prisma.InputJsonValue,
+          isDefault: input.isDefault ?? false
+        }
+      });
+    });
+  }
+
+  async deleteView(viewId: string, user: AuthenticatedUser) {
+    const existing = await this.prisma.userTicketView.findFirst({
+      where: { id: viewId, userId: user.id },
+      select: { id: true }
+    });
+    if (!existing) {
+      throw new NotFoundException("Ticket view was not found.");
+    }
+
+    await this.prisma.userTicketView.delete({ where: { id: viewId } });
+    return { deleted: true };
   }
 
   async createFromInboundEmail(input: CreateInboundEmailTicketInput) {
