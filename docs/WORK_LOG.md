@@ -29,3 +29,9 @@
 - Added a high-contrast ticket count pill for dark mode.
 - Kept rich text editor surfaces light in dark mode to preserve readability and signature formatting.
 - Added created and modified timestamps under each ticket subject so date columns can be hidden without losing context.
+
+## 2026-06-04 - Dashboard statistics, spam management, and maintenance
+
+- Added backend ticket statistics and a clickable Dashboard with status, priority, client, and technician workload filters.
+- Added Spam Management with email/domain block entries, inbound email blocking, blocked email logging, and ticket-level block actions.
+- Added Maintenance recycle bin settings, manual cleanup with confirmation, automatic retention cleanup, and audit logging.

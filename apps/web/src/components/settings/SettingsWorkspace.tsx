@@ -33,6 +33,7 @@ interface SyncResult {
   receivedMessages: number;
   createdTickets: number;
   skippedDuplicates: number;
+  blockedSpamMessages?: number;
   attachmentBackfillFailures?: number;
   attachmentBackfillErrors?: string[];
   nextSyncCursor?: string | null;
@@ -178,6 +179,28 @@ interface UserNotificationPreferenceRow extends User {
   notificationPreference: NotificationPreference;
 }
 
+interface SpamBlockEntry {
+  id: string;
+  type: "EMAIL" | "DOMAIN";
+  value: string;
+  normalizedValue: string;
+  isActive: boolean;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: { firstName: string; lastName: string; email: string } | null;
+}
+
+interface MaintenanceSummary {
+  recycleBinRetentionDays: number;
+  lastRecycleBinCleanupAt: string | null;
+  deletedTickets: number;
+  eligibleTickets: number;
+  deletedAttachments: number;
+  eligibleAttachments: number;
+  cutoff: string;
+}
+
 const AI_ACTIONS = [
   { type: "paraphrase", label: "Paraphrase" },
   { type: "improve_reply", label: "Improve reply" },
@@ -226,6 +249,13 @@ export function SettingsWorkspace() {
   const [aiActionSettings, setAiActionSettings] = useState<AiActionSetting[]>([]);
   const [autoReplyTemplates, setAutoReplyTemplates] = useState<AutoReplyTemplate[]>([]);
   const [notificationPreferenceRows, setNotificationPreferenceRows] = useState<UserNotificationPreferenceRow[]>([]);
+  const [spamEntries, setSpamEntries] = useState<SpamBlockEntry[]>([]);
+  const [maintenanceSummary, setMaintenanceSummary] = useState<MaintenanceSummary | null>(null);
+  const [spamSearch, setSpamSearch] = useState("");
+  const [spamTypeFilter, setSpamTypeFilter] = useState("");
+  const [spamActiveFilter, setSpamActiveFilter] = useState("");
+  const [spamDraft, setSpamDraft] = useState({ type: "EMAIL" as "EMAIL" | "DOMAIN", value: "", notes: "" });
+  const [maintenanceDraft, setMaintenanceDraft] = useState("7");
   const [mailboxDrafts, setMailboxDrafts] = useState<
     Record<
       string,
@@ -294,13 +324,22 @@ export function SettingsWorkspace() {
   const [selectedClientByDomain, setSelectedClientByDomain] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<"mailboxes" | "autoReplies" | "teams" | "routing" | "domains" | "notifications" | "ai">("mailboxes");
+  const [activeSection, setActiveSection] = useState<"mailboxes" | "autoReplies" | "teams" | "routing" | "domains" | "notifications" | "spam" | "maintenance" | "ai">("mailboxes");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [aiConfigError, setAiConfigError] = useState<string | null>(null);
 
   const hasClients = useMemo(() => clients.length > 0, [clients.length]);
   const bulkProvider = useMemo(() => aiProviders.find((provider) => provider.id === aiBulkDraft.providerConfigId), [aiBulkDraft.providerConfigId, aiProviders]);
+  const filteredSpamEntries = useMemo(() => {
+    const search = spamSearch.trim().toLowerCase();
+    return spamEntries.filter((entry) => {
+      const matchesSearch = !search || entry.value.toLowerCase().includes(search) || entry.normalizedValue.includes(search) || (entry.notes ?? "").toLowerCase().includes(search);
+      const matchesType = !spamTypeFilter || entry.type === spamTypeFilter;
+      const matchesActive = !spamActiveFilter || String(entry.isActive) === spamActiveFilter;
+      return matchesSearch && matchesType && matchesActive;
+    });
+  }, [spamActiveFilter, spamEntries, spamSearch, spamTypeFilter]);
 
   function aiProviderDefaults(provider: string) {
     switch (provider) {
@@ -321,7 +360,7 @@ export function SettingsWorkspace() {
     setLoading(true);
     setError(null);
     try {
-      const [mailboxData, clientData, unmappedData, userData, teamData, ruleData, autoReplyData, notificationPreferenceData] = await Promise.all([
+      const [mailboxData, clientData, unmappedData, userData, teamData, ruleData, autoReplyData, notificationPreferenceData, spamData, maintenanceData] = await Promise.all([
         apiFetch<Mailbox[]>("/mailboxes"),
         apiFetch<Client[]>("/clients"),
         apiFetch<UnmappedDomain[]>("/client-domains/unmapped"),
@@ -329,7 +368,9 @@ export function SettingsWorkspace() {
         apiFetch<TicketTeam[]>("/ticket-teams"),
         apiFetch<RoutingRule[]>("/ticket-routing-rules"),
         apiFetch<AutoReplyTemplate[]>("/auto-replies"),
-        apiFetch<UserNotificationPreferenceRow[]>("/notification-preferences/users")
+        apiFetch<UserNotificationPreferenceRow[]>("/notification-preferences/users"),
+        apiFetch<SpamBlockEntry[]>("/spam-blocklist"),
+        apiFetch<MaintenanceSummary>("/maintenance/recycle-bin/summary")
       ]);
       setMailboxes(mailboxData);
       setClients(clientData);
@@ -339,6 +380,9 @@ export function SettingsWorkspace() {
       setRoutingRules(ruleData);
       setAutoReplyTemplates(autoReplyData);
       setNotificationPreferenceRows(notificationPreferenceData);
+      setSpamEntries(spamData);
+      setMaintenanceSummary(maintenanceData);
+      setMaintenanceDraft(String(maintenanceData.recycleBinRetentionDays));
       setMailboxDrafts(
         Object.fromEntries(
           mailboxData.map((mailbox) => [
@@ -599,7 +643,7 @@ export function SettingsWorkspace() {
     try {
       const result = await apiFetch<SyncResult>(`/mailboxes/${mailbox.id}/sync`, { method: "POST" });
       setNotice(
-        `Mailbox sync completed: ${result.receivedMessages} received, ${result.createdTickets} tickets created, ${result.skippedDuplicates} duplicates skipped${
+        `Mailbox sync completed: ${result.receivedMessages} received, ${result.createdTickets} tickets created, ${result.skippedDuplicates} duplicates skipped, ${result.blockedSpamMessages ?? 0} blocked${
           result.attachmentBackfillFailures ? `, ${result.attachmentBackfillFailures} attachment backfill failures` : ""
         }.${
           result.attachmentBackfillErrors?.length ? ` Attachment errors: ${result.attachmentBackfillErrors.slice(0, 2).join(" | ")}` : ""
@@ -608,6 +652,122 @@ export function SettingsWorkspace() {
       await loadSettingsData();
     } catch {
       setError("Unable to sync mailbox.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function createSpamEntry() {
+    if (!spamDraft.value.trim()) {
+      setError("Enter an email address or domain to block.");
+      return;
+    }
+
+    setBusy("spam-create");
+    setNotice(null);
+    setError(null);
+    try {
+      await apiFetch("/spam-blocklist", {
+        method: "POST",
+        body: JSON.stringify({
+          type: spamDraft.type,
+          value: spamDraft.value,
+          notes: spamDraft.notes || undefined
+        })
+      });
+      setSpamDraft({ type: "EMAIL", value: "", notes: "" });
+      setNotice("Spam block entry created.");
+      await loadSettingsData();
+    } catch {
+      setError("Unable to create spam block entry. Check the value and duplicates.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function updateSpamEntry(entry: SpamBlockEntry, data: { isActive?: boolean; notes?: string }) {
+    setBusy(entry.id);
+    setNotice(null);
+    setError(null);
+    try {
+      await apiFetch(`/spam-blocklist/${entry.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data)
+      });
+      setNotice("Spam block entry updated.");
+      await loadSettingsData();
+    } catch {
+      setError("Unable to update spam block entry.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deleteSpamEntry(entry: SpamBlockEntry) {
+    if (!window.confirm(`Delete spam block entry ${entry.value}?`)) {
+      return;
+    }
+
+    setBusy(entry.id);
+    setNotice(null);
+    setError(null);
+    try {
+      await apiFetch(`/spam-blocklist/${entry.id}`, { method: "DELETE" });
+      setNotice("Spam block entry deleted.");
+      await loadSettingsData();
+    } catch {
+      setError("Unable to delete spam block entry.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveMaintenanceSettings() {
+    const days = Number(maintenanceDraft);
+    if (!Number.isInteger(days) || days < 1 || days > 365) {
+      setError("Retention days must be between 1 and 365.");
+      return;
+    }
+
+    setBusy("maintenance-settings");
+    setNotice(null);
+    setError(null);
+    try {
+      await apiFetch("/maintenance/recycle-bin/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ recycleBinRetentionDays: days })
+      });
+      setNotice("Maintenance settings saved.");
+      await loadSettingsData();
+    } catch {
+      setError("Unable to save maintenance settings.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function cleanupRecycleBin() {
+    const days = Number(maintenanceDraft || maintenanceSummary?.recycleBinRetentionDays || 7);
+    if (!Number.isInteger(days) || days < 1 || days > 365) {
+      setError("Retention days must be between 1 and 365.");
+      return;
+    }
+    if (!window.confirm(`Permanently delete recycle bin items older than ${days} day${days === 1 ? "" : "s"}? This cannot be undone.`)) {
+      return;
+    }
+
+    setBusy("maintenance-cleanup");
+    setNotice(null);
+    setError(null);
+    try {
+      const result = await apiFetch<{ deletedTickets: number; deletedAttachments: number; deletedStoredFiles: number }>("/maintenance/recycle-bin/cleanup", {
+        method: "POST",
+        body: JSON.stringify({ confirm: true, olderThanDays: days })
+      });
+      setNotice(`Recycle bin cleanup completed: ${result.deletedTickets} tickets, ${result.deletedAttachments} attachments, and ${result.deletedStoredFiles} stored files deleted.`);
+      await loadSettingsData();
+    } catch {
+      setError("Unable to clean recycle bin.");
     } finally {
       setBusy(null);
     }
@@ -1012,6 +1172,12 @@ export function SettingsWorkspace() {
           </button>
           <button className={activeSection === "notifications" ? "active" : ""} type="button" onClick={() => setActiveSection("notifications")}>
             Notifications
+          </button>
+          <button className={activeSection === "spam" ? "active" : ""} type="button" onClick={() => setActiveSection("spam")}>
+            Spam Management
+          </button>
+          <button className={activeSection === "maintenance" ? "active" : ""} type="button" onClick={() => setActiveSection("maintenance")}>
+            Maintenance
           </button>
           <button className={activeSection === "ai" ? "active" : ""} type="button" onClick={() => setActiveSection("ai")}>
             AI & Security
@@ -1747,6 +1913,170 @@ export function SettingsWorkspace() {
               <p className="muted settings-section">
                 Email notifications use the active outbound support mailbox. If outbound mail is disabled or Graph permissions fail, in-app notifications still continue.
               </p>
+            </section>
+          ) : null}
+
+          {activeSection === "spam" ? (
+            <section className="grid">
+              <div className="panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>Spam Management</h2>
+                    <p className="muted">Block sender emails or domains before inbound mail creates tickets.</p>
+                  </div>
+                  <span className="count-pill">{spamEntries.length} entries</span>
+                </div>
+
+                <div className="client-form-grid settings-section">
+                  <select className="input compact-select" value={spamDraft.type} onChange={(event) => setSpamDraft((current) => ({ ...current, type: event.target.value as "EMAIL" | "DOMAIN" }))}>
+                    <option value="EMAIL">Email address</option>
+                    <option value="DOMAIN">Domain</option>
+                  </select>
+                  <input className="input" placeholder={spamDraft.type === "EMAIL" ? "person@example.com" : "example.com"} value={spamDraft.value} onChange={(event) => setSpamDraft((current) => ({ ...current, value: event.target.value }))} />
+                  <input className="input" placeholder="Reason or notes" value={spamDraft.notes} onChange={(event) => setSpamDraft((current) => ({ ...current, notes: event.target.value }))} />
+                  <button className="button" type="button" onClick={createSpamEntry} disabled={busy === "spam-create"}>
+                    <Plus size={16} aria-hidden="true" />
+                    <span>Add Block</span>
+                  </button>
+                </div>
+
+                <div className="client-form-grid settings-section">
+                  <input className="input" placeholder="Search blocked senders" value={spamSearch} onChange={(event) => setSpamSearch(event.target.value)} />
+                  <select className="input compact-select" value={spamTypeFilter} onChange={(event) => setSpamTypeFilter(event.target.value)}>
+                    <option value="">All types</option>
+                    <option value="EMAIL">Email</option>
+                    <option value="DOMAIN">Domain</option>
+                  </select>
+                  <select className="input compact-select" value={spamActiveFilter} onChange={(event) => setSpamActiveFilter(event.target.value)}>
+                    <option value="">All states</option>
+                    <option value="true">Active</option>
+                    <option value="false">Inactive</option>
+                  </select>
+                </div>
+
+                <div className="table-scroll settings-section">
+                  <table className="tickets-table">
+                    <thead>
+                      <tr>
+                        <th>Type</th>
+                        <th>Value</th>
+                        <th>Notes</th>
+                        <th>Status</th>
+                        <th>Created By</th>
+                        <th>Updated</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredSpamEntries.length === 0 ? (
+                        <tr>
+                          <td colSpan={7}>No spam block entries found.</td>
+                        </tr>
+                      ) : null}
+                      {filteredSpamEntries.map((entry) => (
+                        <tr key={entry.id}>
+                          <td>{entry.type === "EMAIL" ? "Email" : "Domain"}</td>
+                          <td>
+                            <strong>{entry.value}</strong>
+                            <span className="muted">{entry.normalizedValue}</span>
+                          </td>
+                          <td>
+                            <textarea
+                              className="textarea compact-textarea"
+                              defaultValue={entry.notes ?? ""}
+                              onBlur={(event) => {
+                                if (event.target.value !== (entry.notes ?? "")) {
+                                  void updateSpamEntry(entry, { notes: event.target.value });
+                                }
+                              }}
+                            />
+                          </td>
+                          <td>
+                            <span className={`status-pill ${entry.isActive ? "read-pill" : "muted-pill"}`}>{entry.isActive ? "Active" : "Inactive"}</span>
+                          </td>
+                          <td>{entry.createdBy ? `${entry.createdBy.firstName} ${entry.createdBy.lastName}` : "System"}</td>
+                          <td>{new Date(entry.updatedAt).toLocaleString()}</td>
+                          <td>
+                            <div className="settings-actions">
+                              <button className="button secondary" type="button" onClick={() => updateSpamEntry(entry, { isActive: !entry.isActive })} disabled={busy === entry.id}>
+                                {entry.isActive ? "Deactivate" : "Activate"}
+                              </button>
+                              <button className="button secondary danger-button" type="button" onClick={() => deleteSpamEntry(entry)} disabled={busy === entry.id}>
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === "maintenance" ? (
+            <section className="grid columns-2">
+              <div className="panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>Recycle Bin Cleanup</h2>
+                    <p className="muted">Permanently remove soft-deleted tickets and attachments after the retention window.</p>
+                  </div>
+                </div>
+                <div className="metric-grid settings-section">
+                  <div className="panel subtle-panel metric">
+                    <span className="muted">Deleted tickets</span>
+                    <strong>{maintenanceSummary?.deletedTickets ?? 0}</strong>
+                  </div>
+                  <div className="panel subtle-panel metric">
+                    <span className="muted">Eligible tickets</span>
+                    <strong>{maintenanceSummary?.eligibleTickets ?? 0}</strong>
+                  </div>
+                  <div className="panel subtle-panel metric">
+                    <span className="muted">Deleted attachments</span>
+                    <strong>{maintenanceSummary?.deletedAttachments ?? 0}</strong>
+                  </div>
+                  <div className="panel subtle-panel metric">
+                    <span className="muted">Eligible attachments</span>
+                    <strong>{maintenanceSummary?.eligibleAttachments ?? 0}</strong>
+                  </div>
+                </div>
+                <label className="field settings-section">
+                  <span>Auto-clean retention days</span>
+                  <input className="input compact-select" type="number" min={1} max={365} value={maintenanceDraft} onChange={(event) => setMaintenanceDraft(event.target.value)} />
+                </label>
+                <p className="muted">
+                  Current cutoff: {maintenanceSummary?.cutoff ? new Date(maintenanceSummary.cutoff).toLocaleString() : "Not calculated"}. Last cleanup:{" "}
+                  {maintenanceSummary?.lastRecycleBinCleanupAt ? new Date(maintenanceSummary.lastRecycleBinCleanupAt).toLocaleString() : "Never"}.
+                </p>
+                <div className="settings-actions settings-section">
+                  <button className="button secondary" type="button" onClick={saveMaintenanceSettings} disabled={busy === "maintenance-settings"}>
+                    Save Retention
+                  </button>
+                  <button className="button danger-button" type="button" onClick={cleanupRecycleBin} disabled={busy === "maintenance-cleanup"}>
+                    Clear Eligible Items
+                  </button>
+                </div>
+              </div>
+
+              <div className="panel">
+                <h2>Safety Rules</h2>
+                <div className="stack-list settings-section">
+                  <div className="stack-row">
+                    <strong>Manual cleanup requires confirmation</strong>
+                    <span className="muted">The app prompts before any permanent deletion.</span>
+                  </div>
+                  <div className="stack-row">
+                    <strong>Automatic cleanup uses retention</strong>
+                    <span className="muted">Only recycle bin items older than the configured retention period are eligible.</span>
+                  </div>
+                  <div className="stack-row">
+                    <strong>Files are removed with records</strong>
+                    <span className="muted">Associated stored files are deleted before the database records are removed.</span>
+                  </div>
+                </div>
+              </div>
             </section>
           ) : null}
 

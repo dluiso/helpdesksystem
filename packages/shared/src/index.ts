@@ -56,6 +56,10 @@ export const INITIAL_PERMISSIONS = [
   "mailboxes.create",
   "mailboxes.update",
   "mailboxes.delete",
+  "spam.view",
+  "spam.manage",
+  "maintenance.view",
+  "maintenance.manage",
   "auto_replies.view",
   "auto_replies.create",
   "auto_replies.update",
@@ -90,6 +94,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     (permission) =>
       !permission.startsWith("system_settings.") &&
       !permission.startsWith("mailboxes.") &&
+      !permission.startsWith("maintenance.") &&
+      !permission.startsWith("spam.") &&
       !permission.startsWith("roles.") &&
       permission !== "permissions.view" &&
       permission !== "ai_assistant.configure" &&

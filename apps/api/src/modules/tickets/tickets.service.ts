@@ -131,6 +131,121 @@ export class TicketsService {
     };
   }
 
+  async statistics(user: AuthenticatedUser) {
+    const activeStatuses = [TicketStatus.NEW, TicketStatus.OPEN, TicketStatus.IN_PROGRESS, TicketStatus.WAITING_ON_CUSTOMER, TicketStatus.WAITING_ON_THIRD_PARTY, TicketStatus.REOPENED];
+    const baseWhere: Prisma.TicketWhereInput = {
+      organizationId: user.organizationId,
+      deletedAt: null,
+      status: { not: TicketStatus.MERGED }
+    };
+    const activeWhere: Prisma.TicketWhereInput = {
+      organizationId: user.organizationId,
+      deletedAt: null,
+      status: { in: activeStatuses }
+    };
+    const staleCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const [
+      totalOpen,
+      newTickets,
+      closedTickets,
+      unassignedTickets,
+      highPriorityTickets,
+      awaitingCustomer,
+      noRecentUpdate,
+      byStatus,
+      byPriority,
+      byClient,
+      activeUsers
+    ] = await Promise.all([
+      this.prisma.ticket.count({ where: activeWhere }),
+      this.prisma.ticket.count({ where: { ...baseWhere, status: TicketStatus.NEW } }),
+      this.prisma.ticket.count({ where: { ...baseWhere, status: TicketStatus.CLOSED } }),
+      this.prisma.ticket.count({
+        where: {
+          ...activeWhere,
+          assignedUserId: null,
+          assignedTeamId: null,
+          assignedGroupId: null,
+          assignees: { none: {} }
+        }
+      }),
+      this.prisma.ticket.count({ where: { ...activeWhere, priority: TicketPriority.HIGH } }),
+      this.prisma.ticket.count({ where: { ...baseWhere, status: TicketStatus.WAITING_ON_CUSTOMER } }),
+      this.prisma.ticket.count({ where: { ...activeWhere, updatedAt: { lt: staleCutoff } } }),
+      this.prisma.ticket.groupBy({
+        by: ["status"],
+        where: baseWhere,
+        _count: { _all: true },
+        orderBy: { _count: { status: "desc" } }
+      }),
+      this.prisma.ticket.groupBy({
+        by: ["priority"],
+        where: baseWhere,
+        _count: { _all: true },
+        orderBy: { _count: { priority: "desc" } }
+      }),
+      this.prisma.ticket.groupBy({
+        by: ["clientId"],
+        where: baseWhere,
+        _count: { _all: true },
+        orderBy: { _count: { clientId: "desc" } },
+        take: 8
+      }),
+      this.prisma.user.findMany({
+        where: { organizationId: user.organizationId, deletedAt: null, isActive: true },
+        select: { id: true, firstName: true, lastName: true },
+        orderBy: [{ firstName: "asc" }, { lastName: "asc" }]
+      })
+    ]);
+
+    const clientIds = byClient.map((item) => item.clientId).filter((clientId): clientId is string => Boolean(clientId));
+    const clients = clientIds.length
+      ? await this.prisma.client.findMany({
+          where: { id: { in: clientIds }, organizationId: user.organizationId },
+          select: { id: true, name: true }
+        })
+      : [];
+    const clientNames = new Map(clients.map((client) => [client.id, client.name]));
+
+    const workload = await Promise.all(
+      activeUsers.map(async (technician) => ({
+        userId: technician.id,
+        name: `${technician.firstName} ${technician.lastName}`,
+        count: await this.prisma.ticket.count({
+          where: {
+            ...activeWhere,
+            OR: [{ assignedUserId: technician.id }, { assignees: { some: { userId: technician.id } } }]
+          }
+        }),
+        filter: { assignedUserId: technician.id }
+      }))
+    );
+
+    return {
+      summary: {
+        totalOpen,
+        newTickets,
+        closedTickets,
+        unassignedTickets,
+        highPriorityTickets,
+        awaitingCustomer,
+        noRecentUpdate,
+        slaBreached: null,
+        slaAtRisk: null
+      },
+      byStatus: byStatus.map((item) => ({ status: item.status, count: item._count._all, filter: { statuses: [item.status] } })),
+      byPriority: byPriority.map((item) => ({ priority: item.priority, count: item._count._all, filter: { priority: item.priority } })),
+      byClient: byClient.map((item) => ({
+        clientId: item.clientId,
+        name: item.clientId ? (clientNames.get(item.clientId) ?? "Unknown client") : "Unmapped / no client",
+        count: item._count._all,
+        filter: item.clientId ? { clientId: item.clientId } : {}
+      })),
+      workload: workload.filter((item) => item.count > 0).sort((a, b) => b.count - a.count).slice(0, 8)
+    };
+  }
+
   async getById(ticketId: string, user: AuthenticatedUser) {
     let ticket = await this.prisma.ticket.findFirst({
       where: {

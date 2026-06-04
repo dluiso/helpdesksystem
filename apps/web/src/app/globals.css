@@ -637,6 +637,10 @@ select {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.grid.columns-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .grid.columns-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -1653,6 +1657,58 @@ select {
   font-size: 28px;
 }
 
+.dashboard-stat-card {
+  color: inherit;
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.dashboard-stat-card:hover {
+  border-color: var(--brand-primary);
+  transform: translateY(-1px);
+}
+
+.dashboard-list {
+  display: grid;
+  gap: 8px;
+}
+
+.dashboard-list-row {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+}
+
+a.dashboard-list-row:hover {
+  border-color: var(--brand-primary);
+  background: var(--surface-hover);
+}
+
+.dashboard-list-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.danger-button {
+  color: #ffffff;
+  background: var(--danger);
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -2461,7 +2517,9 @@ select {
   .settings-layout,
   .access-layout,
   .grid.columns-2,
-  .grid.columns-3 {
+  .grid.columns-3,
+  .grid.columns-4,
+  .metric-grid {
     grid-template-columns: 1fr;
   }
 

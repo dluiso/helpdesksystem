@@ -59,6 +59,11 @@ enum TicketSource {
   SYSTEM
 }
 
+enum SpamBlockType {
+  EMAIL
+  DOMAIN
+}
+
 enum MessageDirection {
   INBOUND
   OUTBOUND
@@ -183,6 +188,8 @@ model Organization {
   aiProviders         AiProviderConfig[]
   aiModels            AiModelConfig[]
   aiActionSettings    AiActionSetting[]
+  spamBlockEntries    SpamBlockEntry[]
+  blockedInboundEmails BlockedInboundEmail[]
 
   @@map("organizations")
 }
@@ -206,6 +213,8 @@ model SystemSetting {
   allowedAttachmentFileTypes String[] @default([])
   blockedAttachmentFileTypes String[] @default([])
   ticketReopenWindowDays     Int      @default(14)
+  recycleBinRetentionDays    Int      @default(7)
+  lastRecycleBinCleanupAt    DateTime?
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
   organization               Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -253,6 +262,7 @@ model User {
   updatedKnowledgeArticles KnowledgeArticle[] @relation("KnowledgeArticleUpdatedBy")
   reportExports       ReportExport[]
   performedTicketMerges TicketMerge[]
+  createdSpamBlockEntries SpamBlockEntry[] @relation("SpamBlockEntryCreatedBy")
 
   @@index([organizationId])
   @@index([deletedAt])
@@ -504,6 +514,7 @@ model Mailbox {
   autoReplyTemplates             AutoReplyTemplate[]
   ticketRoutingRules             TicketRoutingRule[]
   tickets                        Ticket[]
+  blockedInboundEmails           BlockedInboundEmail[]
   initialSyncFrom                DateTime?
   lastSyncedAt                   DateTime?
   lastSyncError                  String?
@@ -609,6 +620,54 @@ model TicketMerge {
   @@index([primaryTicketId])
   @@index([performedByUserId])
   @@map("ticket_merges")
+}
+
+model SpamBlockEntry {
+  id              String        @id @default(uuid()) @db.Uuid
+  organizationId  String        @db.Uuid
+  type            SpamBlockType
+  value           String
+  normalizedValue String
+  isActive        Boolean       @default(true)
+  notes           String?
+  createdByUserId String?       @db.Uuid
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy       User?         @relation("SpamBlockEntryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  blockedEmails   BlockedInboundEmail[]
+
+  @@unique([organizationId, type, normalizedValue])
+  @@index([organizationId, isActive])
+  @@index([createdByUserId])
+  @@map("spam_block_entries")
+}
+
+model BlockedInboundEmail {
+  id                       String          @id @default(uuid()) @db.Uuid
+  organizationId           String          @db.Uuid
+  mailboxId                String?         @db.Uuid
+  spamBlockEntryId         String?         @db.Uuid
+  senderEmail              String
+  senderDomain             String?
+  subject                  String
+  emailMessageId           String?
+  emailInternetMessageId   String?
+  emailConversationId      String?
+  reason                   String
+  createdAt                DateTime        @default(now())
+  organization             Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mailbox                  Mailbox?        @relation(fields: [mailboxId], references: [id], onDelete: SetNull)
+  spamBlockEntry           SpamBlockEntry? @relation(fields: [spamBlockEntryId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([mailboxId])
+  @@index([spamBlockEntryId])
+  @@index([senderEmail])
+  @@index([senderDomain])
+  @@index([emailMessageId])
+  @@index([emailInternetMessageId])
+  @@map("blocked_inbound_emails")
 }
 
 model TicketAssignee {

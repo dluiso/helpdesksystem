@@ -128,6 +128,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const [mergeAllowDifferentClient, setMergeAllowDifferentClient] = useState(false);
   const [mergeBusy, setMergeBusy] = useState(false);
   const [mergeSearchBusy, setMergeSearchBusy] = useState(false);
+  const [toolBusy, setToolBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const requester = useMemo(() => {
@@ -254,6 +255,37 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       setError(err instanceof Error ? err.message : "Unable to merge tickets.");
     } finally {
       setMergeBusy(false);
+    }
+  }
+
+  async function blockSender(type: "EMAIL" | "DOMAIN") {
+    if (!ticket) {
+      return;
+    }
+    const value = type === "EMAIL" ? ticket.senderEmail : ticket.senderDomain;
+    if (!value) {
+      setError(type === "EMAIL" ? "This ticket does not have a sender email." : "This ticket does not have a sender domain.");
+      return;
+    }
+    if (!window.confirm(`Block ${value} from creating new email tickets?`)) {
+      return;
+    }
+
+    setToolBusy(type);
+    setError(null);
+    try {
+      await apiFetch("/spam-blocklist", {
+        method: "POST",
+        body: JSON.stringify({
+          type,
+          value,
+          notes: `Blocked from ticket ${ticket.ticketNumber}`
+        })
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create spam block entry.");
+    } finally {
+      setToolBusy(null);
     }
   }
 
@@ -393,6 +425,14 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
                 <span>Open Primary</span>
               </Link>
             ) : null}
+            <button className="button secondary full-width-button" type="button" onClick={() => blockSender("EMAIL")} disabled={!ticket.senderEmail || toolBusy === "EMAIL"}>
+              <X size={16} aria-hidden="true" />
+              <span>Block Sender</span>
+            </button>
+            <button className="button secondary full-width-button" type="button" onClick={() => blockSender("DOMAIN")} disabled={!ticket.senderDomain || toolBusy === "DOMAIN"}>
+              <X size={16} aria-hidden="true" />
+              <span>Block Domain</span>
+            </button>
           </div>
           <div className="panel ticket-summary-panel">
             <h3>Ticket Details</h3>

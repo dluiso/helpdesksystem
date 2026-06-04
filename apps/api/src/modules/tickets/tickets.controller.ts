@@ -38,6 +38,12 @@ export class TicketsController {
     return this.ticketsService.listViews(user);
   }
 
+  @Get("statistics")
+  @RequirePermissions("tickets.view")
+  statistics(@CurrentUser() user: AuthenticatedUser) {
+    return this.ticketsService.statistics(user);
+  }
+
   @Post("views")
   @RequirePermissions("tickets.view")
   createView(@Body() body: UpsertTicketViewDto, @CurrentUser() user: AuthenticatedUser) {

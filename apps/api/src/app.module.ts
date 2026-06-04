@@ -14,6 +14,7 @@ import { FileStorageModule } from "./modules/file-storage/file-storage.module";
 import { GroupsModule } from "./modules/groups/groups.module";
 import { HealthModule } from "./modules/health/health.module";
 import { KnowledgeBaseModule } from "./modules/knowledge-base/knowledge-base.module";
+import { MaintenanceModule } from "./modules/maintenance/maintenance.module";
 import { MailboxesModule } from "./modules/mailboxes/mailboxes.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { PermissionsModule } from "./modules/permissions/permissions.module";
@@ -23,6 +24,7 @@ import { RemoteAccessModule } from "./modules/remote-access/remote-access.module
 import { ReportsModule } from "./modules/reports/reports.module";
 import { RolesModule } from "./modules/roles/roles.module";
 import { SignaturesModule } from "./modules/signatures/signatures.module";
+import { SpamManagementModule } from "./modules/spam-management/spam-management.module";
 import { SystemSettingsModule } from "./modules/system-settings/system-settings.module";
 import { TicketAttachmentsModule } from "./modules/ticket-attachments/ticket-attachments.module";
 import { TicketTeamsModule } from "./modules/ticket-teams/ticket-teams.module";
@@ -72,9 +74,11 @@ import { UsersModule } from "./modules/users/users.module";
     TicketRoutingModule,
     TicketAttachmentsModule,
     FileStorageModule,
+    MaintenanceModule,
     MailboxesModule,
     AutoRepliesModule,
     SignaturesModule,
+    SpamManagementModule,
     AiAssistantModule,
     KnowledgeBaseModule,
     ReportsModule,

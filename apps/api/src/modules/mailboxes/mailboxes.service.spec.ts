@@ -23,6 +23,7 @@ describe("MailboxesService", () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
       {} as never
     );
 
@@ -76,6 +77,7 @@ describe("MailboxesService", () => {
       { get: jest.fn().mockReturnValue("mock") } as never,
       ticketsService as never,
       { createInboundEmailAttachment: jest.fn() } as never,
+      { findBlockForSender: jest.fn().mockResolvedValue(null), logBlockedInboundEmail: jest.fn() } as never,
       mockMailProvider as never,
       {} as never
     );
@@ -86,6 +88,7 @@ describe("MailboxesService", () => {
       receivedMessages: 1,
       createdTickets: 1,
       skippedDuplicates: 0,
+      blockedSpamMessages: 0,
       attachmentBackfillFailures: 0,
       attachmentBackfillErrors: [],
       nextSyncCursor: "cursor-1"
@@ -144,6 +147,7 @@ describe("MailboxesService", () => {
       { get: jest.fn().mockReturnValue("mock") } as never,
       ticketsService as never,
       { createInboundEmailAttachment: jest.fn() } as never,
+      { findBlockForSender: jest.fn().mockResolvedValue(null), logBlockedInboundEmail: jest.fn() } as never,
       mockMailProvider as never,
       {} as never
     );
@@ -154,6 +158,7 @@ describe("MailboxesService", () => {
       receivedMessages: 1,
       createdTickets: 0,
       skippedDuplicates: 1,
+      blockedSpamMessages: 0,
       attachmentBackfillFailures: 0,
       attachmentBackfillErrors: [],
       nextSyncCursor: null

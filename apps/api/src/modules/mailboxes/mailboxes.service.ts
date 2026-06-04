@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { Mailbox } from "@prisma/client";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
+import { SpamManagementService } from "../spam-management/spam-management.service";
 import { TicketAttachmentsService } from "../ticket-attachments/ticket-attachments.service";
 import { TicketsService } from "../tickets/tickets.service";
 import { UpdateMailboxDto } from "./dto/update-mailbox.dto";
@@ -16,6 +17,7 @@ export interface SyncMailboxResult {
   receivedMessages: number;
   createdTickets: number;
   skippedDuplicates: number;
+  blockedSpamMessages: number;
   attachmentBackfillFailures?: number;
   attachmentBackfillErrors?: string[];
   nextSyncCursor?: string | null;
@@ -32,6 +34,7 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
     private readonly config: ConfigService,
     private readonly ticketsService: TicketsService,
     private readonly ticketAttachmentsService: TicketAttachmentsService,
+    private readonly spamManagement: SpamManagementService,
     private readonly mockMailProvider: MockMailProvider,
     private readonly microsoftGraphMailProvider: MicrosoftGraphMailProvider
   ) {}
@@ -161,6 +164,7 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
     });
     let createdTickets = 0;
     let skippedDuplicates = 0;
+    let blockedSpamMessages = 0;
     let attachmentBackfillFailures = 0;
     const attachmentBackfillErrors: string[] = [];
 
@@ -187,6 +191,25 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
           }
         }
         skippedDuplicates += 1;
+        continue;
+      }
+
+      const senderDomain = this.extractDomain(message.from.email);
+      const spamBlock = await this.spamManagement.findBlockForSender(mailbox.organizationId, message.from.email, senderDomain);
+      if (spamBlock) {
+        await this.spamManagement.logBlockedInboundEmail({
+          organizationId: mailbox.organizationId,
+          mailboxId: mailbox.id,
+          spamBlockEntryId: spamBlock.id,
+          senderEmail: message.from.email,
+          senderDomain,
+          subject: message.subject,
+          emailMessageId: message.providerMessageId,
+          emailInternetMessageId: message.internetMessageId,
+          emailConversationId: message.conversationId,
+          reason: `Blocked by ${spamBlock.type.toLowerCase()} rule: ${spamBlock.normalizedValue}`
+        });
+        blockedSpamMessages += 1;
         continue;
       }
 
@@ -236,6 +259,7 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
       receivedMessages: syncResult.messages.length,
       createdTickets,
       skippedDuplicates,
+      blockedSpamMessages,
       attachmentBackfillFailures,
       attachmentBackfillErrors: attachmentBackfillErrors.slice(0, 10),
       nextSyncCursor: syncResult.nextSyncCursor
@@ -289,6 +313,14 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
 
   private optionalEmail(value: string | null | undefined) {
     return this.optionalTrim(value)?.toLowerCase() ?? null;
+  }
+
+  private extractDomain(emailAddress: string) {
+    const atIndex = emailAddress.lastIndexOf("@");
+    if (atIndex === -1 || atIndex === emailAddress.length - 1) {
+      return null;
+    }
+    return emailAddress.slice(atIndex + 1).trim().toLowerCase().replace(/\.$/, "") || null;
   }
 
   private getMailboxReadAddress(mailbox: Mailbox) {

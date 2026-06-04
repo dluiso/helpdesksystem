@@ -115,6 +115,7 @@ interface TicketViewState {
   search: string;
   clientId: string;
   scope: string;
+  assignedUserId: string;
   assignedTeamId: string;
   requester: string;
   statuses: string[];
@@ -294,6 +295,7 @@ function normalizeTicketViewState(value: unknown): TicketViewState {
     search: typeof state.search === "string" ? state.search : "",
     clientId: typeof state.clientId === "string" ? state.clientId : "",
     scope: typeof state.scope === "string" ? state.scope : "all",
+    assignedUserId: typeof state.assignedUserId === "string" ? state.assignedUserId : "",
     assignedTeamId: typeof state.assignedTeamId === "string" ? state.assignedTeamId : "",
     requester: typeof state.requester === "string" ? state.requester : "",
     statuses: [...new Set(nextStatuses)],
@@ -316,6 +318,7 @@ export function TicketsList() {
   const [selectedViewId, setSelectedViewId] = useState("built-in:all");
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [scope, setScope] = useState("all");
+  const [assignedUserId, setAssignedUserId] = useState("");
   const [assignedTeamId, setAssignedTeamId] = useState("");
   const [search, setSearch] = useState("");
   const [clientId, setClientId] = useState("");
@@ -373,7 +376,7 @@ export function TicketsList() {
     [columnOrder, visibleColumns]
   );
 
-  const hasActiveFilters = Boolean(search || clientId || requester || selectedStatuses.length > 0 || priority || scope !== "all" || assignedTeamId);
+  const hasActiveFilters = Boolean(search || clientId || requester || selectedStatuses.length > 0 || priority || scope !== "all" || assignedUserId || assignedTeamId);
   const selectedCount = selectedTicketIds.length;
   const allVisibleSelected = tickets.length > 0 && tickets.every((ticket) => selectedTicketIds.includes(ticket.id));
   const selectedTickets = useMemo(() => selectedTicketIds.map((id) => tickets.find((ticket) => ticket.id === id)).filter((ticket): ticket is TicketListItem => Boolean(ticket)), [selectedTicketIds, tickets]);
@@ -393,6 +396,9 @@ export function TicketsList() {
       }
       if (scope !== "all") {
         params.set("scope", scope);
+      }
+      if (assignedUserId) {
+        params.set("assignedUserId", assignedUserId);
       }
       if (assignedTeamId) {
         params.set("assignedTeamId", assignedTeamId);
@@ -464,6 +470,7 @@ export function TicketsList() {
       search,
       clientId,
       scope,
+      assignedUserId,
       assignedTeamId,
       requester,
       statuses: selectedStatuses,
@@ -482,6 +489,7 @@ export function TicketsList() {
     setSearch(normalized.search);
     setClientId(normalized.clientId);
     setScope(normalized.scope);
+    setAssignedUserId(normalized.assignedUserId);
     setAssignedTeamId(normalized.assignedTeamId);
     setRequester(normalized.requester);
     setSelectedStatuses(normalized.statuses);
@@ -929,6 +937,53 @@ export function TicketsList() {
   }
 
   useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const initialSearch = searchParams.get("search")?.trim();
+    const initialClientId = searchParams.get("clientId")?.trim();
+    const initialScope = searchParams.get("scope")?.trim();
+    const initialAssignedUserId = searchParams.get("assignedUserId")?.trim();
+    const initialAssignedTeamId = searchParams.get("assignedTeamId")?.trim();
+    const initialRequester = searchParams.get("requester")?.trim();
+    const initialStatuses = searchParams.get("statuses")?.trim();
+    const initialPriority = searchParams.get("priority")?.trim();
+    const initialDeletedScope = searchParams.get("deletedScope")?.trim();
+    const initialSortBy = searchParams.get("sortBy")?.trim();
+    const initialSortDirection = searchParams.get("sortDirection")?.trim();
+
+    if (initialSearch) {
+      setSearch(initialSearch);
+    }
+    if (initialClientId) {
+      setClientId(initialClientId);
+    }
+    if (initialScope && ["all", "assigned_to_me", "my_teams", "unassigned"].includes(initialScope)) {
+      setScope(initialScope);
+    }
+    if (initialAssignedUserId) {
+      setAssignedUserId(initialAssignedUserId);
+    }
+    if (initialAssignedTeamId) {
+      setAssignedTeamId(initialAssignedTeamId);
+    }
+    if (initialRequester) {
+      setRequester(initialRequester);
+    }
+    if (initialStatuses) {
+      setSelectedStatuses(initialStatuses.split(",").map((status) => status.trim()).filter((status) => statuses.includes(status)));
+    }
+    if (initialPriority && priorities.includes(initialPriority)) {
+      setPriority(initialPriority);
+    }
+    if (initialDeletedScope === "deleted") {
+      setTrashMode(true);
+    }
+    if (initialSortBy && ["ticketNumber", "subject", "status", "priority", "source", "createdAt", "updatedAt"].includes(initialSortBy)) {
+      setSortBy(initialSortBy as SortBy);
+    }
+    if (initialSortDirection === "asc" || initialSortDirection === "desc") {
+      setSortDirection(initialSortDirection);
+    }
+
     void loadClients();
     void loadTicketViews(true);
     const savedColumns = window.localStorage.getItem(COLUMN_STORAGE_KEY);
@@ -975,7 +1030,7 @@ export function TicketsList() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, clientId, scope, assignedTeamId, requester, selectedStatuses, priority, sortBy, sortDirection, trashMode, pageSize]);
+  }, [search, clientId, scope, assignedUserId, assignedTeamId, requester, selectedStatuses, priority, sortBy, sortDirection, trashMode, pageSize]);
 
   useEffect(() => {
     setSelectedTicketIds([]);
@@ -984,7 +1039,7 @@ export function TicketsList() {
     }, 300);
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, clientId, scope, assignedTeamId, requester, selectedStatuses, priority, sortBy, sortDirection, trashMode, page, pageSize]);
+  }, [search, clientId, scope, assignedUserId, assignedTeamId, requester, selectedStatuses, priority, sortBy, sortDirection, trashMode, page, pageSize]);
 
   useEffect(() => {
     void loadNewTicketContacts(newTicketClientId);
