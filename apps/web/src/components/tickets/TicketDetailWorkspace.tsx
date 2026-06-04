@@ -106,6 +106,10 @@ function label(value: string) {
     .join(" ");
 }
 
+function statusClass(value: string) {
+  return `ticket-status-${value.toLowerCase().replace(/_/g, "-")}`;
+}
+
 export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const router = useRouter();
   const [ticket, setTicket] = useState<Ticket | null>(null);
@@ -393,7 +397,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
           <div className="panel ticket-summary-panel">
             <h3>Ticket Details</h3>
             <dl className="detail-list">
-              <div><dt>Status</dt><dd>{label(ticket.status)}</dd></div>
+              <div><dt>Status</dt><dd><span className={`status-pill ${statusClass(ticket.status)}`}>{label(ticket.status)}</span></dd></div>
               <div><dt>Priority</dt><dd>{label(ticket.priority)}</dd></div>
               <div><dt>Source</dt><dd>{label(ticket.source)}</dd></div>
               <div><dt>Sender</dt><dd>{ticket.senderEmail ?? "Not set"}</dd></div>

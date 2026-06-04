@@ -19,6 +19,7 @@ import { ReactNode, useEffect, useMemo, useState } from "react";
 import { useBranding } from "@/components/providers/BrandingProvider";
 import { apiFetch } from "@/lib/api";
 import { NotificationBell } from "./NotificationBell";
+import { ThemeToggle } from "./ThemeToggle";
 import { UserMenu } from "./UserMenu";
 
 const iconMap = {
@@ -100,6 +101,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <LifeBuoy size={16} aria-hidden="true" />
               <span>Support</span>
             </button>
+            <ThemeToggle />
             <NotificationBell />
             <UserMenu user={user} />
           </div>

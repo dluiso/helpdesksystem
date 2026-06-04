@@ -220,6 +220,10 @@ function label(value: string) {
     .join(" ");
 }
 
+function statusClass(value: string) {
+  return `ticket-status-${value.toLowerCase().replace(/_/g, "-")}`;
+}
+
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
@@ -876,7 +880,7 @@ export function TicketsList() {
         );
       case "readState":
         return (
-          <span className={`status-pill ${ticket.firstReadAt ? "success" : ""}`} title={ticket.firstReadBy ? `Opened by ${ticket.firstReadBy.firstName} ${ticket.firstReadBy.lastName}` : undefined}>
+          <span className={`status-pill ${ticket.firstReadAt ? "read-pill" : "unread-pill"}`} title={ticket.firstReadBy ? `Opened by ${ticket.firstReadBy.firstName} ${ticket.firstReadBy.lastName}` : undefined}>
             {ticket.firstReadAt ? "Read" : "Unread"}
           </span>
         );
@@ -900,7 +904,7 @@ export function TicketsList() {
       case "team":
         return ticket.assignedTeam?.name ?? (ticket.assignedGroup ? `${ticket.assignedGroup.name} (legacy)` : "Unassigned");
       case "status":
-        return <span className={`status-pill ${ticket.status === "MERGED" ? "muted-pill" : ""}`}>{label(ticket.status)}</span>;
+        return <span className={`status-pill ${statusClass(ticket.status)}`}>{label(ticket.status)}</span>;
       case "priority":
         return label(ticket.priority);
       case "source":

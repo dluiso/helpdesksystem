@@ -22,3 +22,4 @@
 - Added light, dark, and system theme preferences with localStorage persistence.
 - Added a profile Appearance section for theme selection.
 - Added dark-mode CSS variables and converted core app surfaces, forms, tables, cards, modals, dropdowns, buttons, and badges to theme-aware colors.
+- Added a topbar theme toggle and improved dark-mode contrast for ticket status pills, read badges, conversations, signatures, and rich email content.
