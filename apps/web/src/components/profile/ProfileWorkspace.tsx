@@ -16,6 +16,7 @@ import {
   Redo2,
   RemoveFormatting,
   Save,
+  SunMoon,
   Strikethrough,
   Underline,
   Undo2,
@@ -24,8 +25,9 @@ import {
 import { ClipboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { ThemePreference, useTheme } from "@/components/providers/ThemeProvider";
 
-type ProfileSection = "account" | "password" | "notifications" | "signature";
+type ProfileSection = "account" | "password" | "appearance" | "notifications" | "signature";
 
 interface ProfileUser {
   id: string;
@@ -100,8 +102,15 @@ const NOTIFICATION_FIELDS: Array<{ label: string; inAppKey: keyof NotificationPr
 const SECTIONS: Array<{ key: ProfileSection; label: string; icon: typeof UserRound }> = [
   { key: "account", label: "Account", icon: UserRound },
   { key: "password", label: "Password", icon: KeyRound },
+  { key: "appearance", label: "Appearance", icon: SunMoon },
   { key: "notifications", label: "Notifications", icon: Mail },
   { key: "signature", label: "Signature", icon: PenLine }
+];
+
+const THEME_OPTIONS: Array<{ value: ThemePreference; label: string; description: string }> = [
+  { value: "light", label: "Light", description: "Use the standard bright interface." },
+  { value: "dark", label: "Dark", description: "Use a darker interface for low-light work." },
+  { value: "system", label: "System", description: "Follow your operating system setting." }
 ];
 
 const SIGNATURE_TOOLBAR = [
@@ -120,6 +129,7 @@ const SIGNATURE_TOOLBAR = [
 ] as const;
 
 export function ProfileWorkspace() {
+  const { theme, setTheme } = useTheme();
   const [activeSection, setActiveSection] = useState<ProfileSection>("account");
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [firstName, setFirstName] = useState("");
@@ -396,6 +406,28 @@ export function ProfileWorkspace() {
                   <KeyRound size={16} aria-hidden="true" />
                   <span>Change Password</span>
                 </button>
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === "appearance" ? (
+            <section className="panel profile-panel">
+              <div className="section-heading">
+                <div>
+                  <h2>Appearance</h2>
+                  <p className="muted">Choose how the application theme is displayed on this device.</p>
+                </div>
+              </div>
+              <div className="profile-card-grid">
+                {THEME_OPTIONS.map((option) => (
+                  <label className="profile-toggle-card" key={option.value}>
+                    <input type="radio" name="theme" checked={theme === option.value} onChange={() => setTheme(option.value)} />
+                    <span>
+                      <strong>{option.label}</strong>
+                      <small>{option.description}</small>
+                    </span>
+                  </label>
+                ))}
               </div>
             </section>
           ) : null}

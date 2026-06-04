@@ -16,3 +16,9 @@
 - Added manual ticket creation from the ticket list using existing ticket creation and assignment endpoints.
 - Added user-persisted ticket views for filters, sorting, columns, page size, and table density.
 - Added inline specialist assignment from the ticket table using the existing assignment workflow.
+
+## 2026-06-04 - Theme support
+
+- Added light, dark, and system theme preferences with localStorage persistence.
+- Added a profile Appearance section for theme selection.
+- Added dark-mode CSS variables and converted core app surfaces, forms, tables, cards, modals, dropdowns, buttons, and badges to theme-aware colors.

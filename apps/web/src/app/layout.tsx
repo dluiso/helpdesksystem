@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { BrandingProvider } from "@/components/providers/BrandingProvider";
+import { ThemeProvider, ThemeScript } from "@/components/providers/ThemeProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -9,9 +10,14 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <ThemeScript />
+      </head>
       <body>
-        <BrandingProvider>{children}</BrandingProvider>
+        <ThemeProvider>
+          <BrandingProvider>{children}</BrandingProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
