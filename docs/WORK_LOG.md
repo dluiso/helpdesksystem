@@ -23,3 +23,9 @@
 - Added a profile Appearance section for theme selection.
 - Added dark-mode CSS variables and converted core app surfaces, forms, tables, cards, modals, dropdowns, buttons, and badges to theme-aware colors.
 - Added a topbar theme toggle and improved dark-mode contrast for ticket status pills, read badges, conversations, signatures, and rich email content.
+
+## 2026-06-04 - Ticket list contrast and editor readability
+
+- Added a high-contrast ticket count pill for dark mode.
+- Kept rich text editor surfaces light in dark mode to preserve readability and signature formatting.
+- Added created and modified timestamps under each ticket subject so date columns can be hidden without losing context.

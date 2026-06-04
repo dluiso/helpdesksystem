@@ -35,6 +35,13 @@
   --pill-read-text: #0f5138;
   --pill-unread-bg: #e8eef9;
   --pill-unread-text: #24416f;
+  --count-pill-bg: #e8eef9;
+  --count-pill-text: #1f3a64;
+  --editor-bg: #ffffff;
+  --editor-text: #111827;
+  --editor-muted: #5f6b7a;
+  --editor-link: #155eef;
+  --editor-line: #cfd8e6;
   --success: #157f5b;
   --warning: #b25e09;
   --danger: #b42318;
@@ -78,6 +85,13 @@
   --pill-read-text: #c6f7dd;
   --pill-unread-bg: #263752;
   --pill-unread-text: #dbeafe;
+  --count-pill-bg: #dbeafe;
+  --count-pill-text: #172554;
+  --editor-bg: #ffffff;
+  --editor-text: #111827;
+  --editor-muted: #5f6b7a;
+  --editor-link: #155eef;
+  --editor-line: #cfd8e6;
   --success: #5ad39b;
   --warning: #f0b45d;
   --danger: #ff8b80;
@@ -1518,27 +1532,23 @@ select {
   color: var(--brand-primary);
 }
 
-[data-theme="dark"] .signature-render,
-[data-theme="dark"] .message-body,
-[data-theme="dark"] .editor-surface {
+[data-theme="dark"] .signature-render:not(.editor-surface),
+[data-theme="dark"] .message-body {
   color: var(--text);
 }
 
-[data-theme="dark"] .signature-render [style*="color"],
-[data-theme="dark"] .message-body [style*="color"],
-[data-theme="dark"] .editor-surface [style*="color"] {
+[data-theme="dark"] .signature-render:not(.editor-surface) [style*="color"],
+[data-theme="dark"] .message-body [style*="color"] {
   color: var(--text) !important;
 }
 
-[data-theme="dark"] .signature-render a,
-[data-theme="dark"] .message-body a,
-[data-theme="dark"] .editor-surface a {
+[data-theme="dark"] .signature-render:not(.editor-surface) a,
+[data-theme="dark"] .message-body a {
   color: #8ab4ff !important;
 }
 
-[data-theme="dark"] .signature-render hr,
-[data-theme="dark"] .message-body hr,
-[data-theme="dark"] .editor-surface hr {
+[data-theme="dark"] .signature-render:not(.editor-surface) hr,
+[data-theme="dark"] .message-body hr {
   border-color: var(--line);
 }
 
@@ -1900,6 +1910,12 @@ select {
   white-space: nowrap;
 }
 
+.ticket-subject-meta {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
 .table-sort-button {
   border: 0;
   padding: 0;
@@ -2067,6 +2083,19 @@ select {
   background: var(--surface-selected);
   font-size: 12px;
   font-weight: 750;
+}
+
+.count-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  border-radius: 999px;
+  padding: 0 9px;
+  color: var(--count-pill-text);
+  background: var(--count-pill-bg);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .status-pill.ticket-status-new,
@@ -2286,11 +2315,26 @@ select {
   direction: ltr;
   text-align: left;
   unicode-bidi: isolate;
+  border-color: var(--editor-line);
+  background: var(--editor-bg);
+  color: var(--editor-text);
 }
 
 .editor-surface:empty::before {
   content: attr(data-placeholder);
-  color: var(--text-muted);
+  color: var(--editor-muted);
+}
+
+.editor-surface [style*="color"] {
+  color: var(--editor-text) !important;
+}
+
+.editor-surface a {
+  color: var(--editor-link) !important;
+}
+
+.editor-surface hr {
+  border-color: var(--editor-line);
 }
 
 .signature-editor {

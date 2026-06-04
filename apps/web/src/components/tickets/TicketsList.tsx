@@ -858,11 +858,17 @@ export function TicketsList() {
           <Link className="table-cell-stack ticket-subject-link" href={`/tickets/${ticket.ticketNumber}`}>
             <strong>{ticket.subject}</strong>
             <span>{ticket.senderEmail ?? label(ticket.source)}</span>
+            <span className="ticket-subject-meta">
+              Created {formatDate(ticket.createdAt)} / Modified {formatDate(ticket.updatedAt)}
+            </span>
           </Link>
         ) : (
           <span className="table-cell-stack">
             <strong>{ticket.subject}</strong>
             <span>{ticket.senderEmail ?? label(ticket.source)}</span>
+            <span className="ticket-subject-meta">
+              Created {formatDate(ticket.createdAt)} / Modified {formatDate(ticket.updatedAt)}
+            </span>
           </span>
         );
       case "client":
@@ -989,7 +995,7 @@ export function TicketsList() {
       <div className="tickets-compact-header">
         <div className="tickets-compact-title">
           <h1>Tickets</h1>
-          <span className="status-pill">{totalTickets} total</span>
+          <span className="count-pill">{totalTickets} total</span>
         </div>
         <label className="input-with-icon tickets-search-field">
           <Search size={16} aria-hidden="true" />
