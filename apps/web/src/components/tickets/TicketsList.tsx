@@ -117,7 +117,7 @@ interface TicketViewState {
   scope: string;
   assignedTeamId: string;
   requester: string;
-  status: string;
+  statuses: string[];
   priority: string;
   sortBy: SortBy;
   sortDirection: SortDirection;
@@ -203,12 +203,12 @@ const statuses = ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_
 const mutableStatuses = statuses.filter((value) => value !== "MERGED");
 const priorities = ["LOW", "NORMAL", "HIGH", "URGENT", "CRITICAL"];
 const builtInViews: Array<{ id: string; name: string; state: Partial<TicketViewState> }> = [
-  { id: "all", name: "All tickets", state: { scope: "all", status: "", priority: "" } },
-  { id: "new", name: "New tickets", state: { status: "NEW", scope: "all" } },
-  { id: "open", name: "Open tickets", state: { status: "OPEN", scope: "all" } },
-  { id: "closed", name: "Closed tickets", state: { status: "CLOSED", scope: "all" } },
-  { id: "mine", name: "My tickets", state: { scope: "assigned_to_me", status: "" } },
-  { id: "unassigned", name: "Unassigned", state: { scope: "unassigned", status: "" } },
+  { id: "all", name: "All tickets", state: { scope: "all", statuses: [], priority: "" } },
+  { id: "new", name: "New tickets", state: { statuses: ["NEW"], scope: "all" } },
+  { id: "open", name: "Open tickets", state: { statuses: ["OPEN"], scope: "all" } },
+  { id: "closed", name: "Closed tickets", state: { statuses: ["CLOSED"], scope: "all" } },
+  { id: "mine", name: "My tickets", state: { scope: "assigned_to_me", statuses: [] } },
+  { id: "unassigned", name: "Unassigned", state: { scope: "unassigned", statuses: [] } },
   { id: "high", name: "High priority", state: { priority: "HIGH", scope: "all" } }
 ];
 
@@ -279,6 +279,12 @@ function normalizeTicketViewState(value: unknown): TicketViewState {
   const state = value && typeof value === "object" ? (value as Partial<TicketViewState>) : {};
   const nextSortBy = allColumns.some((column) => column.sortable === state.sortBy) ? state.sortBy as SortBy : "updatedAt";
   const nextPageSize = state.pageSize === "20" || state.pageSize === "50" || state.pageSize === "100" || state.pageSize === "all" ? state.pageSize : "20";
+  const legacyStatus = typeof (state as { status?: unknown }).status === "string" ? (state as { status: string }).status : "";
+  const nextStatuses = Array.isArray(state.statuses)
+    ? state.statuses.filter((status): status is string => typeof status === "string" && statuses.includes(status))
+    : legacyStatus && statuses.includes(legacyStatus)
+      ? [legacyStatus]
+      : [];
 
   return {
     search: typeof state.search === "string" ? state.search : "",
@@ -286,7 +292,7 @@ function normalizeTicketViewState(value: unknown): TicketViewState {
     scope: typeof state.scope === "string" ? state.scope : "all",
     assignedTeamId: typeof state.assignedTeamId === "string" ? state.assignedTeamId : "",
     requester: typeof state.requester === "string" ? state.requester : "",
-    status: typeof state.status === "string" ? state.status : "",
+    statuses: [...new Set(nextStatuses)],
     priority: typeof state.priority === "string" ? state.priority : "",
     sortBy: nextSortBy,
     sortDirection: state.sortDirection === "asc" || state.sortDirection === "desc" ? state.sortDirection : "desc",
@@ -310,7 +316,7 @@ export function TicketsList() {
   const [search, setSearch] = useState("");
   const [clientId, setClientId] = useState("");
   const [requester, setRequester] = useState("");
-  const [status, setStatus] = useState("");
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [priority, setPriority] = useState("");
   const [sortBy, setSortBy] = useState<SortBy>("updatedAt");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -363,7 +369,7 @@ export function TicketsList() {
     [columnOrder, visibleColumns]
   );
 
-  const hasActiveFilters = Boolean(search || clientId || requester || status || priority || scope !== "all" || assignedTeamId);
+  const hasActiveFilters = Boolean(search || clientId || requester || selectedStatuses.length > 0 || priority || scope !== "all" || assignedTeamId);
   const selectedCount = selectedTicketIds.length;
   const allVisibleSelected = tickets.length > 0 && tickets.every((ticket) => selectedTicketIds.includes(ticket.id));
   const selectedTickets = useMemo(() => selectedTicketIds.map((id) => tickets.find((ticket) => ticket.id === id)).filter((ticket): ticket is TicketListItem => Boolean(ticket)), [selectedTicketIds, tickets]);
@@ -390,8 +396,8 @@ export function TicketsList() {
       if (requester.trim()) {
         params.set("requester", requester.trim());
       }
-      if (status) {
-        params.set("status", status);
+      if (selectedStatuses.length > 0) {
+        params.set("statuses", selectedStatuses.join(","));
       }
       if (priority) {
         params.set("priority", priority);
@@ -456,7 +462,7 @@ export function TicketsList() {
       scope,
       assignedTeamId,
       requester,
-      status,
+      statuses: selectedStatuses,
       priority,
       sortBy,
       sortDirection,
@@ -474,7 +480,7 @@ export function TicketsList() {
     setScope(normalized.scope);
     setAssignedTeamId(normalized.assignedTeamId);
     setRequester(normalized.requester);
-    setStatus(normalized.status);
+    setSelectedStatuses(normalized.statuses);
     setPriority(normalized.priority);
     setSortBy(normalized.sortBy);
     setSortDirection(normalized.sortDirection);
@@ -756,7 +762,7 @@ export function TicketsList() {
     setScope("all");
     setAssignedTeamId("");
     setRequester("");
-    setStatus("");
+    setSelectedStatuses([]);
     setPriority("");
   }
 
@@ -823,6 +829,10 @@ export function TicketsList() {
 
   function toggleTicketSelection(ticketId: string) {
     setSelectedTicketIds((current) => (current.includes(ticketId) ? current.filter((id) => id !== ticketId) : [...current, ticketId]));
+  }
+
+  function toggleStatusFilter(value: string) {
+    setSelectedStatuses((current) => (current.includes(value) ? current.filter((status) => status !== value) : [...current, value]));
   }
 
   function toggleSelectAllVisible() {
@@ -955,7 +965,7 @@ export function TicketsList() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, clientId, scope, assignedTeamId, requester, status, priority, sortBy, sortDirection, trashMode, pageSize]);
+  }, [search, clientId, scope, assignedTeamId, requester, selectedStatuses, priority, sortBy, sortDirection, trashMode, pageSize]);
 
   useEffect(() => {
     setSelectedTicketIds([]);
@@ -964,7 +974,7 @@ export function TicketsList() {
     }, 300);
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, clientId, scope, assignedTeamId, requester, status, priority, sortBy, sortDirection, trashMode, page, pageSize]);
+  }, [search, clientId, scope, assignedTeamId, requester, selectedStatuses, priority, sortBy, sortDirection, trashMode, page, pageSize]);
 
   useEffect(() => {
     void loadNewTicketContacts(newTicketClientId);
@@ -1059,14 +1069,22 @@ export function TicketsList() {
             ))}
           </select>
           <input className="input" value={requester} onChange={(event) => setRequester(event.target.value)} placeholder="Requester name or email" />
-          <select className="input" value={status} onChange={(event) => setStatus(event.target.value)}>
-            <option value="">All statuses</option>
-            {statuses.map((value) => (
-              <option key={value} value={value}>
-                {label(value)}
-              </option>
-            ))}
-          </select>
+          <div className="ticket-status-filter">
+            <span>{selectedStatuses.length ? `${selectedStatuses.length} status${selectedStatuses.length === 1 ? "" : "es"}` : "All statuses"}</span>
+            <div className="ticket-status-filter-menu">
+              {statuses.map((value) => (
+                <label className="checkbox-row" key={value}>
+                  <input type="checkbox" checked={selectedStatuses.includes(value)} onChange={() => toggleStatusFilter(value)} />
+                  {label(value)}
+                </label>
+              ))}
+              {selectedStatuses.length ? (
+                <button className="button secondary compact-button" type="button" onClick={() => setSelectedStatuses([])}>
+                  Clear statuses
+                </button>
+              ) : null}
+            </div>
+          </div>
           <select className="input" value={priority} onChange={(event) => setPriority(event.target.value)}>
             <option value="">All priorities</option>
             {priorities.map((value) => (

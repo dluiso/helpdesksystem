@@ -1557,7 +1557,10 @@ export class TicketsService {
       });
     }
 
-    if (query.status) {
+    const selectedStatuses = this.normalizeTicketStatuses(query.statuses);
+    if (selectedStatuses.length > 0) {
+      filters.push({ status: { in: selectedStatuses } });
+    } else if (query.status) {
       filters.push({ status: query.status });
     } else {
       filters.push({ status: { not: TicketStatus.MERGED } });
@@ -1572,5 +1575,21 @@ export class TicketsService {
       deletedAt: query.deletedScope === "deleted" ? { not: null } : null,
       ...(filters.length ? { AND: filters } : {})
     };
+  }
+
+  private normalizeTicketStatuses(value?: string): TicketStatus[] {
+    if (!value?.trim()) {
+      return [];
+    }
+
+    const allowed = new Set(Object.values(TicketStatus));
+    return [
+      ...new Set(
+        value
+          .split(",")
+          .map((status) => status.trim())
+          .filter((status): status is TicketStatus => allowed.has(status as TicketStatus))
+      )
+    ];
   }
 }
