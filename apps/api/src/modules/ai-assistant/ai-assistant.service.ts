@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { AiProvider } from "@prisma/client";
+import { AiProvider, Prisma } from "@prisma/client";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
@@ -204,7 +204,7 @@ export class AiAssistantService {
 
   async run(ticketId: string, action: AiTicketAction, user: AuthenticatedUser, draft?: string) {
     const ticket = await this.prisma.ticket.findFirst({
-      where: { id: ticketId, deletedAt: null },
+      where: this.ticketReferenceWhere(ticketId, user.organizationId),
       include: {
         messages: {
           orderBy: { createdAt: "asc" },
@@ -241,7 +241,7 @@ export class AiAssistantService {
     await this.prisma.aiRequestLog.create({
       data: {
         userId: user.id,
-        ticketId,
+        ticketId: ticket.id,
         actionType: action,
         provider: resolved.config.provider,
         model: result.model,
@@ -253,7 +253,7 @@ export class AiAssistantService {
     await this.auditLogs.create({
       userId: user.id,
       entityType: "Ticket",
-      entityId: ticketId,
+      entityId: ticket.id,
       action: "ai_assistant.used",
       metadata: { action, provider: resolved.config.provider, model: result.model }
     });
@@ -318,6 +318,20 @@ export class AiAssistantService {
         apiKey: this.resolveSecret(providerConfig.apiKeyReference),
         timeoutMs: providerConfig.timeoutMs
       } satisfies AiProviderRuntimeConfig
+    };
+  }
+
+  private ticketReferenceWhere(ticketRef: string, organizationId: string): Prisma.TicketWhereInput {
+    const normalized = ticketRef.trim();
+    const matchers: Prisma.TicketWhereInput[] = [{ ticketNumber: normalized.toUpperCase() }];
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)) {
+      matchers.push({ id: normalized });
+    }
+
+    return {
+      organizationId,
+      deletedAt: null,
+      OR: matchers
     };
   }
 

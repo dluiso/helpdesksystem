@@ -1,0 +1,36 @@
+ALTER TABLE "user_notification_preferences"
+ADD COLUMN "inAppTicketAssignedToMe" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "inAppTicketAssignedToMyTeam" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "inAppTicketReplyOnAssignedTicket" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "inAppInternalNoteOnAssignedTicket" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "inAppInternalNoteMention" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "inAppRoutingRuleMatched" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "inAppTicketReopened" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "inAppNewTicketCreated" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "emailTicketAssignedToMe" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "emailTicketAssignedToMyTeam" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "emailTicketReplyOnAssignedTicket" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "emailInternalNoteOnAssignedTicket" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "emailInternalNoteMention" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "emailRoutingRuleMatched" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "emailTicketReopened" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "emailNewTicketCreated" BOOLEAN NOT NULL DEFAULT false;
+
+UPDATE "user_notification_preferences"
+SET
+  "inAppTicketAssignedToMe" = "inAppEnabled" AND "ticketAssignedToMe",
+  "inAppTicketAssignedToMyTeam" = "inAppEnabled" AND "ticketAssignedToMyTeam",
+  "inAppTicketReplyOnAssignedTicket" = "inAppEnabled" AND "ticketReplyOnAssignedTicket",
+  "inAppInternalNoteOnAssignedTicket" = "inAppEnabled" AND "internalNoteOnAssignedTicket",
+  "inAppInternalNoteMention" = "inAppEnabled" AND "internalNoteMention",
+  "inAppRoutingRuleMatched" = "inAppEnabled" AND "routingRuleMatched",
+  "inAppTicketReopened" = "inAppEnabled" AND "ticketReopened",
+  "inAppNewTicketCreated" = "inAppEnabled" AND "newTicketCreated",
+  "emailTicketAssignedToMe" = "emailEnabled" AND "ticketAssignedToMe",
+  "emailTicketAssignedToMyTeam" = "emailEnabled" AND "ticketAssignedToMyTeam",
+  "emailTicketReplyOnAssignedTicket" = "emailEnabled" AND "ticketReplyOnAssignedTicket",
+  "emailInternalNoteOnAssignedTicket" = "emailEnabled" AND "internalNoteOnAssignedTicket",
+  "emailInternalNoteMention" = "emailEnabled" AND "internalNoteMention",
+  "emailRoutingRuleMatched" = "emailEnabled" AND "routingRuleMatched",
+  "emailTicketReopened" = "emailEnabled" AND "ticketReopened",
+  "emailNewTicketCreated" = "emailEnabled" AND "newTicketCreated";

@@ -43,5 +43,69 @@ export class UpdateNotificationPreferencesDto {
 
   @IsOptional()
   @IsBoolean()
+  inAppTicketAssignedToMe?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  inAppTicketAssignedToMyTeam?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  inAppTicketReplyOnAssignedTicket?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  inAppInternalNoteOnAssignedTicket?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  inAppInternalNoteMention?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  inAppRoutingRuleMatched?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  inAppTicketReopened?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  inAppNewTicketCreated?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  emailTicketAssignedToMe?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  emailTicketAssignedToMyTeam?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  emailTicketReplyOnAssignedTicket?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  emailInternalNoteOnAssignedTicket?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  emailInternalNoteMention?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  emailRoutingRuleMatched?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  emailTicketReopened?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  emailNewTicketCreated?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   dailyDigestEnabled?: boolean;
 }

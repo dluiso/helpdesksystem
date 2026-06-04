@@ -154,6 +154,22 @@ interface NotificationPreference {
   routingRuleMatched: boolean;
   ticketReopened: boolean;
   newTicketCreated: boolean;
+  inAppTicketAssignedToMe: boolean;
+  inAppTicketAssignedToMyTeam: boolean;
+  inAppTicketReplyOnAssignedTicket: boolean;
+  inAppInternalNoteOnAssignedTicket: boolean;
+  inAppInternalNoteMention: boolean;
+  inAppRoutingRuleMatched: boolean;
+  inAppTicketReopened: boolean;
+  inAppNewTicketCreated: boolean;
+  emailTicketAssignedToMe: boolean;
+  emailTicketAssignedToMyTeam: boolean;
+  emailTicketReplyOnAssignedTicket: boolean;
+  emailInternalNoteOnAssignedTicket: boolean;
+  emailInternalNoteMention: boolean;
+  emailRoutingRuleMatched: boolean;
+  emailTicketReopened: boolean;
+  emailNewTicketCreated: boolean;
   dailyDigestEnabled: boolean;
 }
 
@@ -182,15 +198,15 @@ const AI_PROVIDER_LABELS: Record<string, string> = {
   MOCK: "Mock"
 };
 
-const NOTIFICATION_FIELDS: Array<{ key: keyof NotificationPreference; label: string }> = [
-  { key: "newTicketCreated", label: "New ticket created" },
-  { key: "ticketAssignedToMe", label: "Assigned to me" },
-  { key: "ticketAssignedToMyTeam", label: "Assigned to my team" },
-  { key: "ticketReplyOnAssignedTicket", label: "Reply on assigned ticket" },
-  { key: "internalNoteOnAssignedTicket", label: "Internal note on assigned ticket" },
-  { key: "internalNoteMention", label: "Mentioned on internal note" },
-  { key: "routingRuleMatched", label: "Routing rule matched" },
-  { key: "ticketReopened", label: "Ticket reopened" }
+const NOTIFICATION_FIELDS: Array<{ label: string; inAppKey: keyof NotificationPreference; emailKey: keyof NotificationPreference }> = [
+  { label: "New ticket created", inAppKey: "inAppNewTicketCreated", emailKey: "emailNewTicketCreated" },
+  { label: "Assigned to me", inAppKey: "inAppTicketAssignedToMe", emailKey: "emailTicketAssignedToMe" },
+  { label: "Assigned to my team", inAppKey: "inAppTicketAssignedToMyTeam", emailKey: "emailTicketAssignedToMyTeam" },
+  { label: "Reply on assigned ticket", inAppKey: "inAppTicketReplyOnAssignedTicket", emailKey: "emailTicketReplyOnAssignedTicket" },
+  { label: "Internal note on assigned ticket", inAppKey: "inAppInternalNoteOnAssignedTicket", emailKey: "emailInternalNoteOnAssignedTicket" },
+  { label: "Mentioned on internal note", inAppKey: "inAppInternalNoteMention", emailKey: "emailInternalNoteMention" },
+  { label: "Routing rule matched", inAppKey: "inAppRoutingRuleMatched", emailKey: "emailRoutingRuleMatched" },
+  { label: "Ticket reopened", inAppKey: "inAppTicketReopened", emailKey: "emailTicketReopened" }
 ];
 
 function normalizeSyncIntervalSeconds(value: string, unit: "seconds" | "minutes") {
@@ -720,6 +736,23 @@ export function SettingsWorkspace() {
           internalNoteMention: preference.internalNoteMention,
           routingRuleMatched: preference.routingRuleMatched,
           ticketReopened: preference.ticketReopened,
+          newTicketCreated: preference.newTicketCreated,
+          inAppTicketAssignedToMe: preference.inAppTicketAssignedToMe,
+          inAppTicketAssignedToMyTeam: preference.inAppTicketAssignedToMyTeam,
+          inAppTicketReplyOnAssignedTicket: preference.inAppTicketReplyOnAssignedTicket,
+          inAppInternalNoteOnAssignedTicket: preference.inAppInternalNoteOnAssignedTicket,
+          inAppInternalNoteMention: preference.inAppInternalNoteMention,
+          inAppRoutingRuleMatched: preference.inAppRoutingRuleMatched,
+          inAppTicketReopened: preference.inAppTicketReopened,
+          inAppNewTicketCreated: preference.inAppNewTicketCreated,
+          emailTicketAssignedToMe: preference.emailTicketAssignedToMe,
+          emailTicketAssignedToMyTeam: preference.emailTicketAssignedToMyTeam,
+          emailTicketReplyOnAssignedTicket: preference.emailTicketReplyOnAssignedTicket,
+          emailInternalNoteOnAssignedTicket: preference.emailInternalNoteOnAssignedTicket,
+          emailInternalNoteMention: preference.emailInternalNoteMention,
+          emailRoutingRuleMatched: preference.emailRoutingRuleMatched,
+          emailTicketReopened: preference.emailTicketReopened,
+          emailNewTicketCreated: preference.emailNewTicketCreated,
           dailyDigestEnabled: preference.dailyDigestEnabled
         })
       });
@@ -1622,7 +1655,8 @@ export function SettingsWorkspace() {
                     <tr>
                       <th>User</th>
                       <th>Channels</th>
-                      <th>Ticket Events</th>
+                      <th>In-app Events</th>
+                      <th>Email Events</th>
                       <th>Digest</th>
                       <th>Actions</th>
                     </tr>
@@ -1630,7 +1664,7 @@ export function SettingsWorkspace() {
                   <tbody>
                     {notificationPreferenceRows.length === 0 ? (
                       <tr>
-                        <td colSpan={5}>No users available for notification settings.</td>
+                        <td colSpan={6}>No users available for notification settings.</td>
                       </tr>
                     ) : null}
                     {notificationPreferenceRows.map((row) => (
@@ -1664,11 +1698,25 @@ export function SettingsWorkspace() {
                         <td>
                           <div className="access-check-grid compact">
                             {NOTIFICATION_FIELDS.map((field) => (
-                              <label className="checkbox-row" key={field.key}>
+                              <label className="checkbox-row" key={field.inAppKey}>
                                 <input
                                   type="checkbox"
-                                  checked={Boolean(row.notificationPreference[field.key])}
-                                  onChange={(event) => updateNotificationPreferenceDraft(row.id, field.key, event.target.checked)}
+                                  checked={Boolean(row.notificationPreference[field.inAppKey])}
+                                  onChange={(event) => updateNotificationPreferenceDraft(row.id, field.inAppKey, event.target.checked)}
+                                />
+                                {field.label}
+                              </label>
+                            ))}
+                          </div>
+                        </td>
+                        <td>
+                          <div className="access-check-grid compact">
+                            {NOTIFICATION_FIELDS.map((field) => (
+                              <label className="checkbox-row" key={field.emailKey}>
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(row.notificationPreference[field.emailKey])}
+                                  onChange={(event) => updateNotificationPreferenceDraft(row.id, field.emailKey, event.target.checked)}
                                 />
                                 {field.label}
                               </label>
@@ -1684,6 +1732,7 @@ export function SettingsWorkspace() {
                             />
                             Daily digest
                           </label>
+                          <span className="muted">Scheduled summary preference.</span>
                         </td>
                         <td>
                           <button className="button secondary" type="button" onClick={() => saveNotificationPreference(row)} disabled={busy === `notification-${row.id}`}>

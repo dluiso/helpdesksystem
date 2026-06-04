@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { AttachmentScanResult, AttachmentScanStatus, AttachmentSource } from "@prisma/client";
+import { AttachmentScanResult, AttachmentScanStatus, AttachmentSource, Prisma } from "@prisma/client";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { FileStorageService } from "../file-storage/file-storage.service";
@@ -20,21 +20,10 @@ export class TicketAttachmentsService {
     user: AuthenticatedUser,
     file: { originalname: string; mimetype: string; size: number; buffer: Buffer }
   ) {
-    const ticket = await this.prisma.ticket.findFirst({
-      where: {
-        id: ticketId,
-        organizationId: user.organizationId,
-        deletedAt: null
-      },
-      select: { id: true }
-    });
-
-    if (!ticket) {
-      throw new NotFoundException("Ticket was not found.");
-    }
+    const ticket = await this.resolveTicket(ticketId, user);
 
     const attachment = await this.createAttachmentRecord({
-      ticketId,
+      ticketId: ticket.id,
       ticketMessageId: null,
       uploadedByUserId: user.id,
       source: AttachmentSource.OUTBOUND_REPLY,
@@ -101,10 +90,11 @@ export class TicketAttachmentsService {
   }
 
   async getDownload(ticketId: string, attachmentId: string, user: AuthenticatedUser, preview: boolean) {
+    const ticket = await this.resolveTicket(ticketId, user);
     const attachment = await this.prisma.ticketAttachment.findFirst({
       where: {
         id: attachmentId,
-        ticketId,
+        ticketId: ticket.id,
         deletedAt: null
       },
       include: { storedFile: true }
@@ -144,10 +134,11 @@ export class TicketAttachmentsService {
   }
 
   async softDelete(ticketId: string, attachmentId: string, user: AuthenticatedUser) {
+    const ticket = await this.resolveTicket(ticketId, user);
     const attachment = await this.prisma.ticketAttachment.findFirst({
       where: {
         id: attachmentId,
-        ticketId,
+        ticketId: ticket.id,
         deletedAt: null
       }
     });
@@ -228,5 +219,32 @@ export class TicketAttachmentsService {
         }
       });
     });
+  }
+
+  private async resolveTicket(ticketRef: string, user: AuthenticatedUser) {
+    const ticket = await this.prisma.ticket.findFirst({
+      where: this.ticketReferenceWhere(ticketRef, user.organizationId),
+      select: { id: true }
+    });
+
+    if (!ticket) {
+      throw new NotFoundException("Ticket was not found.");
+    }
+
+    return ticket;
+  }
+
+  private ticketReferenceWhere(ticketRef: string, organizationId: string): Prisma.TicketWhereInput {
+    const normalized = ticketRef.trim();
+    const matchers: Prisma.TicketWhereInput[] = [{ ticketNumber: normalized.toUpperCase() }];
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)) {
+      matchers.push({ id: normalized });
+    }
+
+    return {
+      organizationId,
+      deletedAt: null,
+      OR: matchers
+    };
   }
 }

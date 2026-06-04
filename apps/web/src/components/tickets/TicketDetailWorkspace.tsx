@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Download, ExternalLink, Eye, GitMerge, RefreshCcw, Save, Search, Sparkles, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
@@ -106,6 +107,7 @@ function label(value: string) {
 }
 
 export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
+  const router = useRouter();
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [ticketTeams, setTicketTeams] = useState<TicketTeam[]>([]);
@@ -143,6 +145,9 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
         apiFetch<TicketTeam[]>("/ticket-teams")
       ]);
       setTicket(ticketData);
+      if (ticketData.ticketNumber && ticketId !== ticketData.ticketNumber) {
+        router.replace(`/tickets/${ticketData.ticketNumber}`);
+      }
       setUsers(userData);
       setTicketTeams(teamData);
       setAssignedUserIds(ticketData.assignees?.length ? ticketData.assignees.map((assignment) => assignment.user.id) : ticketData.assignedUserId ? [ticketData.assignedUserId] : []);
@@ -274,6 +279,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   }
   const realAttachments = ticket.attachments.filter((attachment) => !isInlineEmailAsset(attachment));
   const inlineImageCount = ticket.attachments.filter((attachment) => isInlineEmailAsset(attachment)).length;
+  const ticketRef = ticket.ticketNumber;
 
   return (
     <>
@@ -308,7 +314,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
           {ticket.mergedIntoTicket ? (
             <>
               {" "}
-              <Link href={`/tickets/${ticket.mergedIntoTicket.id}`}>{ticket.mergedIntoTicket.ticketNumber}</Link>. Replies should be sent from the primary ticket.
+              <Link href={`/tickets/${ticket.mergedIntoTicket.ticketNumber}`}>{ticket.mergedIntoTicket.ticketNumber}</Link>. Replies should be sent from the primary ticket.
             </>
           ) : null}
         </div>
@@ -318,7 +324,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
           {!isMergedTicket ? (
             <div className="panel">
               <h2>Reply Composer</h2>
-              <TicketReplyEditor ticketId={ticket.id} notifyUsers={users} ccUsers={users} onSaved={load} />
+              <TicketReplyEditor ticketId={ticketRef} notifyUsers={users} ccUsers={users} onSaved={load} />
             </div>
           ) : null}
           <div className="panel">
@@ -355,13 +361,13 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
                   {message.sanitizedBodyHtml ? (
                     <div
                       className="message-body"
-                      dangerouslySetInnerHTML={{ __html: renderMessageHtml(ticket.id, message.sanitizedBodyHtml, mergeAttachments(message.attachments, ticket.attachments)) }}
+                      dangerouslySetInnerHTML={{ __html: renderMessageHtml(ticketRef, message.sanitizedBodyHtml, mergeAttachments(message.attachments, ticket.attachments)) }}
                     />
                   ) : (
                     <p>{message.bodyText}</p>
                   )}
                   <MessageAttachments
-                    ticketId={ticket.id}
+                    ticketId={ticketRef}
                     attachments={message.attachments.filter((attachment) => !isInlineEmailAsset(attachment))}
                     variant="message"
                   />
@@ -378,7 +384,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
               <span>Merge Tickets</span>
             </button>
             {isMergedTicket && ticket.mergedIntoTicket ? (
-              <Link className="button secondary full-width-button" href={`/tickets/${ticket.mergedIntoTicket.id}`}>
+              <Link className="button secondary full-width-button" href={`/tickets/${ticket.mergedIntoTicket.ticketNumber}`}>
                 <ExternalLink size={16} aria-hidden="true" />
                 <span>Open Primary</span>
               </Link>
@@ -401,7 +407,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
               <h3>Merged Tickets</h3>
               <div className="merge-reference-list">
                 {ticket.mergedTickets.map((mergedTicket) => (
-                  <Link className="merge-reference-card" href={`/tickets/${mergedTicket.id}`} key={mergedTicket.id}>
+                  <Link className="merge-reference-card" href={`/tickets/${mergedTicket.ticketNumber}`} key={mergedTicket.id}>
                     <strong>{mergedTicket.ticketNumber}</strong>
                     <span>{mergedTicket.subject}</span>
                     <span className="muted">{mergedTicket.mergedAt ? new Date(mergedTicket.mergedAt).toLocaleString() : "Merged"}</span>
@@ -457,7 +463,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
                 <p className="muted">Files attached to messages. Inline email images are shown inside the conversation.</p>
               </div>
             </div>
-            <MessageAttachments ticketId={ticket.id} attachments={realAttachments} variant="sidebar" />
+            <MessageAttachments ticketId={ticketRef} attachments={realAttachments} variant="sidebar" />
           </div>
         </aside>
       </section>

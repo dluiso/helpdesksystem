@@ -1114,6 +1114,28 @@ select {
   gap: 10px;
 }
 
+.notification-channel-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.notification-channel-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #ffffff;
+}
+
+.notification-channel-card h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.profile-check-grid.compact {
+  grid-template-columns: 1fr;
+}
+
 .profile-digest-row {
   width: fit-content;
   max-width: 100%;
@@ -2126,6 +2148,7 @@ select {
 
   .profile-form-grid,
   .profile-card-grid,
+  .notification-channel-grid,
   .profile-check-grid {
     grid-template-columns: 1fr;
   }

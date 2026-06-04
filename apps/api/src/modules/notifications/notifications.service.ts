@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { Prisma } from "@prisma/client";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { MailDeliveryService } from "../mailboxes/mail-delivery.service";
@@ -24,11 +25,23 @@ interface NotifyUserInput {
   metadata?: Prisma.InputJsonValue;
 }
 
+const EVENT_CHANNEL_FIELDS: Record<NotificationEventType, { inApp: keyof UpdateNotificationPreferencesDto; email: keyof UpdateNotificationPreferencesDto; legacy: keyof UpdateNotificationPreferencesDto }> = {
+  ticketAssignedToMe: { inApp: "inAppTicketAssignedToMe", email: "emailTicketAssignedToMe", legacy: "ticketAssignedToMe" },
+  ticketAssignedToMyTeam: { inApp: "inAppTicketAssignedToMyTeam", email: "emailTicketAssignedToMyTeam", legacy: "ticketAssignedToMyTeam" },
+  ticketReplyOnAssignedTicket: { inApp: "inAppTicketReplyOnAssignedTicket", email: "emailTicketReplyOnAssignedTicket", legacy: "ticketReplyOnAssignedTicket" },
+  internalNoteOnAssignedTicket: { inApp: "inAppInternalNoteOnAssignedTicket", email: "emailInternalNoteOnAssignedTicket", legacy: "internalNoteOnAssignedTicket" },
+  internalNoteMention: { inApp: "inAppInternalNoteMention", email: "emailInternalNoteMention", legacy: "internalNoteMention" },
+  routingRuleMatched: { inApp: "inAppRoutingRuleMatched", email: "emailRoutingRuleMatched", legacy: "routingRuleMatched" },
+  ticketReopened: { inApp: "inAppTicketReopened", email: "emailTicketReopened", legacy: "ticketReopened" },
+  newTicketCreated: { inApp: "inAppNewTicketCreated", email: "emailNewTicketCreated", legacy: "newTicketCreated" }
+};
+
 @Injectable()
 export class NotificationsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly mailDelivery: MailDeliveryService
+    private readonly mailDelivery: MailDeliveryService,
+    private readonly config: ConfigService
   ) {}
 
   async list(user: AuthenticatedUser) {
@@ -50,11 +63,17 @@ export class NotificationsService {
         select: { id: true, organizationId: true, email: true, firstName: true, lastName: true, isActive: true, deletedAt: true }
       })
     ]);
-    if (!targetUser || !targetUser.isActive || targetUser.deletedAt || !preferences[input.eventType]) {
+    if (!targetUser || !targetUser.isActive || targetUser.deletedAt) {
       return null;
     }
 
-    const notification = preferences.inAppEnabled
+    const inAppAllowed = preferences.inAppEnabled && this.isChannelEventEnabled(preferences, input.eventType, "inApp");
+    const emailAllowed = preferences.emailEnabled && this.isChannelEventEnabled(preferences, input.eventType, "email");
+    if (!inAppAllowed && !emailAllowed) {
+      return null;
+    }
+
+    const notification = inAppAllowed
       ? await this.prisma.notification.create({
           data: {
             userId: input.userId,
@@ -66,12 +85,14 @@ export class NotificationsService {
         })
       : null;
 
-    if (preferences.emailEnabled) {
+    if (emailAllowed) {
       await this.sendEmailNotification({
         organizationId: targetUser.organizationId,
         email: targetUser.email,
         title: input.title,
-        body: input.body
+        body: input.body,
+        ticketId: input.ticketId,
+        eventType: input.eventType
       });
     }
 
@@ -96,7 +117,7 @@ export class NotificationsService {
 
     const preferences = await this.prisma.userNotificationPreference.findMany({
       where: {
-        newTicketCreated: true,
+        OR: [{ inAppNewTicketCreated: true }, { emailNewTicketCreated: true }, { newTicketCreated: true }],
         user: {
           organizationId: input.organizationId,
           isActive: true,
@@ -223,24 +244,182 @@ export class NotificationsService {
       routingRuleMatched: true,
       ticketReopened: true,
       newTicketCreated: false,
+      inAppTicketAssignedToMe: true,
+      inAppTicketAssignedToMyTeam: true,
+      inAppTicketReplyOnAssignedTicket: true,
+      inAppInternalNoteOnAssignedTicket: true,
+      inAppInternalNoteMention: true,
+      inAppRoutingRuleMatched: true,
+      inAppTicketReopened: true,
+      inAppNewTicketCreated: false,
+      emailTicketAssignedToMe: false,
+      emailTicketAssignedToMyTeam: false,
+      emailTicketReplyOnAssignedTicket: false,
+      emailInternalNoteOnAssignedTicket: false,
+      emailInternalNoteMention: false,
+      emailRoutingRuleMatched: false,
+      emailTicketReopened: false,
+      emailNewTicketCreated: false,
       dailyDigestEnabled: false,
       createdAt: null,
       updatedAt: null
     };
   }
 
-  private async sendEmailNotification(input: { organizationId: string; email: string; title: string; body?: string | null }) {
+  private isChannelEventEnabled(
+    preferences: Partial<Record<string, unknown>>,
+    eventType: NotificationEventType,
+    channel: "inApp" | "email"
+  ) {
+    const fields = EVENT_CHANNEL_FIELDS[eventType];
+    const channelValue = preferences[fields[channel] as string];
+    if (typeof channelValue === "boolean") {
+      return channelValue;
+    }
+
+    return Boolean(preferences[fields.legacy as string]);
+  }
+
+  private async sendEmailNotification(input: { organizationId: string; email: string; title: string; body?: string | null; ticketId?: string | null; eventType: NotificationEventType }) {
     try {
+      const ticket = input.ticketId
+        ? await this.prisma.ticket.findFirst({
+            where: { id: input.ticketId, organizationId: input.organizationId, deletedAt: null },
+            select: {
+              id: true,
+              ticketNumber: true,
+              subject: true,
+              status: true,
+              priority: true,
+              source: true,
+              senderEmail: true,
+              createdAt: true,
+              updatedAt: true,
+              client: { select: { name: true } },
+              contact: { select: { firstName: true, lastName: true, email: true } },
+              assignedUser: { select: { firstName: true, lastName: true, email: true } },
+              assignedTeam: { select: { name: true } }
+            }
+          })
+        : null;
+      const emailBody = ticket ? this.buildTicketEmailBody(input.title, input.body, ticket, input.eventType) : { text: input.body ?? input.title, html: `<p>${this.escapeHtml(input.body ?? input.title).replace(/\n/g, "<br>")}</p>` };
+
       await this.mailDelivery.sendTicketReply({
         organizationId: input.organizationId,
         to: [input.email],
         subject: input.title,
-        bodyText: input.body ?? input.title,
-        bodyHtml: `<p>${this.escapeHtml(input.body ?? input.title).replace(/\n/g, "<br>")}</p>`
+        bodyText: emailBody.text,
+        bodyHtml: emailBody.html
       });
     } catch {
       // Email notification failures must not block ticket workflows.
     }
+  }
+
+  private buildTicketEmailBody(
+    title: string,
+    body: string | null | undefined,
+    ticket: {
+      ticketNumber: string;
+      subject: string;
+      status: string;
+      priority: string;
+      source: string;
+      senderEmail: string | null;
+      createdAt: Date;
+      updatedAt: Date;
+      client: { name: string } | null;
+      contact: { firstName: string; lastName: string; email: string } | null;
+      assignedUser: { firstName: string; lastName: string; email: string } | null;
+      assignedTeam: { name: string } | null;
+    },
+    eventType: NotificationEventType
+  ) {
+    const requester = ticket.contact
+      ? `${ticket.contact.firstName} ${ticket.contact.lastName}`.trim() || ticket.contact.email
+      : ticket.senderEmail ?? "Unknown requester";
+    const assignedTo = ticket.assignedUser
+      ? `${ticket.assignedUser.firstName} ${ticket.assignedUser.lastName}`.trim() || ticket.assignedUser.email
+      : ticket.assignedTeam?.name ?? "Unassigned";
+    const ticketUrl = `${this.appUrl()}/tickets/${encodeURIComponent(ticket.ticketNumber)}`;
+    const reason = body?.trim() || title;
+    const lines = [
+      title,
+      "",
+      `Ticket: ${ticket.ticketNumber}`,
+      `Subject: ${ticket.subject}`,
+      `Event: ${this.eventLabel(eventType)}`,
+      `Reason: ${reason}`,
+      `Client: ${ticket.client?.name ?? "Unassigned client"}`,
+      `Requester: ${requester}`,
+      `Status: ${this.label(ticket.status)}`,
+      `Priority: ${this.label(ticket.priority)}`,
+      `Source: ${this.label(ticket.source)}`,
+      `Assigned to: ${assignedTo}`,
+      `Created: ${ticket.createdAt.toLocaleString("en-US", { timeZone: "America/Chicago" })}`,
+      `Updated: ${ticket.updatedAt.toLocaleString("en-US", { timeZone: "America/Chicago" })}`,
+      "",
+      `Open ticket: ${ticketUrl}`
+    ];
+    const details = [
+      ["Ticket", ticket.ticketNumber],
+      ["Subject", ticket.subject],
+      ["Event", this.eventLabel(eventType)],
+      ["Reason", reason],
+      ["Client", ticket.client?.name ?? "Unassigned client"],
+      ["Requester", requester],
+      ["Status", this.label(ticket.status)],
+      ["Priority", this.label(ticket.priority)],
+      ["Source", this.label(ticket.source)],
+      ["Assigned to", assignedTo],
+      ["Created", ticket.createdAt.toLocaleString("en-US", { timeZone: "America/Chicago" })],
+      ["Updated", ticket.updatedAt.toLocaleString("en-US", { timeZone: "America/Chicago" })]
+    ];
+
+    return {
+      text: lines.join("\n"),
+      html: `
+        <div>
+          <p>${this.escapeHtml(title)}</p>
+          <table cellpadding="6" cellspacing="0" style="border-collapse:collapse;border:1px solid #d8dee9;">
+            <tbody>
+              ${details
+                .map(
+                  ([key, value]) =>
+                    `<tr><th align="left" style="border:1px solid #d8dee9;background:#f5f7fb;">${this.escapeHtml(key)}</th><td style="border:1px solid #d8dee9;">${this.escapeHtml(value)}</td></tr>`
+                )
+                .join("")}
+            </tbody>
+          </table>
+          <p><a href="${this.escapeHtml(ticketUrl)}">Open ticket ${this.escapeHtml(ticket.ticketNumber)}</a></p>
+        </div>`
+    };
+  }
+
+  private appUrl() {
+    return (this.config.get<string>("APP_URL") ?? "https://helpdesk.aviditytechnologies.com").replace(/\/+$/, "");
+  }
+
+  private eventLabel(eventType: NotificationEventType) {
+    const labels: Record<NotificationEventType, string> = {
+      ticketAssignedToMe: "Assigned to me",
+      ticketAssignedToMyTeam: "Assigned to my team",
+      ticketReplyOnAssignedTicket: "Reply on assigned ticket",
+      internalNoteOnAssignedTicket: "Internal note on assigned ticket",
+      internalNoteMention: "Mentioned on internal note",
+      routingRuleMatched: "Routing rule matched",
+      ticketReopened: "Ticket reopened",
+      newTicketCreated: "New ticket created"
+    };
+    return labels[eventType];
+  }
+
+  private label(value: string) {
+    return value
+      .toLowerCase()
+      .split("_")
+      .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+      .join(" ");
   }
 
   private escapeHtml(value: string) {

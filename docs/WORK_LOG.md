@@ -1,11 +1,9 @@
 # Work Log
 
-## 2026-06-02 - Ticket Merging
+## 2026-06-04 - Ticket URLs and notification delivery
 
-- Added ticket merge data model, migration, and `tickets.merge` permission.
-- Added API endpoints to search merge candidates and merge selected tickets into a primary ticket.
-- Preserved source ticket identity on moved messages with `mergedFromTicketNumber` and `mergedFromTicketSubject`.
-- Redirected inbound email replies from merged tickets to their primary ticket.
-- Added merge actions to the ticket list and ticket detail views.
-- Added UI indicators for merged tickets and message origins.
-- Added focused service tests for merge behavior and reply blocking on merged tickets.
+- Added clean ticket URLs based on `ticketNumber`, while keeping UUID-based ticket URLs compatible for existing links.
+- Split ticket notification preferences into independent in-app and email event toggles.
+- Fixed the settings save payload so `New ticket created` preferences are persisted.
+- Expanded ticket notification emails with ticket context and a direct `/tickets/{ticketNumber}` link.
+- Added a Prisma migration for per-channel notification preference columns.

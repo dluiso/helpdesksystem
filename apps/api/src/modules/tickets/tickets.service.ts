@@ -133,9 +133,7 @@ export class TicketsService {
   async getById(ticketId: string, user: AuthenticatedUser) {
     let ticket = await this.prisma.ticket.findFirst({
       where: {
-        id: ticketId,
-        organizationId: user.organizationId,
-        deletedAt: null
+        ...this.ticketReferenceWhere(ticketId, user.organizationId)
       },
       include: {
         client: true,
@@ -519,12 +517,13 @@ export class TicketsService {
       throw new BadRequestException("Use the merge workflow to mark tickets as merged.");
     }
 
-    await this.ensureTicketExists(ticketId, user);
+    const existingTicket = await this.ensureTicketExists(ticketId, user);
+    const internalTicketId = existingTicket.id;
     const assignedUserIds = this.normalizeAssignedUserIds(input.assignedUserIds ?? (input.assignedUserId ? [input.assignedUserId] : []));
     const primaryAssignedUserId = assignedUserIds[0] ?? input.assignedUserId ?? null;
     await this.validateAssignmentTargets(assignedUserIds, input.assignedTeamId, user.organizationId);
     const ticket = await this.prisma.ticket.update({
-      where: { id: ticketId },
+      where: { id: internalTicketId },
       data: {
         assignedUserId: primaryAssignedUserId,
         assignedGroupId: input.assignedTeamId ? null : input.assignedGroupId,
@@ -533,24 +532,24 @@ export class TicketsService {
         status: input.status
       }
     });
-    await this.syncTicketAssignees(ticketId, assignedUserIds, user.id);
+    await this.syncTicketAssignees(internalTicketId, assignedUserIds, user.id);
 
     await Promise.all(
       assignedUserIds.map((assignedUserId) =>
-        this.addWatcherAndNotify(ticketId, assignedUserId, user.id, "Manual assignment", `Ticket assigned: ${ticket.ticketNumber}`, "ticketAssignedToMe")
+        this.addWatcherAndNotify(internalTicketId, assignedUserId, user.id, "Manual assignment", `Ticket assigned: ${ticket.ticketNumber}`, "ticketAssignedToMe")
       )
     );
     if (input.assignedGroupId) {
-      await this.notifyGroupMembers(ticketId, input.assignedGroupId, user.id, "Manual group assignment", `Ticket assigned to your group: ${ticket.ticketNumber}`);
+      await this.notifyGroupMembers(internalTicketId, input.assignedGroupId, user.id, "Manual group assignment", `Ticket assigned to your group: ${ticket.ticketNumber}`);
     }
     if (input.assignedTeamId) {
-      await this.notifyTeamMembers(ticketId, input.assignedTeamId, user.id, "Manual team assignment", `Ticket assigned to your team: ${ticket.ticketNumber}`);
+      await this.notifyTeamMembers(internalTicketId, input.assignedTeamId, user.id, "Manual team assignment", `Ticket assigned to your team: ${ticket.ticketNumber}`);
     }
 
     await this.auditLogs.create({
       userId: user.id,
       entityType: "Ticket",
-      entityId: ticketId,
+      entityId: internalTicketId,
       action: "ticket.assignment_updated",
       metadata: {
         assignedUserId: primaryAssignedUserId,
@@ -722,32 +721,23 @@ export class TicketsService {
   }
 
   async mergeTickets(primaryTicketId: string, input: MergeTicketsDto, user: AuthenticatedUser) {
-    const sourceTicketIds = [...new Set(input.sourceTicketIds)].filter((id) => id !== primaryTicketId);
+    const primary = await this.ensureTicketExists(primaryTicketId, user);
+    const sourceTicketIds = [...new Set(input.sourceTicketIds)].filter((id) => id !== primary.id);
     if (sourceTicketIds.length === 0) {
       throw new BadRequestException("Choose at least one ticket to merge.");
     }
 
-    const [primary, sourceTickets] = await Promise.all([
-      this.prisma.ticket.findFirst({
-        where: { id: primaryTicketId, organizationId: user.organizationId, deletedAt: null },
-        select: { id: true, ticketNumber: true, subject: true, clientId: true, status: true }
-      }),
-      this.prisma.ticket.findMany({
-        where: { id: { in: sourceTicketIds }, organizationId: user.organizationId, deletedAt: null },
-        select: {
-          id: true,
-          ticketNumber: true,
-          subject: true,
-          clientId: true,
-          status: true,
-          mergedIntoTicketId: true
-        }
-      })
-    ]);
-
-    if (!primary) {
-      throw new NotFoundException("Primary ticket was not found.");
-    }
+    const sourceTickets = await this.prisma.ticket.findMany({
+      where: { id: { in: sourceTicketIds }, organizationId: user.organizationId, deletedAt: null },
+      select: {
+        id: true,
+        ticketNumber: true,
+        subject: true,
+        clientId: true,
+        status: true,
+        mergedIntoTicketId: true
+      }
+    });
 
     if (primary.status === TicketStatus.MERGED) {
       throw new BadRequestException("A merged ticket cannot be used as the primary ticket.");
@@ -882,9 +872,10 @@ export class TicketsService {
   }
 
   async updateWatchers(ticketId: string, userIds: string[], user: AuthenticatedUser) {
-    await this.ensureTicketExists(ticketId, user);
+    const ticket = await this.ensureTicketExists(ticketId, user);
+    const internalTicketId = ticket.id;
     const existing = await this.prisma.ticketWatcher.findMany({
-      where: { ticketId },
+      where: { ticketId: internalTicketId },
       select: { userId: true }
     });
     const existingIds = new Set(existing.map((watcher) => watcher.userId));
@@ -893,11 +884,11 @@ export class TicketsService {
     await Promise.all(
       [...requestedIds]
         .filter((userId) => !existingIds.has(userId))
-        .map((userId) => this.addWatcherAndNotify(ticketId, userId, user.id, "Manual watcher", "You were added as a ticket watcher.", "internalNoteMention"))
+        .map((userId) => this.addWatcherAndNotify(internalTicketId, userId, user.id, "Manual watcher", "You were added as a ticket watcher.", "internalNoteMention"))
     );
     await this.prisma.ticketWatcher.deleteMany({
       where: {
-        ticketId,
+        ticketId: internalTicketId,
         userId: { in: [...existingIds].filter((userId) => !requestedIds.has(userId)) }
       }
     });
@@ -906,25 +897,12 @@ export class TicketsService {
   }
 
   async closeTicket(ticketId: string, user: AuthenticatedUser) {
-    const ticket = await this.prisma.ticket.findFirst({
-      where: {
-        id: ticketId,
-        organizationId: user.organizationId,
-        deletedAt: null
-      },
-      select: {
-        id: true,
-        status: true
-      }
-    });
-
-    if (!ticket) {
-      throw new NotFoundException("Ticket was not found.");
-    }
+    const ticket = await this.ensureTicketExists(ticketId, user);
+    const internalTicketId = ticket.id;
 
     if (ticket.status !== TicketStatus.CLOSED) {
       await this.prisma.ticket.update({
-        where: { id: ticketId },
+        where: { id: internalTicketId },
         data: {
           status: TicketStatus.CLOSED,
           closedAt: new Date(),
@@ -935,7 +913,7 @@ export class TicketsService {
       await this.auditLogs.create({
         userId: user.id,
         entityType: "Ticket",
-        entityId: ticketId,
+        entityId: internalTicketId,
         action: "ticket.closed",
         metadata: { source: "reply_composer_action" }
       });
@@ -945,17 +923,8 @@ export class TicketsService {
   }
 
   async createMessage(ticketId: string, input: CreateTicketMessageDto, user: AuthenticatedUser) {
-    const ticket = await this.prisma.ticket.findFirst({
-      where: {
-        id: ticketId,
-        organizationId: user.organizationId,
-        deletedAt: null
-      }
-    });
-
-    if (!ticket) {
-      throw new NotFoundException("Ticket was not found.");
-    }
+    const ticket = await this.ensureTicketExists(ticketId, user);
+    const internalTicketId = ticket.id;
 
     if (ticket.status === TicketStatus.MERGED) {
       throw new BadRequestException("This ticket was merged into another ticket. Reply from the primary ticket.");
@@ -970,7 +939,7 @@ export class TicketsService {
       ? null
       : await this.prisma.ticketMessage.findFirst({
           where: {
-            ticketId,
+            ticketId: internalTicketId,
             direction: MessageDirection.INBOUND,
             visibility: MessageVisibility.PUBLIC,
             senderEmail: { not: null }
@@ -996,7 +965,7 @@ export class TicketsService {
 
     const message = await this.prisma.ticketMessage.create({
       data: {
-        ticketId,
+        ticketId: internalTicketId,
         authorUserId: user.id,
         direction: isInternal ? MessageDirection.INTERNAL : MessageDirection.OUTBOUND,
         visibility: isInternal ? MessageVisibility.INTERNAL : MessageVisibility.PUBLIC,
@@ -1016,7 +985,7 @@ export class TicketsService {
       await this.prisma.ticketAttachment.updateMany({
         where: {
           id: { in: input.attachmentIds },
-          ticketId,
+          ticketId: internalTicketId,
           ticketMessageId: null,
           deletedAt: null
         },
@@ -1027,7 +996,7 @@ export class TicketsService {
     }
 
     await this.prisma.ticket.update({
-      where: { id: ticketId },
+      where: { id: internalTicketId },
       data: {
         ...(isInternal
           ? { updatedAt: new Date() }
@@ -1045,7 +1014,7 @@ export class TicketsService {
       await Promise.all(
         notifiedUserIds.map((userId) =>
           this.addWatcherAndNotify(
-            ticketId,
+            internalTicketId,
             userId,
             user.id,
             isInternal ? "Mentioned on internal note" : "Mentioned on ticket reply",
@@ -1057,7 +1026,7 @@ export class TicketsService {
     }
     if (shouldNotifyStaff && ticket.assignedUserId) {
       await this.addWatcherAndNotify(
-        ticketId,
+        internalTicketId,
         ticket.assignedUserId,
         user.id,
         isInternal ? "Internal note added to an assigned ticket" : "Customer reply sent on an assigned ticket",
@@ -1067,7 +1036,7 @@ export class TicketsService {
     }
     if (shouldNotifyStaff) {
       const assignedUsers = await this.prisma.ticketAssignee.findMany({
-        where: { ticketId },
+        where: { ticketId: internalTicketId },
         select: { userId: true }
       });
       await Promise.all(
@@ -1075,7 +1044,7 @@ export class TicketsService {
           .filter((assignment) => assignment.userId !== ticket.assignedUserId)
           .map((assignment) =>
             this.addWatcherAndNotify(
-              ticketId,
+              internalTicketId,
               assignment.userId,
               user.id,
               isInternal ? "Internal note added to an assigned ticket" : "Customer reply sent on an assigned ticket",
@@ -1087,7 +1056,7 @@ export class TicketsService {
     }
     if (shouldNotifyStaff && ticket.assignedTeamId) {
       await this.notifyTeamMembers(
-        ticketId,
+        internalTicketId,
         ticket.assignedTeamId,
         user.id,
         isInternal ? "Internal note added to a team ticket" : "Customer reply sent on a team ticket",
@@ -1096,7 +1065,7 @@ export class TicketsService {
     }
     if (shouldNotifyStaff && !ticket.assignedTeamId && ticket.assignedGroupId) {
       await this.notifyGroupMembers(
-        ticketId,
+        internalTicketId,
         ticket.assignedGroupId,
         user.id,
         isInternal ? "Internal note added to a legacy group ticket" : "Customer reply sent on a legacy group ticket",
@@ -1109,7 +1078,7 @@ export class TicketsService {
       entityType: "TicketMessage",
       entityId: message.id,
       action: isInternal ? "ticket.internal_note_created" : "ticket.reply_created",
-      metadata: { ticketId, attachmentCount: input.attachmentIds?.length ?? 0 }
+      metadata: { ticketId: internalTicketId, attachmentCount: input.attachmentIds?.length ?? 0 }
     });
 
     return message;
@@ -1225,7 +1194,7 @@ export class TicketsService {
 
   private async ensureTicketExists(ticketId: string, user: AuthenticatedUser) {
     const ticket = await this.prisma.ticket.findFirst({
-      where: { id: ticketId, organizationId: user.organizationId, deletedAt: null }
+      where: this.ticketReferenceWhere(ticketId, user.organizationId)
     });
 
     if (!ticket) {
@@ -1233,6 +1202,24 @@ export class TicketsService {
     }
 
     return ticket;
+  }
+
+  private ticketReferenceWhere(ticketRef: string, organizationId: string): Prisma.TicketWhereInput {
+    const normalized = ticketRef.trim();
+    const matchers: Prisma.TicketWhereInput[] = [{ ticketNumber: normalized.toUpperCase() }];
+    if (this.isUuid(normalized)) {
+      matchers.push({ id: normalized });
+    }
+
+    return {
+      organizationId,
+      deletedAt: null,
+      OR: matchers
+    };
+  }
+
+  private isUuid(value: string) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
   }
 
   private async validateAssignmentTargets(assignedUserIds: string[], assignedTeamId: string | null | undefined, organizationId: string) {

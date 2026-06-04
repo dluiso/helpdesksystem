@@ -24,19 +24,45 @@ interface NotificationPreferences {
   internalNoteMention: boolean;
   routingRuleMatched: boolean;
   ticketReopened: boolean;
+  newTicketCreated: boolean;
+  inAppTicketAssignedToMe: boolean;
+  inAppTicketAssignedToMyTeam: boolean;
+  inAppTicketReplyOnAssignedTicket: boolean;
+  inAppInternalNoteOnAssignedTicket: boolean;
+  inAppInternalNoteMention: boolean;
+  inAppRoutingRuleMatched: boolean;
+  inAppTicketReopened: boolean;
+  inAppNewTicketCreated: boolean;
+  emailTicketAssignedToMe: boolean;
+  emailTicketAssignedToMyTeam: boolean;
+  emailTicketReplyOnAssignedTicket: boolean;
+  emailInternalNoteOnAssignedTicket: boolean;
+  emailInternalNoteMention: boolean;
+  emailRoutingRuleMatched: boolean;
+  emailTicketReopened: boolean;
+  emailNewTicketCreated: boolean;
   dailyDigestEnabled: boolean;
 }
 
 const preferenceLabels: Array<{ key: keyof NotificationPreferences; label: string }> = [
   { key: "inAppEnabled", label: "In-app notifications" },
   { key: "emailEnabled", label: "Email notifications" },
-  { key: "ticketAssignedToMe", label: "Tickets assigned to me" },
-  { key: "ticketAssignedToMyTeam", label: "Tickets assigned to my team" },
-  { key: "ticketReplyOnAssignedTicket", label: "Replies on assigned tickets" },
-  { key: "internalNoteOnAssignedTicket", label: "Internal notes on assigned tickets" },
-  { key: "internalNoteMention", label: "Internal note mentions" },
-  { key: "routingRuleMatched", label: "Routing rule matches" },
-  { key: "ticketReopened", label: "Reopened tickets" },
+  { key: "inAppNewTicketCreated", label: "In-app: new tickets" },
+  { key: "inAppTicketAssignedToMe", label: "In-app: assigned to me" },
+  { key: "inAppTicketAssignedToMyTeam", label: "In-app: assigned to my team" },
+  { key: "inAppTicketReplyOnAssignedTicket", label: "In-app: replies" },
+  { key: "inAppInternalNoteOnAssignedTicket", label: "In-app: internal notes" },
+  { key: "inAppInternalNoteMention", label: "In-app: mentions" },
+  { key: "inAppRoutingRuleMatched", label: "In-app: routing rules" },
+  { key: "inAppTicketReopened", label: "In-app: reopened tickets" },
+  { key: "emailNewTicketCreated", label: "Email: new tickets" },
+  { key: "emailTicketAssignedToMe", label: "Email: assigned to me" },
+  { key: "emailTicketAssignedToMyTeam", label: "Email: assigned to my team" },
+  { key: "emailTicketReplyOnAssignedTicket", label: "Email: replies" },
+  { key: "emailInternalNoteOnAssignedTicket", label: "Email: internal notes" },
+  { key: "emailInternalNoteMention", label: "Email: mentions" },
+  { key: "emailRoutingRuleMatched", label: "Email: routing rules" },
+  { key: "emailTicketReopened", label: "Email: reopened tickets" },
   { key: "dailyDigestEnabled", label: "Daily digest" }
 ];
 
@@ -139,7 +165,7 @@ export function NotificationBell() {
             <div className="notification-list">
               {items.length === 0 ? <p className="muted">No notifications yet.</p> : null}
               {items.map((item) => (
-                <Link className={`notification-item ${item.status === "UNREAD" ? "unread" : ""}`} href={item.ticket ? `/tickets/${item.ticket.id}` : "#"} key={item.id}>
+                <Link className={`notification-item ${item.status === "UNREAD" ? "unread" : ""}`} href={item.ticket ? `/tickets/${item.ticket.ticketNumber}` : "#"} key={item.id}>
                   <strong>{item.title}</strong>
                   {item.body ? <span>{item.body}</span> : null}
                   <small>{new Date(item.createdAt).toLocaleString()}</small>

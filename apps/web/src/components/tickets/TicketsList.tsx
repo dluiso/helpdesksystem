@@ -449,7 +449,7 @@ export function TicketsList() {
     setMergeBusy(true);
     setError(null);
     try {
-      await apiFetch(`/tickets/${mergePrimaryTicket.id}/merge`, {
+      await apiFetch(`/tickets/${mergePrimaryTicket.ticketNumber}/merge`, {
         method: "POST",
         body: JSON.stringify({
           sourceTicketIds: mergeSourceTickets.map((ticket) => ticket.id),
@@ -555,10 +555,10 @@ export function TicketsList() {
   function renderCell(ticket: TicketListItem, columnId: ColumnId) {
     switch (columnId) {
       case "ticketNumber":
-        return ticket.id ? <Link href={`/tickets/${ticket.id}`}>{ticket.ticketNumber}</Link> : ticket.ticketNumber;
+        return ticket.id ? <Link href={`/tickets/${ticket.ticketNumber}`}>{ticket.ticketNumber}</Link> : ticket.ticketNumber;
       case "subject":
         return ticket.id ? (
-          <Link className="table-cell-stack ticket-subject-link" href={`/tickets/${ticket.id}`}>
+          <Link className="table-cell-stack ticket-subject-link" href={`/tickets/${ticket.ticketNumber}`}>
             <strong>{ticket.subject}</strong>
             <span>{ticket.senderEmail ?? label(ticket.source)}</span>
           </Link>
@@ -898,7 +898,7 @@ export function TicketsList() {
                   ))}
                   <td className="row-actions-cell">
                     {ticket.id ? (
-                      <Link className="icon-button" href={`/tickets/${ticket.id}`} title="Open ticket">
+                      <Link className="icon-button" href={`/tickets/${ticket.ticketNumber}`} title="Open ticket">
                         <Eye size={16} aria-hidden="true" />
                       </Link>
                     ) : null}
