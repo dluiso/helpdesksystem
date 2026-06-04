@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowLeft,
   Building2,
   CheckCircle2,
   Edit3,
@@ -151,7 +152,7 @@ export function ClientsWorkspace() {
   const [error, setError] = useState<string | null>(null);
 
   const selectedClient = useMemo(
-    () => clients.find((client) => client.id === selectedClientId) ?? clients[0] ?? null,
+    () => clients.find((client) => client.id === selectedClientId) ?? null,
     [clients, selectedClientId]
   );
   const selectedClientRequesterCount = selectedClientContacts.length || (selectedClient ? requesterCount(selectedClient) : 0);
@@ -200,7 +201,7 @@ export function ClientsWorkspace() {
     try {
       const data = await apiFetch<Client[]>("/clients");
       setClients(data);
-      setSelectedClientId((current) => current ?? data[0]?.id ?? null);
+      setSelectedClientId((current) => (current && data.some((client) => client.id === current) ? current : null));
     } catch {
       setError("Unable to load clients.");
     } finally {
@@ -231,6 +232,18 @@ export function ClientsWorkspace() {
     setSelectedClientId(client.id);
     setClientForm(clientToForm(client));
     setClientModalMode("edit");
+  }
+
+  function openClientDetail(client: Client) {
+    setSelectedClientId(client.id);
+    setActiveClientTab("overview");
+  }
+
+  function closeClientDetail() {
+    setSelectedClientId(null);
+    setSelectedClientContacts([]);
+    setRequesterSearch("");
+    setDomain("");
   }
 
   function closeClientModal() {
@@ -429,12 +442,13 @@ export function ClientsWorkspace() {
 
       {error ? <div className="error-banner">{error}</div> : null}
 
-      <section className="clients-workspace">
+      <section className={selectedClient ? "client-detail-workspace" : "clients-workspace"}>
+        {!selectedClient ? (
         <div className="panel clients-table-panel">
           <div className="section-heading">
             <div>
               <h2>Client Directory</h2>
-              <p className="muted">Select an institution to review domains and requesters.</p>
+              <p className="muted">Open an institution to review domains and requesters.</p>
             </div>
             <span className="status-pill">{clients.length} total</span>
           </div>
@@ -462,9 +476,9 @@ export function ClientsWorkspace() {
                   </tr>
                 ) : null}
                 {clients.map((client) => (
-                  <tr className={selectedClient?.id === client.id ? "selected" : ""} key={client.id}>
+                  <tr key={client.id}>
                     <td>
-                      <button className="client-name-button" type="button" onClick={() => setSelectedClientId(client.id)}>
+                      <button className="client-name-button" type="button" onClick={() => openClientDetail(client)}>
                         <span className="client-initial">{client.name.slice(0, 1).toUpperCase()}</span>
                         <span>
                           <strong>{client.name}</strong>
@@ -486,7 +500,7 @@ export function ClientsWorkspace() {
                     </td>
                     <td>
                       <div className="row-actions">
-                        <button className="icon-button" type="button" title="Select institution" aria-label="Select institution" onClick={() => setSelectedClientId(client.id)}>
+                        <button className="icon-button" type="button" title="Open institution" aria-label="Open institution" onClick={() => openClientDetail(client)}>
                           <Building2 size={16} aria-hidden="true" />
                         </button>
                         <button className="icon-button" type="button" title="Edit institution" aria-label="Edit institution" onClick={() => openEditClient(client)}>
@@ -503,16 +517,28 @@ export function ClientsWorkspace() {
             </table>
           </div>
         </div>
+        ) : null}
 
-        <aside className="client-detail-rail">
-          {selectedClient ? (
-            <>
+        {selectedClient ? (
+          <div className="client-detail-view">
               <section className="panel client-profile-panel">
                 <div className="client-profile-header">
-                  <span className="client-profile-mark">{selectedClient.name.slice(0, 1).toUpperCase()}</span>
-                  <div>
-                    <h2>{selectedClient.name}</h2>
-                    <p className="muted">{selectedClient.shortName || "No short name"}</p>
+                  <div className="client-profile-title">
+                    <span className="client-profile-mark">{selectedClient.name.slice(0, 1).toUpperCase()}</span>
+                    <div>
+                      <h2>{selectedClient.name}</h2>
+                      <p className="muted">{selectedClient.shortName || "No short name"}</p>
+                    </div>
+                  </div>
+                  <div className="form-actions">
+                    <button className="button secondary" type="button" onClick={closeClientDetail}>
+                      <ArrowLeft size={16} aria-hidden="true" />
+                      <span>Client Directory</span>
+                    </button>
+                    <button className="button secondary" type="button" onClick={() => openEditClient(selectedClient)}>
+                      <Edit3 size={16} aria-hidden="true" />
+                      <span>Edit Institution</span>
+                    </button>
                   </div>
                 </div>
                 <div className="client-detail-grid">
@@ -534,10 +560,6 @@ export function ClientsWorkspace() {
                   </div>
                 </div>
                 {selectedClient.notes ? <p className="client-notes">{selectedClient.notes}</p> : null}
-                <button className="button secondary full-width-button" type="button" onClick={() => openEditClient(selectedClient)}>
-                  <Edit3 size={16} aria-hidden="true" />
-                  <span>Edit Institution</span>
-                </button>
               </section>
 
               <section className="panel client-detail-panel">
@@ -699,19 +721,8 @@ export function ClientsWorkspace() {
                   </div>
                 ) : null}
               </section>
-            </>
-          ) : (
-            <section className="panel empty-state-panel">
-              <Building2 size={28} aria-hidden="true" />
-              <h2>No client selected</h2>
-              <p className="muted">Select an existing institution or add a new one to manage details.</p>
-              <button className="button" type="button" onClick={openCreateClient}>
-                <Plus size={16} aria-hidden="true" />
-                <span>Add Institution</span>
-              </button>
-            </section>
-          )}
-        </aside>
+          </div>
+        ) : null}
       </section>
 
       {clientModalMode ? (
