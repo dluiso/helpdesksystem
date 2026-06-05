@@ -114,8 +114,7 @@ export class TicketsService {
               messages: true,
               attachments: {
                 where: {
-                  deletedAt: null,
-                  isInline: false
+                  deletedAt: null
                 }
               }
             }
@@ -1072,8 +1071,7 @@ export class TicketsService {
             messages: true,
             attachments: {
               where: {
-                deletedAt: null,
-                isInline: false
+                deletedAt: null
               }
             }
           }
