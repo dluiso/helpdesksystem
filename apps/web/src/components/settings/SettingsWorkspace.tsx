@@ -360,7 +360,7 @@ export function SettingsWorkspace() {
     setLoading(true);
     setError(null);
     try {
-      const [mailboxData, clientData, unmappedData, userData, teamData, ruleData, autoReplyData, notificationPreferenceData, spamData, maintenanceData] = await Promise.all([
+      const [mailboxData, clientData, unmappedData, userData, teamData, ruleData, autoReplyData, notificationPreferenceData] = await Promise.all([
         apiFetch<Mailbox[]>("/mailboxes"),
         apiFetch<Client[]>("/clients"),
         apiFetch<UnmappedDomain[]>("/client-domains/unmapped"),
@@ -368,7 +368,9 @@ export function SettingsWorkspace() {
         apiFetch<TicketTeam[]>("/ticket-teams"),
         apiFetch<RoutingRule[]>("/ticket-routing-rules"),
         apiFetch<AutoReplyTemplate[]>("/auto-replies"),
-        apiFetch<UserNotificationPreferenceRow[]>("/notification-preferences/users"),
+        apiFetch<UserNotificationPreferenceRow[]>("/notification-preferences/users")
+      ]);
+      const [spamResult, maintenanceResult] = await Promise.allSettled([
         apiFetch<SpamBlockEntry[]>("/spam-blocklist"),
         apiFetch<MaintenanceSummary>("/maintenance/recycle-bin/summary")
       ]);
@@ -380,9 +382,9 @@ export function SettingsWorkspace() {
       setRoutingRules(ruleData);
       setAutoReplyTemplates(autoReplyData);
       setNotificationPreferenceRows(notificationPreferenceData);
-      setSpamEntries(spamData);
-      setMaintenanceSummary(maintenanceData);
-      setMaintenanceDraft(String(maintenanceData.recycleBinRetentionDays));
+      setSpamEntries(spamResult.status === "fulfilled" ? spamResult.value : []);
+      setMaintenanceSummary(maintenanceResult.status === "fulfilled" ? maintenanceResult.value : null);
+      setMaintenanceDraft(maintenanceResult.status === "fulfilled" ? String(maintenanceResult.value.recycleBinRetentionDays) : "7");
       setMailboxDrafts(
         Object.fromEntries(
           mailboxData.map((mailbox) => [
