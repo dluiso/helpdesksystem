@@ -314,7 +314,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
     return <div className="error-banner">{error ?? "Ticket was not found."}</div>;
   }
   const realAttachments = ticket.attachments.filter((attachment) => !isInlineEmailAsset(attachment));
-  const inlineImageCount = ticket.attachments.filter((attachment) => isInlineEmailAsset(attachment)).length;
+  const inlineAttachments = ticket.attachments.filter((attachment) => isInlineEmailAsset(attachment));
   const ticketRef = ticket.ticketNumber;
 
   return (
@@ -441,7 +441,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
               <div><dt>Priority</dt><dd>{label(ticket.priority)}</dd></div>
               <div><dt>Source</dt><dd>{label(ticket.source)}</dd></div>
               <div><dt>Sender</dt><dd>{ticket.senderEmail ?? "Not set"}</dd></div>
-              <div><dt>Inline images</dt><dd>{inlineImageCount}</dd></div>
+              <div><dt>Inline images</dt><dd>{inlineAttachments.length}</dd></div>
               <div><dt>Files</dt><dd>{realAttachments.length}</dd></div>
               {ticket.mergedAt ? <div><dt>Merged</dt><dd>{new Date(ticket.mergedAt).toLocaleString()}</dd></div> : null}
             </dl>
@@ -504,10 +504,16 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
             <div className="section-heading compact-heading">
               <div>
                 <h3>Ticket Files</h3>
-                <p className="muted">Files attached to messages. Inline email images are shown inside the conversation.</p>
+                <p className="muted">Files attached to messages. Inline email images are listed separately.</p>
               </div>
             </div>
             <MessageAttachments ticketId={ticketRef} attachments={realAttachments} variant="sidebar" />
+            {inlineAttachments.length > 0 ? (
+              <div className="inline-attachments-summary">
+                <strong>Inline email images</strong>
+                <MessageAttachments ticketId={ticketRef} attachments={inlineAttachments} variant="sidebar" />
+              </div>
+            ) : null}
           </div>
         </aside>
       </section>

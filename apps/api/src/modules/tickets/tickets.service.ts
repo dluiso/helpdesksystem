@@ -112,7 +112,12 @@ export class TicketsService {
           _count: {
             select: {
               messages: true,
-              attachments: true
+              attachments: {
+                where: {
+                  deletedAt: null,
+                  isInline: false
+                }
+              }
             }
           }
         },
@@ -1062,7 +1067,17 @@ export class TicketsService {
         client: { select: { id: true, name: true } },
         contact: { select: { id: true, firstName: true, lastName: true, email: true } },
         senderEmail: true,
-        _count: { select: { messages: true, attachments: true } }
+        _count: {
+          select: {
+            messages: true,
+            attachments: {
+              where: {
+                deletedAt: null,
+                isInline: false
+              }
+            }
+          }
+        }
       },
       orderBy: { updatedAt: "desc" },
       take: 12
