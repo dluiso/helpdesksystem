@@ -165,4 +165,100 @@ describe("MailboxesService", () => {
     });
     expect(ticketsService.createFromInboundEmail).not.toHaveBeenCalled();
   });
+
+  it("checks Microsoft 365 attachments even when Graph does not flag hasAttachments", async () => {
+    const prisma = {
+      mailbox: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "mailbox-1",
+          organizationId: "org-1",
+          emailAddress: "support@example.org",
+          provider: "MICROSOFT365",
+          connectionMode: "GRAPH_DIRECT",
+          lastSyncCursor: null,
+          tenantId: "tenant-1",
+          microsoftClientId: "client-1",
+          encryptedClientSecretReference: "env:MICROSOFT_CLIENT_SECRET",
+          autoSyncEnabled: false,
+          autoSyncIntervalSeconds: null,
+          nextAutoSyncAt: null
+        }),
+        update: jest.fn()
+      },
+      ticketMessage: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn()
+      }
+    };
+    const ticketsService = {
+      createFromInboundEmail: jest.fn().mockResolvedValue({ ticket: { id: "ticket-1" }, message: { id: "message-1" } })
+    };
+    const ticketAttachmentsService = {
+      createInboundEmailAttachment: jest.fn().mockResolvedValue({ id: "attachment-record-1" })
+    };
+    const microsoftGraphProvider = {
+      syncInboundMessages: jest.fn().mockResolvedValue({
+        messages: [
+          {
+            providerMessageId: "graph-message-1",
+            internetMessageId: "<graph-message-1@example.org>",
+            conversationId: "conversation-1",
+            from: { email: "requester@example.org", name: "Requester One" },
+            subject: "Need help",
+            bodyText: "Please see attached",
+            hasAttachments: false
+          }
+        ],
+        nextSyncCursor: "cursor-1"
+      }),
+      getMessageAttachments: jest.fn().mockResolvedValue([
+        {
+          id: "graph-attachment-1",
+          originalFilename: "details.docx",
+          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          sizeBytes: 12,
+          contentBytes: Buffer.from("attachment"),
+          isInline: false,
+          contentId: null
+        }
+      ])
+    };
+    const service = new MailboxesService(
+      prisma as never,
+      { get: jest.fn() } as never,
+      ticketsService as never,
+      ticketAttachmentsService as never,
+      { findBlockForSender: jest.fn().mockResolvedValue(null), logBlockedInboundEmail: jest.fn() } as never,
+      {} as never,
+      microsoftGraphProvider as never
+    );
+
+    await expect(service.syncInbound("mailbox-1", user)).resolves.toEqual(
+      expect.objectContaining({
+        receivedMessages: 1,
+        createdTickets: 1,
+        attachmentBackfillFailures: 0
+      })
+    );
+
+    expect(microsoftGraphProvider.getMessageAttachments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mailboxId: "mailbox-1",
+        providerMessageId: "graph-message-1"
+      })
+    );
+    expect(ticketAttachmentsService.createInboundEmailAttachment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ticketId: "ticket-1",
+        ticketMessageId: "message-1",
+        originalFilename: "details.docx",
+        emailAttachmentId: "graph-attachment-1"
+      })
+    );
+    expect(prisma.ticketMessage.update).toHaveBeenCalledWith({
+      where: { id: "message-1" },
+      data: { hasAttachments: true }
+    });
+  });
 });

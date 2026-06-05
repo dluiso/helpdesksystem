@@ -180,15 +180,10 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
       });
 
       if (exists) {
-        if (message.hasAttachments) {
-          const storedAttachmentCount = await this.prisma.ticketAttachment.count({
-            where: { ticketMessageId: exists.id, deletedAt: null }
-          });
-          if (storedAttachmentCount === 0) {
-            const stored = await this.storeInboundAttachments(provider, mailbox, message.providerMessageId, exists.ticketId, exists.id);
-            attachmentBackfillFailures += stored.failed;
-            attachmentBackfillErrors.push(...stored.errors);
-          }
+        if (this.shouldFetchInboundAttachments(providerName, message)) {
+          const stored = await this.storeInboundAttachments(provider, mailbox, message.providerMessageId, exists.ticketId, exists.id);
+          attachmentBackfillFailures += stored.failed;
+          attachmentBackfillErrors.push(...stored.errors);
         }
         skippedDuplicates += 1;
         continue;
@@ -230,7 +225,7 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
         internetMessageHeaders: message.internetMessageHeaders
       });
 
-      if (message.hasAttachments) {
+      if (this.shouldFetchInboundAttachments(providerName, message)) {
         const stored = await this.storeInboundAttachments(provider, mailbox, message.providerMessageId, result.ticket.id, result.message.id);
         attachmentBackfillFailures += stored.failed;
         attachmentBackfillErrors.push(...stored.errors);
@@ -383,7 +378,33 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    if (stored > 0) {
+      await this.prisma.ticketMessage.update({
+        where: { id: ticketMessageId },
+        data: { hasAttachments: true }
+      });
+    }
+
     return { stored, failed, errors };
+  }
+
+  private shouldFetchInboundAttachments(
+    providerName: "mock" | "microsoft365",
+    message: { hasAttachments?: boolean; bodyHtml?: string | null; bodyText?: string | null }
+  ) {
+    if (message.hasAttachments) {
+      return true;
+    }
+
+    if (this.containsInlineAttachmentReference(message.bodyHtml) || this.containsInlineAttachmentReference(message.bodyText)) {
+      return true;
+    }
+
+    return providerName === "microsoft365";
+  }
+
+  private containsInlineAttachmentReference(value: string | null | undefined) {
+    return Boolean(value && /cid:/i.test(value));
   }
 
   private async backfillExistingMessageAttachments(provider: MailProvider, mailbox: Mailbox) {
