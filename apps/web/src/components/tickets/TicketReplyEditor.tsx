@@ -2,7 +2,6 @@
 
 import {
   Bold,
-  Check,
   Code,
   ChevronDown,
   Eye,
@@ -16,8 +15,7 @@ import {
   RemoveFormatting,
   Send,
   Strikethrough,
-  Underline,
-  X
+  Underline
 } from "lucide-react";
 import { ClipboardEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -36,6 +34,8 @@ const toolbar = [
   { label: "Inline code", icon: Code, command: "formatBlock", value: "pre" },
   { label: "Remove formatting", icon: RemoveFormatting, command: "removeFormat" }
 ] as const;
+
+const INLINE_AUTOCOMPLETE_CLASS = "ai-inline-suggestion";
 
 type ComposerAction = "send" | "send_and_close" | "save_note" | "send_note" | "send_note_and_close";
 
@@ -66,8 +66,8 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
   const [aiBusy, setAiBusy] = useState<string | null>(null);
   const [draftText, setDraftText] = useState("");
   const [autocompleteSuggestion, setAutocompleteSuggestion] = useState("");
-  const [autocompleteBusy, setAutocompleteBusy] = useState(false);
   const [autocompleteDismissedFor, setAutocompleteDismissedFor] = useState("");
+  const [autocompleteEnabled, setAutocompleteEnabled] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -89,7 +89,7 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
   }, []);
 
   useEffect(() => {
-    if (!ticketId || preview || aiBusy || saving) {
+    if (!ticketId || preview || aiBusy || saving || !autocompleteEnabled) {
       return;
     }
 
@@ -101,7 +101,6 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
     const requestId = autocompleteRequestRef.current + 1;
     const timeout = window.setTimeout(() => {
       autocompleteRequestRef.current = requestId;
-      setAutocompleteBusy(true);
       apiFetch<{ text: string }>(`/tickets/${ticketId}/ai/complete-draft`, {
         method: "POST",
         body: JSON.stringify({ draft })
@@ -111,66 +110,140 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
             return;
           }
           const suggestion = result.text.trim();
-          setAutocompleteSuggestion(suggestion && !draft.endsWith(suggestion) ? suggestion : "");
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          if (autocompleteRequestRef.current === requestId) {
-            setAutocompleteBusy(false);
+          if (suggestion && !draft.endsWith(suggestion)) {
+            setAutocompleteSuggestion(showInlineAutocomplete(suggestion) ? suggestion : "");
+          } else {
+            setAutocompleteSuggestion("");
           }
-        });
+        })
+        .catch(() => setAutocompleteEnabled(false));
     }, 900);
 
     return () => window.clearTimeout(timeout);
-  }, [aiBusy, autocompleteDismissedFor, draftText, preview, saving, ticketId]);
+  }, [aiBusy, autocompleteDismissedFor, autocompleteEnabled, draftText, preview, saving, ticketId]);
 
   function runCommand(command: string, value?: string) {
+    removeInlineAutocomplete();
+    setAutocompleteSuggestion("");
     editorRef.current?.focus();
     document.execCommand(command, false, value);
+    setDraftText(getEditorText());
   }
 
   function insertHtml(html: string) {
+    removeInlineAutocomplete();
+    setAutocompleteSuggestion("");
     editorRef.current?.focus();
     document.execCommand("insertHTML", false, html);
+    setDraftText(getEditorText());
   }
 
   function getEditorText() {
-    return editorRef.current?.innerText.trim() ?? "";
+    const editor = editorRef.current;
+    if (!editor) {
+      return "";
+    }
+
+    const clone = editor.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll(`.${INLINE_AUTOCOMPLETE_CLASS}`).forEach((node) => node.remove());
+    return clone.innerText.trim();
   }
 
   function handleEditorInput() {
     autocompleteRequestRef.current += 1;
+    removeInlineAutocomplete();
     setDraftText(getEditorText());
     setAutocompleteSuggestion("");
-    setAutocompleteBusy(false);
   }
 
-  function acceptAutocompleteSuggestion() {
-    if (!autocompleteSuggestion || !editorRef.current) {
-      return;
+  function getInlineAutocompleteNode() {
+    return editorRef.current?.querySelector(`.${INLINE_AUTOCOMPLETE_CLASS}`) ?? null;
+  }
+
+  function removeInlineAutocomplete() {
+    getInlineAutocompleteNode()?.remove();
+  }
+
+  function canInsertInlineAutocomplete() {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !selection.isCollapsed || !editorRef.current?.contains(selection.anchorNode)) {
+      return false;
+    }
+
+    const anchorElement = selection.anchorNode instanceof Element ? selection.anchorNode : selection.anchorNode?.parentElement;
+    if (!anchorElement) {
+      return false;
+    }
+
+    return !anchorElement.closest("a, table, img, pre, blockquote");
+  }
+
+  function showInlineAutocomplete(rawSuggestion: string) {
+    const suggestion = rawSuggestion.trim();
+    if (!suggestion || !editorRef.current || !canInsertInlineAutocomplete()) {
+      return false;
+    }
+
+    removeInlineAutocomplete();
+
+    const selection = window.getSelection();
+    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+    if (!selection || !range) {
+      return false;
     }
 
     const currentText = getEditorText();
-    const prefix = currentText && !/\s$/.test(editorRef.current.innerText) && !/^[\s.,;:!?)]/.test(autocompleteSuggestion) ? " " : "";
+    const prefix = currentText && !/\s$/.test(editorRef.current.innerText) && !/^[\s.,;:!?)]/.test(suggestion) ? " " : "";
+    const node = document.createElement("span");
+    node.className = INLINE_AUTOCOMPLETE_CLASS;
+    node.contentEditable = "false";
+    node.textContent = `${prefix}${suggestion}`;
+    node.setAttribute("aria-hidden", "true");
+    range.insertNode(node);
+    range.setStartBefore(node);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return true;
+  }
+
+  function acceptAutocompleteSuggestion() {
+    const node = getInlineAutocompleteNode();
+    if ((!autocompleteSuggestion && !node) || !editorRef.current) {
+      return;
+    }
+
+    const acceptedText = node?.textContent ?? autocompleteSuggestion;
+    node?.remove();
     editorRef.current.focus();
-    document.execCommand("insertText", false, `${prefix}${autocompleteSuggestion}`);
+    document.execCommand("insertText", false, acceptedText);
     setAutocompleteSuggestion("");
     setDraftText(getEditorText());
   }
 
   function dismissAutocompleteSuggestion() {
+    removeInlineAutocomplete();
     setAutocompleteDismissedFor(getEditorText());
     setAutocompleteSuggestion("");
   }
 
   function handleEditorKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Tab" && autocompleteSuggestion) {
+    const hasInlineSuggestion = Boolean(getInlineAutocompleteNode());
+    if (event.key === "Tab" && (autocompleteSuggestion || hasInlineSuggestion)) {
       event.preventDefault();
       acceptAutocompleteSuggestion();
     }
-    if (event.key === "Escape" && autocompleteSuggestion) {
+    if (event.key === "Escape" && (autocompleteSuggestion || hasInlineSuggestion)) {
       event.preventDefault();
       dismissAutocompleteSuggestion();
+    }
+    if (hasInlineSuggestion && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      removeInlineAutocomplete();
+      setAutocompleteSuggestion("");
+    }
+    if (hasInlineSuggestion && ["Backspace", "Delete", "Enter"].includes(event.key)) {
+      removeInlineAutocomplete();
+      setAutocompleteSuggestion("");
     }
   }
 
@@ -184,6 +257,8 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
   }
 
   function handlePaste(event: ClipboardEvent<HTMLDivElement>) {
+    removeInlineAutocomplete();
+    setAutocompleteSuggestion("");
     const items = Array.from(event.clipboardData.items);
     const images = items.filter((item) => item.type.startsWith("image/"));
     if (images.length === 0) {
@@ -213,6 +288,8 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
       return;
     }
 
+    removeInlineAutocomplete();
+    setAutocompleteSuggestion("");
     const bodyHtml = editorRef.current.innerHTML;
     const bodyText = editorRef.current.innerText.trim();
     if (!bodyText) {
@@ -356,6 +433,8 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
       return;
     }
 
+    removeInlineAutocomplete();
+    setAutocompleteSuggestion("");
     const selectedText = action === "paraphrase" ? getSelectedText() : "";
     const draft = selectedText || getEditorText();
     if (action !== "suggest-reply" && !draft) {
@@ -374,6 +453,7 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
       if (selectedText) {
         document.execCommand("insertText", false, result.text);
       } else {
+        removeInlineAutocomplete();
         editorRef.current.innerText = result.text;
       }
       setDraftText(getEditorText());
@@ -425,7 +505,17 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
         <button className="icon-button" type="button" title="Attach" aria-label="Attach">
           <Paperclip size={17} aria-hidden="true" />
         </button>
-        <button className="icon-button" type="button" title="Preview" aria-label="Preview" onClick={() => setPreview((value) => !value)}>
+        <button
+          className="icon-button"
+          type="button"
+          title="Preview"
+          aria-label="Preview"
+          onClick={() => {
+            removeInlineAutocomplete();
+            setAutocompleteSuggestion("");
+            setPreview((value) => !value);
+          }}
+        >
           <Eye size={17} aria-hidden="true" />
         </button>
         <button className="button secondary compact-button" type="button" onClick={() => runAiAction("paraphrase")} disabled={Boolean(aiBusy)}>
@@ -462,24 +552,6 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
         aria-label={mode === "public" ? "Public reply body" : "Internal note body"}
         data-placeholder={mode === "public" ? "Write a customer-facing reply..." : "Write an internal troubleshooting note..."}
       />
-      {!preview && (autocompleteSuggestion || autocompleteBusy) ? (
-        <div className="ai-autocomplete">
-          <div>
-            <strong>AI suggestion</strong>
-            <span className="muted">{autocompleteBusy ? "Thinking..." : autocompleteSuggestion}</span>
-          </div>
-          {autocompleteSuggestion ? (
-            <div className="row-actions">
-              <button className="icon-button" type="button" title="Accept suggestion" aria-label="Accept suggestion" onClick={acceptAutocompleteSuggestion}>
-                <Check size={16} aria-hidden="true" />
-              </button>
-              <button className="icon-button" type="button" title="Dismiss suggestion" aria-label="Dismiss suggestion" onClick={dismissAutocompleteSuggestion}>
-                <X size={16} aria-hidden="true" />
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
       {mode === "public" ? (
         <div className="cc-picker">
           <label className="field">

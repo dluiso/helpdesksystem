@@ -46,3 +46,4 @@
 - Tightened the Settings layout spacing and scoped table/card wrapping fixes to avoid cramped rows and clipped safety-rule text.
 - Added a configurable `complete_draft` AI action for ticket reply autocomplete.
 - Added debounced inline AI suggestions in the ticket reply composer with accept and dismiss controls.
+- Changed autocomplete from a separate suggestion bar to inline ghost text inside the reply editor, with cleanup before send/preview/tools.

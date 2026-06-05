@@ -2531,31 +2531,12 @@ a.dashboard-list-row:hover {
   border-color: var(--editor-line);
 }
 
-.ai-autocomplete {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  margin-top: -2px;
-  padding: 9px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface-subtle);
-}
-
-.ai-autocomplete strong,
-.ai-autocomplete span {
-  display: block;
-}
-
-.ai-autocomplete strong {
-  font-size: 12px;
-  color: var(--brand-primary);
-}
-
-.ai-autocomplete .muted {
-  margin-top: 2px;
-  overflow-wrap: anywhere;
+.ai-inline-suggestion {
+  color: #8b96a8 !important;
+  opacity: 0.92;
+  pointer-events: none;
+  user-select: none;
+  white-space: pre-wrap;
 }
 
 .signature-editor {
