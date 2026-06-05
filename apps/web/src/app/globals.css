@@ -655,6 +655,11 @@ select {
 .grid {
   display: grid;
   gap: 16px;
+  min-width: 0;
+}
+
+.grid > * {
+  min-width: 0;
 }
 
 .grid.columns-3 {
@@ -2858,6 +2863,7 @@ a.dashboard-list-row:hover {
   grid-template-columns: minmax(0, 1fr) 300px;
   gap: 16px;
   align-items: start;
+  min-width: 0;
 }
 
 .ticket-side-panel {
@@ -2996,12 +3002,14 @@ a.dashboard-list-row:hover {
 .editor {
   display: grid;
   gap: 10px;
+  min-width: 0;
 }
 
 .editor-toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  min-width: 0;
 }
 
 .icon-button {
@@ -3017,6 +3025,9 @@ a.dashboard-list-row:hover {
 }
 
 .editor-surface {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
   min-height: 150px;
   padding: 12px;
   line-height: 1.5;
@@ -3026,6 +3037,33 @@ a.dashboard-list-row:hover {
   border-color: var(--editor-line);
   background: var(--editor-bg);
   color: var(--editor-text);
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.editor-surface *,
+.message-body * {
+  max-width: 100%;
+}
+
+.editor-surface table,
+.message-body table {
+  table-layout: auto;
+}
+
+.editor-surface td,
+.editor-surface th,
+.message-body td,
+.message-body th {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.editor-surface pre,
+.message-body pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
 }
 
 .editor-surface:empty::before {
@@ -3368,6 +3406,9 @@ a.dashboard-list-row:hover {
   }
 
   .page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
     margin-bottom: 16px;
   }
 
@@ -3587,6 +3628,15 @@ a.dashboard-list-row:hover {
     min-width: 0;
   }
 
+  .ticket-detail-layout,
+  .ticket-detail-layout .grid,
+  .ticket-detail-layout .panel,
+  .ticket-side-panel {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
   .message-header {
     align-items: flex-start;
     flex-direction: column;
@@ -3598,8 +3648,87 @@ a.dashboard-list-row:hover {
     flex-wrap: wrap;
   }
 
+  .editor {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .editor-toolbar {
+    width: 100%;
+    max-width: 100%;
+    align-items: stretch;
+  }
+
+  .editor-toolbar .icon-button {
+    flex: 0 0 36px;
+  }
+
+  .editor-toolbar .compact-button {
+    flex: 1 1 130px;
+    min-width: 0;
+  }
+
   .editor-surface {
+    width: 100%;
+    max-width: 100%;
     min-height: 210px;
+  }
+
+  .editor-surface table,
+  .signature-render table,
+  .message-body table {
+    width: 100% !important;
+    max-width: 100% !important;
+    table-layout: fixed;
+  }
+
+  .editor-surface img,
+  .signature-render img,
+  .message-body img,
+  .attachment-image-preview {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  .attachment-row,
+  .message-attachment-card {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .attachment-row {
+    flex-direction: column;
+  }
+
+  .attachment-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .notify-picker {
+    width: 100%;
+    min-width: 0;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .notify-picker label {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .split-action {
+    width: 100%;
+  }
+
+  .split-action-main {
+    flex: 1 1 auto;
+  }
+
+  .split-action-menu {
+    right: 0;
+    min-width: 0;
+    width: min(100%, 280px);
   }
 
   .modal-backdrop {
