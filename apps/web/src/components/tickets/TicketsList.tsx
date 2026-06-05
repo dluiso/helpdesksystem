@@ -312,6 +312,23 @@ function normalizeTicketViewState(value: unknown): TicketViewState {
   };
 }
 
+function hasExplicitTicketUrlFilters(searchParams: URLSearchParams) {
+  return [
+    "search",
+    "clientId",
+    "scope",
+    "assignedUserId",
+    "assignedTeamId",
+    "requester",
+    "statuses",
+    "priority",
+    "source",
+    "deletedScope",
+    "sortBy",
+    "sortDirection"
+  ].some((key) => searchParams.has(key));
+}
+
 export function TicketsList() {
   const [tickets, setTickets] = useState<TicketListItem[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -950,6 +967,7 @@ export function TicketsList() {
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
+    const hasUrlFilters = hasExplicitTicketUrlFilters(searchParams);
     const initialSearch = searchParams.get("search")?.trim();
     const initialClientId = searchParams.get("clientId")?.trim();
     const initialScope = searchParams.get("scope")?.trim();
@@ -1001,7 +1019,7 @@ export function TicketsList() {
     }
 
     void loadClients();
-    void loadTicketViews(true);
+    void loadTicketViews(!hasUrlFilters);
     const savedColumns = window.localStorage.getItem(COLUMN_STORAGE_KEY);
     if (savedColumns) {
       try {
@@ -1169,6 +1187,14 @@ export function TicketsList() {
           <select className="input" value={priority} onChange={(event) => setPriority(event.target.value)}>
             <option value="">All priorities</option>
             {priorities.map((value) => (
+              <option key={value} value={value}>
+                {label(value)}
+              </option>
+            ))}
+          </select>
+          <select className="input" value={source} onChange={(event) => setSource(event.target.value)}>
+            <option value="">All sources</option>
+            {sources.map((value) => (
               <option key={value} value={value}>
                 {label(value)}
               </option>

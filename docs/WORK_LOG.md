@@ -53,3 +53,4 @@
 - Expanded ticket statistics with 30-day activity, created-by-hour, source distribution, and short insight lists.
 - Rebuilt the Dashboard with KPI cards, donut charts, bar charts, workload rankings, and clickable ticket insight rows.
 - Added minimal ticket source filtering support so Dashboard source charts can open filtered ticket lists.
+- Fixed ticket URL filter precedence so Dashboard links are not overwritten by a saved default ticket view.
