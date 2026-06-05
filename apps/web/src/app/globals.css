@@ -2279,16 +2279,24 @@ a.dashboard-list-row:hover {
 .ticket-status-filter {
   position: relative;
   min-height: 44px;
+}
+
+.ticket-status-filter-trigger {
+  width: 100%;
+  min-height: 44px;
   border: 1px solid var(--line);
   border-radius: 8px;
   display: flex;
   align-items: center;
   padding: 0 12px;
+  color: var(--text);
   background: var(--surface-raised);
-  cursor: default;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
 }
 
-.ticket-status-filter > span {
+.ticket-status-filter-trigger > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2310,8 +2318,7 @@ a.dashboard-list-row:hover {
   box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16);
 }
 
-.ticket-status-filter:focus-within .ticket-status-filter-menu,
-.ticket-status-filter:hover .ticket-status-filter-menu {
+.ticket-status-filter.open .ticket-status-filter-menu {
   display: grid;
   gap: 6px;
 }

@@ -18,7 +18,7 @@ import {
   Trash2,
   X
 } from "lucide-react";
-import { MouseEvent as ReactMouseEvent, useEffect, useMemo, useState } from "react";
+import { MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
 interface TicketListItem {
@@ -330,6 +330,7 @@ function hasExplicitTicketUrlFilters(searchParams: URLSearchParams) {
 }
 
 export function TicketsList() {
+  const statusFilterRef = useRef<HTMLDivElement>(null);
   const [tickets, setTickets] = useState<TicketListItem[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -344,6 +345,7 @@ export function TicketsList() {
   const [clientId, setClientId] = useState("");
   const [requester, setRequester] = useState("");
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [showStatusFilterMenu, setShowStatusFilterMenu] = useState(false);
   const [priority, setPriority] = useState("");
   const [source, setSource] = useState("");
   const [sortBy, setSortBy] = useState<SortBy>("updatedAt");
@@ -1067,6 +1069,20 @@ export function TicketsList() {
   }, [search, clientId, scope, assignedUserId, assignedTeamId, requester, selectedStatuses, priority, source, sortBy, sortDirection, trashMode, pageSize]);
 
   useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      if (!statusFilterRef.current?.contains(event.target as Node)) {
+        setShowStatusFilterMenu(false);
+      }
+    }
+
+    if (showStatusFilterMenu) {
+      window.addEventListener("pointerdown", handlePointerDown);
+    }
+
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, [showStatusFilterMenu]);
+
+  useEffect(() => {
     setSelectedTicketIds([]);
     const timeoutId = window.setTimeout(() => {
       void loadTickets();
@@ -1168,9 +1184,21 @@ export function TicketsList() {
             ))}
           </select>
           <input className="input" value={requester} onChange={(event) => setRequester(event.target.value)} placeholder="Requester name or email" />
-          <div className="ticket-status-filter">
-            <span>{selectedStatuses.length ? `${selectedStatuses.length} status${selectedStatuses.length === 1 ? "" : "es"}` : "All statuses"}</span>
-            <div className="ticket-status-filter-menu">
+          <div className={`ticket-status-filter ${showStatusFilterMenu ? "open" : ""}`} ref={statusFilterRef}>
+            <button
+              className="ticket-status-filter-trigger"
+              type="button"
+              aria-expanded={showStatusFilterMenu}
+              onClick={() => setShowStatusFilterMenu((current) => !current)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setShowStatusFilterMenu(false);
+                }
+              }}
+            >
+              <span>{selectedStatuses.length ? `${selectedStatuses.length} status${selectedStatuses.length === 1 ? "" : "es"}` : "All statuses"}</span>
+            </button>
+            <div className="ticket-status-filter-menu" onKeyDown={(event) => event.key === "Escape" && setShowStatusFilterMenu(false)}>
               {statuses.map((value) => (
                 <label className="checkbox-row" key={value}>
                   <input type="checkbox" checked={selectedStatuses.includes(value)} onChange={() => toggleStatusFilter(value)} />

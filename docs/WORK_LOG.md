@@ -54,3 +54,4 @@
 - Rebuilt the Dashboard with KPI cards, donut charts, bar charts, workload rankings, and clickable ticket insight rows.
 - Added minimal ticket source filtering support so Dashboard source charts can open filtered ticket lists.
 - Fixed ticket URL filter precedence so Dashboard links are not overwritten by a saved default ticket view.
+- Changed the ticket status filter dropdown from hover-driven to click-controlled so it stays open while selecting multiple statuses.
