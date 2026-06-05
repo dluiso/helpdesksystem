@@ -202,7 +202,7 @@ const defaultColumnWidths: Record<ColumnId, number> = {
   messages: 65,
   attachments: 120
 };
-const statuses = ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_THIRD_PARTY", "RESOLVED", "CLOSED", "REOPENED", "CANCELLED", "MERGED"];
+const statuses = ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_TECHNICIAN", "WAITING_ON_THIRD_PARTY", "RESOLVED", "CLOSED", "REOPENED", "CANCELLED", "MERGED"];
 const mutableStatuses = statuses.filter((value) => value !== "MERGED");
 const priorities = ["LOW", "NORMAL", "HIGH", "URGENT", "CRITICAL"];
 const sources = ["MANUAL", "EMAIL", "PORTAL", "API", "SYSTEM"];

@@ -192,6 +192,9 @@ describe("TicketsService", () => {
       ticket: {
         findFirst: jest.fn().mockResolvedValue(existingTicket)
       },
+      ticketMessage: {
+        count: jest.fn().mockResolvedValue(0)
+      },
       $transaction: jest.fn((callback: (txClient: typeof tx) => unknown) => callback(tx))
     };
     const auditLogs = { create: jest.fn() };
@@ -261,6 +264,184 @@ describe("TicketsService", () => {
     });
     expect(routing.applyInboundRules).not.toHaveBeenCalled();
     expect(auditLogs.create).toHaveBeenCalledWith(expect.objectContaining({ action: "ticket.reopened_from_customer_reply" }));
+  });
+
+  it("marks existing tickets as waiting on technician when a customer replies after a public technician response", async () => {
+    const existingTicket = {
+      id: "ticket-1",
+      ticketNumber: "AIT-100001",
+      status: "WAITING_ON_CUSTOMER",
+      clientId: "client-1",
+      contactId: "contact-1"
+    };
+    const updatedTicket = {
+      ...existingTicket,
+      status: "WAITING_ON_TECHNICIAN"
+    };
+    const message = {
+      id: "message-2",
+      ticketId: "ticket-1"
+    };
+    const tx = {
+      ticket: {
+        update: jest.fn().mockResolvedValue(updatedTicket)
+      },
+      ticketMessage: {
+        create: jest.fn().mockResolvedValue(message)
+      }
+    };
+    const prisma = {
+      ticket: {
+        findFirst: jest.fn().mockResolvedValue(existingTicket)
+      },
+      ticketMessage: {
+        count: jest.fn().mockResolvedValue(1)
+      },
+      $transaction: jest.fn((callback: (txClient: typeof tx) => unknown) => callback(tx))
+    };
+    const auditLogs = { create: jest.fn() };
+    const sanitizer = { sanitize: jest.fn((value: string) => value) };
+    const contactsService = {
+      resolveRequesterFromEmail: jest.fn().mockResolvedValue({
+        client: { id: "client-1", name: "City of Harvey" },
+        contact: { id: "contact-1", email: "jane@cityofharveyil.gov" },
+        domain: "cityofharveyil.gov",
+        created: false
+      })
+    };
+    const routing = { applyInboundRules: jest.fn() };
+    const mailDelivery = { sendTicketReply: jest.fn() };
+    const notifications = { notifyUser: jest.fn(), notifyNewTicketCreated: jest.fn() };
+    const autoReplies = { sendForNewInboundTicket: jest.fn() };
+    const service = new TicketsService(
+      prisma as never,
+      auditLogs as never,
+      sanitizer as never,
+      contactsService as never,
+      routing as never,
+      mailDelivery as never,
+      notifications as never,
+      autoReplies as never
+    );
+
+    await expect(
+      service.createFromInboundEmail({
+        organizationId: "org-1",
+        senderEmail: "jane@cityofharveyil.gov",
+        senderName: "Jane Mayor",
+        subject: "Re: Need workstation help",
+        bodyText: "I tried that and still need help",
+        emailConversationId: "conversation-1",
+        inReplyTo: "<message-1@example.org>"
+      })
+    ).resolves.toEqual({ ticket: updatedTicket, message });
+
+    expect(prisma.ticketMessage.count).toHaveBeenCalledWith({
+      where: {
+        ticketId: "ticket-1",
+        direction: "OUTBOUND",
+        visibility: "PUBLIC"
+      }
+    });
+    expect(tx.ticket.update).toHaveBeenCalledWith({
+      where: { id: "ticket-1" },
+      data: expect.objectContaining({
+        lastCustomerResponseAt: expect.any(Date),
+        status: "WAITING_ON_TECHNICIAN"
+      })
+    });
+  });
+
+  it("marks public technician replies as waiting on customer when the ticket is not closed", async () => {
+    const ticket = {
+      id: "ticket-1",
+      ticketNumber: "AIT-100001",
+      status: "OPEN",
+      subject: "Printer issue",
+      mailboxId: null,
+      firstResponseAt: null,
+      assignedUserId: null,
+      assignedTeamId: null,
+      assignedGroupId: null
+    };
+    const message = { id: "message-1", ticketId: "ticket-1" };
+    const prisma = {
+      ticket: {
+        findFirst: jest.fn().mockResolvedValue(ticket),
+        update: jest.fn().mockResolvedValue({ ...ticket, status: "WAITING_ON_CUSTOMER" })
+      },
+      ticketMessage: {
+        findFirst: jest.fn().mockResolvedValue({
+          senderEmail: "customer@example.com",
+          emailInternetMessageId: "<customer-message@example.com>",
+          emailMessageId: "provider-message-1",
+          emailReferences: null,
+          emailConversationId: "conversation-1"
+        }),
+        create: jest.fn().mockResolvedValue(message)
+      },
+      ticketAttachment: {
+        updateMany: jest.fn()
+      },
+      ticketAssignee: {
+        findMany: jest.fn().mockResolvedValue([])
+      }
+    };
+    const auditLogs = { create: jest.fn() };
+    const sanitizer = { sanitize: jest.fn((value: string) => value) };
+    const contactsService = { resolveRequesterFromEmail: jest.fn() };
+    const routing = { applyInboundRules: jest.fn() };
+    const mailDelivery = {
+      sendTicketReply: jest.fn().mockResolvedValue({
+        providerMessageId: "sent-message-1",
+        internetMessageId: "<sent-message@example.com>",
+        conversationId: "conversation-1"
+      })
+    };
+    const notifications = { notifyUser: jest.fn(), notifyNewTicketCreated: jest.fn() };
+    const autoReplies = { sendForNewInboundTicket: jest.fn() };
+    const service = new TicketsService(
+      prisma as never,
+      auditLogs as never,
+      sanitizer as never,
+      contactsService as never,
+      routing as never,
+      mailDelivery as never,
+      notifications as never,
+      autoReplies as never
+    );
+
+    await expect(
+      service.createMessage(
+        "AIT-100001",
+        {
+          bodyText: "Please try restarting the printer.",
+          bodyHtml: "<p>Please try restarting the printer.</p>",
+          visibility: "public",
+          action: "send"
+        },
+        {
+          id: "user-1",
+          organizationId: "org-1",
+          email: "tech@example.com",
+          firstName: "Tech",
+          lastName: "User",
+          forcePasswordChange: false,
+          permissions: []
+        }
+      )
+    ).resolves.toEqual(message);
+
+    expect(prisma.ticket.update).toHaveBeenCalledWith({
+      where: { id: "ticket-1" },
+      data: expect.objectContaining({
+        status: "WAITING_ON_CUSTOMER",
+        closedAt: null,
+        resolvedAt: null,
+        lastTechnicianResponseAt: expect.any(Date),
+        firstResponseAt: expect.any(Date)
+      })
+    });
   });
 
   it("merges selected source tickets into a primary ticket", async () => {

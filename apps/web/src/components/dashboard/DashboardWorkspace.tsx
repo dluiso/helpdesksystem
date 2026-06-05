@@ -25,6 +25,7 @@ interface DashboardStats {
     unassignedTickets: number;
     highPriorityTickets: number;
     awaitingCustomer: number;
+    awaitingTechnician: number;
     noRecentUpdate: number;
   };
   byStatus: Array<{ status: string; count: number; filter: { statuses: string[] } }>;
@@ -41,7 +42,7 @@ interface DashboardStats {
   };
 }
 
-const activeStatuses = ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_THIRD_PARTY", "REOPENED"];
+const activeStatuses = ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_TECHNICIAN", "WAITING_ON_THIRD_PARTY", "REOPENED"];
 const chartColors = ["#155eef", "#16a34a", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#64748b", "#ec4899"];
 
 function label(value: string) {
@@ -317,6 +318,7 @@ export function DashboardWorkspace() {
       { title: "Unassigned", value: stats.summary.unassignedTickets, href: ticketHref({ scope: "unassigned", statuses: activeStatuses }), tone: "warning", icon: UserX, note: "Needs owner" },
       { title: "High Priority", value: stats.summary.highPriorityTickets, href: ticketHref({ priority: "HIGH", statuses: activeStatuses }), tone: "danger", icon: AlertTriangle, note: "Escalated" },
       { title: "Awaiting Customer", value: stats.summary.awaitingCustomer, href: ticketHref({ statuses: ["WAITING_ON_CUSTOMER"] }), tone: "neutral", icon: Clock3, note: "External wait" },
+      { title: "Awaiting Technician", value: stats.summary.awaitingTechnician, href: ticketHref({ statuses: ["WAITING_ON_TECHNICIAN"] }), tone: "info", icon: Clock3, note: "Internal action" },
       { title: "No Recent Update", value: stats.summary.noRecentUpdate, href: ticketHref({ statuses: activeStatuses, sortBy: "updatedAt", sortDirection: "asc" }), tone: "muted", icon: Zap, note: "7+ days idle" }
     ];
   }, [stats]);

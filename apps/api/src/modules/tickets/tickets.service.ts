@@ -132,7 +132,15 @@ export class TicketsService {
   }
 
   async statistics(user: AuthenticatedUser) {
-    const activeStatuses = [TicketStatus.NEW, TicketStatus.OPEN, TicketStatus.IN_PROGRESS, TicketStatus.WAITING_ON_CUSTOMER, TicketStatus.WAITING_ON_THIRD_PARTY, TicketStatus.REOPENED];
+    const activeStatuses = [
+      TicketStatus.NEW,
+      TicketStatus.OPEN,
+      TicketStatus.IN_PROGRESS,
+      TicketStatus.WAITING_ON_CUSTOMER,
+      TicketStatus.WAITING_ON_TECHNICIAN,
+      TicketStatus.WAITING_ON_THIRD_PARTY,
+      TicketStatus.REOPENED
+    ];
     const baseWhere: Prisma.TicketWhereInput = {
       organizationId: user.organizationId,
       deletedAt: null,
@@ -152,6 +160,7 @@ export class TicketsService {
       unassignedTickets,
       highPriorityTickets,
       awaitingCustomer,
+      awaitingTechnician,
       noRecentUpdate,
       byStatus,
       byPriority,
@@ -178,6 +187,7 @@ export class TicketsService {
       }),
       this.prisma.ticket.count({ where: { ...activeWhere, priority: TicketPriority.HIGH } }),
       this.prisma.ticket.count({ where: { ...baseWhere, status: TicketStatus.WAITING_ON_CUSTOMER } }),
+      this.prisma.ticket.count({ where: { ...baseWhere, status: TicketStatus.WAITING_ON_TECHNICIAN } }),
       this.prisma.ticket.count({ where: { ...activeWhere, updatedAt: { lt: staleCutoff } } }),
       this.prisma.ticket.groupBy({
         by: ["status"],
@@ -280,6 +290,7 @@ export class TicketsService {
         unassignedTickets,
         highPriorityTickets,
         awaitingCustomer,
+        awaitingTechnician,
         noRecentUpdate,
         slaBreached: null,
         slaAtRisk: null
@@ -693,7 +704,7 @@ export class TicketsService {
       }
       const mergeOrigin = targetTicket.id === existingTicket.id ? null : existingTicket;
       const shouldReopen = this.shouldReopenFromInbound(targetTicket.status);
-      const shouldMarkOpen = !shouldReopen && (await this.shouldMarkExistingTicketOpenFromInbound(targetTicket.id, targetTicket.status));
+      const shouldAwaitTechnician = await this.shouldMarkWaitingOnTechnicianFromInbound(targetTicket.id, targetTicket.status);
       const result = await this.prisma.$transaction(async (tx) => {
         const ticket = await tx.ticket.update({
           where: { id: targetTicket.id },
@@ -703,13 +714,13 @@ export class TicketsService {
             lastCustomerResponseAt: new Date(),
             ...(shouldReopen
               ? {
-                  status: TicketStatus.REOPENED,
+                  status: shouldAwaitTechnician ? TicketStatus.WAITING_ON_TECHNICIAN : TicketStatus.REOPENED,
                   reopenedAt: new Date(),
                   resolvedAt: null,
                   closedAt: null
                 }
               : {}),
-            ...(shouldMarkOpen ? { status: TicketStatus.OPEN } : {})
+            ...(!shouldReopen && shouldAwaitTechnician ? { status: TicketStatus.WAITING_ON_TECHNICIAN } : {})
           }
         });
 
@@ -747,6 +758,7 @@ export class TicketsService {
         action: shouldReopen ? "ticket.reopened_from_customer_reply" : "ticket.customer_reply_received",
         metadata: {
           ticketNumber: result.ticket.ticketNumber,
+          status: result.ticket.status,
           senderEmail: input.senderEmail,
           emailMessageId: input.emailMessageId ?? null,
           emailInternetMessageId: input.emailInternetMessageId ?? null,
@@ -1342,7 +1354,8 @@ export class TicketsService {
               firstResponseAt: ticket.firstResponseAt ?? new Date(),
               updatedAt: new Date()
             }),
-        ...(action === "send_and_close" || action === "send_note_and_close" ? { status: "CLOSED", closedAt: new Date() } : {})
+        ...(!isInternal && action === "send" ? { status: TicketStatus.WAITING_ON_CUSTOMER, closedAt: null, resolvedAt: null } : {}),
+        ...(action === "send_and_close" || action === "send_note_and_close" ? { status: TicketStatus.CLOSED, closedAt: new Date() } : {})
       }
     });
 
@@ -1629,15 +1642,29 @@ export class TicketsService {
     return [...new Set([...manualEmails, ...users.map((user) => user.email.toLowerCase())])];
   }
 
-  private async shouldMarkExistingTicketOpenFromInbound(ticketId: string, status: TicketStatus) {
-    if (status !== TicketStatus.NEW && status !== TicketStatus.WAITING_ON_CUSTOMER) {
+  private async shouldMarkWaitingOnTechnicianFromInbound(ticketId: string, status: TicketStatus) {
+    const customerReplyStatuses: TicketStatus[] = [
+      TicketStatus.NEW,
+      TicketStatus.OPEN,
+      TicketStatus.IN_PROGRESS,
+      TicketStatus.WAITING_ON_CUSTOMER,
+      TicketStatus.WAITING_ON_TECHNICIAN,
+      TicketStatus.WAITING_ON_THIRD_PARTY,
+      TicketStatus.REOPENED,
+      TicketStatus.CLOSED,
+      TicketStatus.RESOLVED,
+      TicketStatus.CANCELLED
+    ];
+
+    if (!customerReplyStatuses.includes(status)) {
       return false;
     }
 
     const staffMessageCount = await this.prisma.ticketMessage.count({
       where: {
         ticketId,
-        direction: { in: [MessageDirection.OUTBOUND, MessageDirection.INTERNAL] }
+        direction: MessageDirection.OUTBOUND,
+        visibility: MessageVisibility.PUBLIC
       }
     });
 

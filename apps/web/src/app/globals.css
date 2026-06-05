@@ -2568,6 +2568,7 @@ a.dashboard-list-row:hover {
 }
 
 .inline-ticket-select.ticket-status-waiting-on-customer,
+.inline-ticket-select.ticket-status-waiting-on-technician,
 .inline-ticket-select.ticket-status-waiting-on-third-party {
   color: var(--pill-waiting-text);
   background: var(--pill-waiting-bg);
@@ -2829,6 +2830,7 @@ a.dashboard-list-row:hover {
 }
 
 .status-pill.ticket-status-waiting-on-customer,
+.status-pill.ticket-status-waiting-on-technician,
 .status-pill.ticket-status-waiting-on-third-party {
   color: var(--pill-waiting-text);
   background: var(--pill-waiting-bg);
