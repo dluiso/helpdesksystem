@@ -55,3 +55,9 @@
 - Added minimal ticket source filtering support so Dashboard source charts can open filtered ticket lists.
 - Fixed ticket URL filter precedence so Dashboard links are not overwritten by a saved default ticket view.
 - Changed the ticket status filter dropdown from hover-driven to click-controlled so it stays open while selecting multiple statuses.
+
+## 2026-06-05 - Inbound attachment sync reliability
+
+- Updated Microsoft Graph inbound attachment retrieval to follow paginated attachment responses.
+- Added Office, ZIP, CSV, and PowerPoint MIME fallback detection when Graph omits attachment content type.
+- Added a provider test covering paginated attachments and attachment detail retrieval for missing content bytes.

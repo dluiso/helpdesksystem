@@ -171,38 +171,40 @@ export class MicrosoftGraphMailProvider implements MailProvider {
     const token = await this.getAccessToken(input);
     const mailboxUser = encodeURIComponent(input.mailboxEmailAddress);
     const messageId = encodeURIComponent(input.providerMessageId);
-    const response = await this.graphFetch<GraphAttachmentsResponse>(
-      `https://graph.microsoft.com/v1.0/users/${mailboxUser}/messages/${messageId}/attachments`,
-      token
-    );
+    let nextUrl: string | null = `https://graph.microsoft.com/v1.0/users/${mailboxUser}/messages/${messageId}/attachments`;
     const attachments: MailAttachment[] = [];
 
-    for (const attachment of response.value) {
-      if (!this.isFileAttachment(attachment)) {
-        continue;
+    while (nextUrl) {
+      const response: GraphAttachmentsResponse = await this.graphFetch<GraphAttachmentsResponse>(nextUrl, token);
+      nextUrl = response["@odata.nextLink"] ?? null;
+
+      for (const attachment of response.value) {
+        if (!this.isFileAttachment(attachment)) {
+          continue;
+        }
+
+        const fileAttachment = attachment.contentBytes
+          ? attachment
+          : await this.graphFetch<GraphAttachment>(
+              `https://graph.microsoft.com/v1.0/users/${mailboxUser}/messages/${messageId}/attachments/${encodeURIComponent(attachment.id)}`,
+              token
+            );
+
+        if (!this.isFileAttachment(fileAttachment) || !fileAttachment.contentBytes) {
+          continue;
+        }
+
+        const buffer = Buffer.from(fileAttachment.contentBytes, "base64");
+        attachments.push({
+          id: fileAttachment.id,
+          originalFilename: fileAttachment.name || `attachment-${fileAttachment.id}`,
+          mimeType: this.resolveAttachmentMimeType(fileAttachment),
+          sizeBytes: buffer.length || fileAttachment.size || 0,
+          contentId: this.cleanContentId(fileAttachment.contentId),
+          isInline: Boolean(fileAttachment.isInline || fileAttachment.contentId),
+          contentBytes: buffer
+        });
       }
-
-      const fileAttachment = attachment.contentBytes
-        ? attachment
-        : await this.graphFetch<GraphAttachment>(
-            `https://graph.microsoft.com/v1.0/users/${mailboxUser}/messages/${messageId}/attachments/${encodeURIComponent(attachment.id)}`,
-            token
-          );
-
-      if (!this.isFileAttachment(fileAttachment) || !fileAttachment.contentBytes) {
-        continue;
-      }
-
-      const buffer = Buffer.from(fileAttachment.contentBytes, "base64");
-      attachments.push({
-        id: fileAttachment.id,
-        originalFilename: fileAttachment.name || `attachment-${fileAttachment.id}`,
-        mimeType: this.resolveAttachmentMimeType(fileAttachment),
-        sizeBytes: buffer.length || fileAttachment.size || 0,
-        contentId: this.cleanContentId(fileAttachment.contentId),
-        isInline: Boolean(fileAttachment.isInline || fileAttachment.contentId),
-        contentBytes: buffer
-      });
     }
 
     return attachments;
@@ -378,6 +380,22 @@ export class MicrosoftGraphMailProvider implements MailProvider {
         return "image/webp";
       case "pdf":
         return "application/pdf";
+      case "zip":
+        return "application/zip";
+      case "doc":
+        return "application/msword";
+      case "docx":
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      case "xls":
+        return "application/vnd.ms-excel";
+      case "xlsx":
+        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      case "ppt":
+        return "application/vnd.ms-powerpoint";
+      case "pptx":
+        return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+      case "csv":
+        return "text/csv";
       case "txt":
         return "text/plain";
       default:
@@ -475,6 +493,7 @@ interface GraphDraftMessage {
 }
 
 interface GraphAttachmentsResponse {
+  "@odata.nextLink"?: string;
   value: GraphAttachment[];
 }
 
