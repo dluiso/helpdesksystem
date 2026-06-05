@@ -2,6 +2,7 @@ export type AiTicketAction =
   | "improve_reply"
   | "fix_grammar"
   | "suggest_reply"
+  | "complete_draft"
   | "summarize"
   | "translate"
   | "change_tone"

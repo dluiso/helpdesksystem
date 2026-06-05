@@ -1114,6 +1114,111 @@ select {
   min-width: 0;
 }
 
+.settings-page {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-page .page-header {
+  margin-bottom: 2px;
+  align-items: center;
+}
+
+.settings-page .page-header h1 {
+  font-size: 28px;
+}
+
+.settings-page .page-header p {
+  margin-top: 6px;
+}
+
+.settings-page .settings-layout {
+  gap: 12px;
+}
+
+.settings-page .settings-nav {
+  top: 12px;
+  gap: 4px;
+  padding: 7px;
+}
+
+.settings-page .settings-nav button {
+  min-height: 34px;
+  padding: 7px 10px;
+}
+
+.settings-page .panel {
+  padding: 16px;
+}
+
+.settings-page .settings-section {
+  margin-top: 12px;
+}
+
+.settings-page .section-heading {
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.settings-page .stack-row {
+  min-width: 0;
+  min-height: 52px;
+  align-items: flex-start;
+}
+
+.settings-page .stack-row > div,
+.settings-page .stack-row strong,
+.settings-page .stack-row span,
+.settings-page .tickets-table td,
+.settings-page .tickets-table th {
+  min-width: 0;
+}
+
+.settings-page .stack-row strong,
+.settings-page .stack-row span {
+  overflow-wrap: anywhere;
+}
+
+.settings-page .settings-rule-list .stack-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  align-items: start;
+}
+
+.settings-page .tickets-table th,
+.settings-page .tickets-table td {
+  padding: 10px 12px;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  vertical-align: middle;
+}
+
+.settings-page .tickets-table td strong,
+.settings-page .tickets-table td .muted {
+  display: block;
+  line-height: 1.35;
+}
+
+.settings-page .tickets-table td .muted {
+  margin-top: 2px;
+}
+
+.settings-page .ai-providers-table,
+.settings-page .ai-actions-table {
+  min-width: 920px;
+}
+
+.settings-page .ai-bulk-actions {
+  padding: 10px;
+}
+
+.settings-page .ai-bulk-actions .compact-select,
+.settings-page .mailbox-form-grid .compact-select {
+  min-width: 0;
+  width: 100%;
+}
+
 .profile-layout {
   grid-template-columns: 236px minmax(0, 1fr);
   gap: 18px;
@@ -1433,6 +1538,32 @@ select {
 
 .mailbox-form-grid {
   margin-top: 12px;
+}
+
+.settings-page .mailbox-config-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.settings-page .mailbox-config-row > div:first-child {
+  min-width: 0;
+}
+
+.settings-page .mailbox-config-row .muted,
+.settings-page .mailbox-config-row .error {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.settings-page .mailbox-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.settings-page .mailbox-config-row .row-actions.vertical {
+  min-width: 92px;
+  align-self: center;
 }
 
 .mailbox-form-grid .checkbox-row {
@@ -2398,6 +2529,33 @@ a.dashboard-list-row:hover {
 
 .editor-surface hr {
   border-color: var(--editor-line);
+}
+
+.ai-autocomplete {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: -2px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+}
+
+.ai-autocomplete strong,
+.ai-autocomplete span {
+  display: block;
+}
+
+.ai-autocomplete strong {
+  font-size: 12px;
+  color: var(--brand-primary);
+}
+
+.ai-autocomplete .muted {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
 }
 
 .signature-editor {

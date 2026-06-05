@@ -205,6 +205,7 @@ const AI_ACTIONS = [
   { type: "paraphrase", label: "Paraphrase" },
   { type: "improve_reply", label: "Improve reply" },
   { type: "suggest_reply", label: "Draft reply" },
+  { type: "complete_draft", label: "Autocomplete draft" },
   { type: "fix_grammar", label: "Fix grammar" },
   { type: "summarize", label: "Summarize ticket" },
   { type: "translate", label: "Translate" },
@@ -1140,7 +1141,7 @@ export function SettingsWorkspace() {
   }, []);
 
   return (
-    <>
+    <div className="settings-page">
       <div className="page-header">
         <div>
           <h1>Settings</h1>
@@ -2064,7 +2065,7 @@ export function SettingsWorkspace() {
 
               <div className="panel">
                 <h2>Safety Rules</h2>
-                <div className="stack-list settings-section">
+                <div className="stack-list settings-section settings-rule-list">
                   <div className="stack-row">
                     <strong>Manual cleanup requires confirmation</strong>
                     <span className="muted">The app prompts before any permanent deletion.</span>
@@ -2358,6 +2359,6 @@ export function SettingsWorkspace() {
           ) : null}
         </div>
       </section>
-    </>
+    </div>
   );
 }

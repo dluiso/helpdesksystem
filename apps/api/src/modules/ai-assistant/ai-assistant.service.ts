@@ -225,15 +225,16 @@ export class AiAssistantService {
       }))
     });
     const resolved = await this.resolveProviderForAction(user.organizationId, action);
+    const runtimePrompt = this.systemPromptForAction(action, resolved.systemPrompt);
     const result = await resolved.provider.complete(
       {
         action,
         draft,
         ticketContext,
         model: resolved.model,
-        systemPrompt: resolved.systemPrompt,
-        temperature: resolved.temperature,
-        maxOutputTokens: resolved.maxOutputTokens
+        systemPrompt: runtimePrompt,
+        temperature: action === "complete_draft" ? resolved.temperature ?? 0.2 : resolved.temperature,
+        maxOutputTokens: action === "complete_draft" ? resolved.maxOutputTokens ?? 80 : resolved.maxOutputTokens
       },
       resolved.config
     );
@@ -259,6 +260,16 @@ export class AiAssistantService {
     });
 
     return result;
+  }
+
+  private systemPromptForAction(action: AiTicketAction, configuredPrompt?: string | null) {
+    if (action !== "complete_draft") {
+      return configuredPrompt;
+    }
+
+    const autocompletePrompt =
+      "You are an inline autocomplete assistant for IT support ticket replies. Continue the technician draft with only the next short phrase or sentence. Do not repeat the draft. Do not add greetings, signatures, explanations, markdown, or quoted labels.";
+    return configuredPrompt ? `${configuredPrompt}\n\n${autocompletePrompt}` : autocompletePrompt;
   }
 
   private async resolveProviderForAction(organizationId: string, action: AiTicketAction) {

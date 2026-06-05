@@ -31,6 +31,11 @@ export class AiAssistantController {
     return this.aiAssistantService.run(ticketId, "suggest_reply", user);
   }
 
+  @Post("complete-draft")
+  completeDraft(@Param("ticketId") ticketId: string, @CurrentUser() user: AuthenticatedUser, @Body("draft") draft?: string) {
+    return this.aiAssistantService.run(ticketId, "complete_draft", user, draft);
+  }
+
   @Post("summarize")
   summarize(@Param("ticketId") ticketId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.aiAssistantService.run(ticketId, "summarize", user);

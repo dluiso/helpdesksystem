@@ -40,3 +40,9 @@
 
 - Documented native systemd production update commands that explicitly load `.env.production` for Prisma and build without using `NODE_OPTIONS`.
 - Updated ticket subject metadata so Created and Modified timestamps render on separate lines.
+
+## 2026-06-05 - Settings polish and AI autocomplete
+
+- Tightened the Settings layout spacing and scoped table/card wrapping fixes to avoid cramped rows and clipped safety-rule text.
+- Added a configurable `complete_draft` AI action for ticket reply autocomplete.
+- Added debounced inline AI suggestions in the ticket reply composer with accept and dismiss controls.

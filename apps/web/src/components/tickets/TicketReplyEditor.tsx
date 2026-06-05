@@ -2,6 +2,7 @@
 
 import {
   Bold,
+  Check,
   Code,
   ChevronDown,
   Eye,
@@ -15,9 +16,10 @@ import {
   RemoveFormatting,
   Send,
   Strikethrough,
-  Underline
+  Underline,
+  X
 } from "lucide-react";
-import { ClipboardEvent, useEffect, useRef, useState } from "react";
+import { ClipboardEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { AttachmentDropzone } from "./AttachmentDropzone";
 import { AttachmentPreviewItem, AttachmentPreviewList } from "./AttachmentPreviewList";
@@ -51,6 +53,7 @@ interface TicketReplyEditorProps {
 
 export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], onSaved }: TicketReplyEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
+  const autocompleteRequestRef = useRef(0);
   const [mode, setMode] = useState<"public" | "internal">("public");
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [preview, setPreview] = useState(false);
@@ -61,6 +64,10 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
   const [ccUserIds, setCcUserIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [aiBusy, setAiBusy] = useState<string | null>(null);
+  const [draftText, setDraftText] = useState("");
+  const [autocompleteSuggestion, setAutocompleteSuggestion] = useState("");
+  const [autocompleteBusy, setAutocompleteBusy] = useState(false);
+  const [autocompleteDismissedFor, setAutocompleteDismissedFor] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -81,6 +88,42 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
     };
   }, []);
 
+  useEffect(() => {
+    if (!ticketId || preview || aiBusy || saving) {
+      return;
+    }
+
+    const draft = draftText.trim();
+    if (draft.length < 35 || draft === autocompleteDismissedFor) {
+      return;
+    }
+
+    const requestId = autocompleteRequestRef.current + 1;
+    const timeout = window.setTimeout(() => {
+      autocompleteRequestRef.current = requestId;
+      setAutocompleteBusy(true);
+      apiFetch<{ text: string }>(`/tickets/${ticketId}/ai/complete-draft`, {
+        method: "POST",
+        body: JSON.stringify({ draft })
+      })
+        .then((result) => {
+          if (autocompleteRequestRef.current !== requestId) {
+            return;
+          }
+          const suggestion = result.text.trim();
+          setAutocompleteSuggestion(suggestion && !draft.endsWith(suggestion) ? suggestion : "");
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (autocompleteRequestRef.current === requestId) {
+            setAutocompleteBusy(false);
+          }
+        });
+    }, 900);
+
+    return () => window.clearTimeout(timeout);
+  }, [aiBusy, autocompleteDismissedFor, draftText, preview, saving, ticketId]);
+
   function runCommand(command: string, value?: string) {
     editorRef.current?.focus();
     document.execCommand(command, false, value);
@@ -93,6 +136,42 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
 
   function getEditorText() {
     return editorRef.current?.innerText.trim() ?? "";
+  }
+
+  function handleEditorInput() {
+    autocompleteRequestRef.current += 1;
+    setDraftText(getEditorText());
+    setAutocompleteSuggestion("");
+    setAutocompleteBusy(false);
+  }
+
+  function acceptAutocompleteSuggestion() {
+    if (!autocompleteSuggestion || !editorRef.current) {
+      return;
+    }
+
+    const currentText = getEditorText();
+    const prefix = currentText && !/\s$/.test(editorRef.current.innerText) && !/^[\s.,;:!?)]/.test(autocompleteSuggestion) ? " " : "";
+    editorRef.current.focus();
+    document.execCommand("insertText", false, `${prefix}${autocompleteSuggestion}`);
+    setAutocompleteSuggestion("");
+    setDraftText(getEditorText());
+  }
+
+  function dismissAutocompleteSuggestion() {
+    setAutocompleteDismissedFor(getEditorText());
+    setAutocompleteSuggestion("");
+  }
+
+  function handleEditorKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Tab" && autocompleteSuggestion) {
+      event.preventDefault();
+      acceptAutocompleteSuggestion();
+    }
+    if (event.key === "Escape" && autocompleteSuggestion) {
+      event.preventDefault();
+      dismissAutocompleteSuggestion();
+    }
   }
 
   function getSelectedText() {
@@ -158,6 +237,8 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
         })
       });
       editorRef.current.innerHTML = "";
+      setDraftText("");
+      setAutocompleteSuggestion("");
       setAttachments([]);
       setNotifyUserIds([]);
       setCcInput("");
@@ -295,6 +376,8 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
       } else {
         editorRef.current.innerText = result.text;
       }
+      setDraftText(getEditorText());
+      setAutocompleteSuggestion("");
     } catch (requestError) {
       const detail = requestError instanceof Error ? requestError.message : "";
       setError(`Unable to run AI writing tool.${detail ? ` ${detail}` : ""}`);
@@ -372,11 +455,31 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
         dir="ltr"
         suppressContentEditableWarning
         ref={editorRef}
+        onInput={handleEditorInput}
+        onKeyDown={handleEditorKeyDown}
         onPaste={handlePaste}
         role="textbox"
         aria-label={mode === "public" ? "Public reply body" : "Internal note body"}
         data-placeholder={mode === "public" ? "Write a customer-facing reply..." : "Write an internal troubleshooting note..."}
       />
+      {!preview && (autocompleteSuggestion || autocompleteBusy) ? (
+        <div className="ai-autocomplete">
+          <div>
+            <strong>AI suggestion</strong>
+            <span className="muted">{autocompleteBusy ? "Thinking..." : autocompleteSuggestion}</span>
+          </div>
+          {autocompleteSuggestion ? (
+            <div className="row-actions">
+              <button className="icon-button" type="button" title="Accept suggestion" aria-label="Accept suggestion" onClick={acceptAutocompleteSuggestion}>
+                <Check size={16} aria-hidden="true" />
+              </button>
+              <button className="icon-button" type="button" title="Dismiss suggestion" aria-label="Dismiss suggestion" onClick={dismissAutocompleteSuggestion}>
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {mode === "public" ? (
         <div className="cc-picker">
           <label className="field">
