@@ -47,3 +47,9 @@
 - Added a configurable `complete_draft` AI action for ticket reply autocomplete.
 - Added debounced inline AI suggestions in the ticket reply composer with accept and dismiss controls.
 - Changed autocomplete from a separate suggestion bar to inline ghost text inside the reply editor, with cleanup before send/preview/tools.
+
+## 2026-06-05 - Dashboard analytics redesign
+
+- Expanded ticket statistics with 30-day activity, created-by-hour, source distribution, and short insight lists.
+- Rebuilt the Dashboard with KPI cards, donut charts, bar charts, workload rankings, and clickable ticket insight rows.
+- Added minimal ticket source filtering support so Dashboard source charts can open filtered ticket lists.

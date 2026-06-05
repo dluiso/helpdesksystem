@@ -120,6 +120,7 @@ interface TicketViewState {
   requester: string;
   statuses: string[];
   priority: string;
+  source: string;
   sortBy: SortBy;
   sortDirection: SortDirection;
   pageSize: "20" | "50" | "100" | "all";
@@ -203,8 +204,9 @@ const defaultColumnWidths: Record<ColumnId, number> = {
 const statuses = ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_THIRD_PARTY", "RESOLVED", "CLOSED", "REOPENED", "CANCELLED", "MERGED"];
 const mutableStatuses = statuses.filter((value) => value !== "MERGED");
 const priorities = ["LOW", "NORMAL", "HIGH", "URGENT", "CRITICAL"];
+const sources = ["MANUAL", "EMAIL", "PORTAL", "API", "SYSTEM"];
 const builtInViews: Array<{ id: string; name: string; state: Partial<TicketViewState> }> = [
-  { id: "all", name: "All tickets", state: { scope: "all", statuses: [], priority: "" } },
+  { id: "all", name: "All tickets", state: { scope: "all", statuses: [], priority: "", source: "" } },
   { id: "new", name: "New tickets", state: { statuses: ["NEW"], scope: "all" } },
   { id: "open", name: "Open tickets", state: { statuses: ["OPEN"], scope: "all" } },
   { id: "closed", name: "Closed tickets", state: { statuses: ["CLOSED"], scope: "all" } },
@@ -300,6 +302,7 @@ function normalizeTicketViewState(value: unknown): TicketViewState {
     requester: typeof state.requester === "string" ? state.requester : "",
     statuses: [...new Set(nextStatuses)],
     priority: typeof state.priority === "string" ? state.priority : "",
+    source: typeof state.source === "string" && sources.includes(state.source) ? state.source : "",
     sortBy: nextSortBy,
     sortDirection: state.sortDirection === "asc" || state.sortDirection === "desc" ? state.sortDirection : "desc",
     pageSize: nextPageSize,
@@ -325,6 +328,7 @@ export function TicketsList() {
   const [requester, setRequester] = useState("");
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [priority, setPriority] = useState("");
+  const [source, setSource] = useState("");
   const [sortBy, setSortBy] = useState<SortBy>("updatedAt");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(defaultColumnOrder);
@@ -376,7 +380,7 @@ export function TicketsList() {
     [columnOrder, visibleColumns]
   );
 
-  const hasActiveFilters = Boolean(search || clientId || requester || selectedStatuses.length > 0 || priority || scope !== "all" || assignedUserId || assignedTeamId);
+  const hasActiveFilters = Boolean(search || clientId || requester || selectedStatuses.length > 0 || priority || source || scope !== "all" || assignedUserId || assignedTeamId);
   const selectedCount = selectedTicketIds.length;
   const allVisibleSelected = tickets.length > 0 && tickets.every((ticket) => selectedTicketIds.includes(ticket.id));
   const selectedTickets = useMemo(() => selectedTicketIds.map((id) => tickets.find((ticket) => ticket.id === id)).filter((ticket): ticket is TicketListItem => Boolean(ticket)), [selectedTicketIds, tickets]);
@@ -411,6 +415,9 @@ export function TicketsList() {
       }
       if (priority) {
         params.set("priority", priority);
+      }
+      if (source) {
+        params.set("source", source);
       }
       params.set("sortBy", sortBy);
       params.set("sortDirection", sortDirection);
@@ -475,6 +482,7 @@ export function TicketsList() {
       requester,
       statuses: selectedStatuses,
       priority,
+      source,
       sortBy,
       sortDirection,
       pageSize,
@@ -494,6 +502,7 @@ export function TicketsList() {
     setRequester(normalized.requester);
     setSelectedStatuses(normalized.statuses);
     setPriority(normalized.priority);
+    setSource(normalized.source);
     setSortBy(normalized.sortBy);
     setSortDirection(normalized.sortDirection);
     setPageSize(normalized.pageSize);
@@ -776,6 +785,7 @@ export function TicketsList() {
     setRequester("");
     setSelectedStatuses([]);
     setPriority("");
+    setSource("");
   }
 
   function changeSort(column: ColumnDefinition) {
@@ -948,6 +958,7 @@ export function TicketsList() {
     const initialRequester = searchParams.get("requester")?.trim();
     const initialStatuses = searchParams.get("statuses")?.trim();
     const initialPriority = searchParams.get("priority")?.trim();
+    const initialSource = searchParams.get("source")?.trim();
     const initialDeletedScope = searchParams.get("deletedScope")?.trim();
     const initialSortBy = searchParams.get("sortBy")?.trim();
     const initialSortDirection = searchParams.get("sortDirection")?.trim();
@@ -975,6 +986,9 @@ export function TicketsList() {
     }
     if (initialPriority && priorities.includes(initialPriority)) {
       setPriority(initialPriority);
+    }
+    if (initialSource && sources.includes(initialSource)) {
+      setSource(initialSource);
     }
     if (initialDeletedScope === "deleted") {
       setTrashMode(true);
@@ -1032,7 +1046,7 @@ export function TicketsList() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, clientId, scope, assignedUserId, assignedTeamId, requester, selectedStatuses, priority, sortBy, sortDirection, trashMode, pageSize]);
+  }, [search, clientId, scope, assignedUserId, assignedTeamId, requester, selectedStatuses, priority, source, sortBy, sortDirection, trashMode, pageSize]);
 
   useEffect(() => {
     setSelectedTicketIds([]);
@@ -1041,7 +1055,7 @@ export function TicketsList() {
     }, 300);
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, clientId, scope, assignedUserId, assignedTeamId, requester, selectedStatuses, priority, sortBy, sortDirection, trashMode, page, pageSize]);
+  }, [search, clientId, scope, assignedUserId, assignedTeamId, requester, selectedStatuses, priority, source, sortBy, sortDirection, trashMode, page, pageSize]);
 
   useEffect(() => {
     void loadNewTicketContacts(newTicketClientId);

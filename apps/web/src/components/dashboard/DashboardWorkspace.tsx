@@ -1,8 +1,21 @@
 "use client";
 
+import { AlertTriangle, CheckCircle2, Clock3, Inbox, Ticket, UserX, Zap } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
+
+interface DashboardTicket {
+  ticketNumber: string;
+  subject: string;
+  status: string;
+  priority: string;
+  clientName: string;
+  assignedTo: string;
+  createdAt: string;
+  updatedAt: string;
+  href: string;
+}
 
 interface DashboardStats {
   summary: {
@@ -16,11 +29,20 @@ interface DashboardStats {
   };
   byStatus: Array<{ status: string; count: number; filter: { statuses: string[] } }>;
   byPriority: Array<{ priority: string; count: number; filter: { priority: string } }>;
+  bySource: Array<{ source: string; count: number; filter: { source: string } }>;
   byClient: Array<{ clientId: string | null; name: string; count: number; filter: { clientId?: string } }>;
   workload: Array<{ userId: string; name: string; count: number; filter: { assignedUserId: string } }>;
+  activityByDay: Array<{ date: string; label: string; created: number; closed: number }>;
+  createdByHour: Array<{ hour: number; label: string; count: number }>;
+  insightTickets: {
+    critical: DashboardTicket[];
+    unassigned: DashboardTicket[];
+    stale: DashboardTicket[];
+  };
 }
 
 const activeStatuses = ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_THIRD_PARTY", "REOPENED"];
+const chartColors = ["#155eef", "#16a34a", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#64748b", "#ec4899"];
 
 function label(value: string) {
   return value
@@ -43,13 +65,212 @@ function ticketHref(filter: Record<string, string | string[] | undefined>) {
   return query ? `/tickets?${query}` : "/tickets";
 }
 
-function StatCard({ title, value, href, note }: { title: string; value: number; href: string; note?: string }) {
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString(undefined, { month: "short", day: "2-digit", hour: "numeric", minute: "2-digit" });
+}
+
+function KpiCard({ title, value, href, tone, icon: Icon, note }: { title: string; value: number; href: string; tone: string; icon: typeof Ticket; note: string }) {
   return (
-    <Link className="panel metric dashboard-stat-card" href={href}>
+    <Link className={`dashboard-kpi-card ${tone}`} href={href}>
+      <span className="dashboard-kpi-icon">
+        <Icon size={18} aria-hidden="true" />
+      </span>
       <span className="muted">{title}</span>
       <strong>{value}</strong>
-      {note ? <span className="status-pill muted-pill">{note}</span> : null}
+      <small>{note}</small>
     </Link>
+  );
+}
+
+function DonutChart({ title, subtitle, items }: { title: string; subtitle: string; items: Array<{ label: string; count: number; href: string }> }) {
+  const total = items.reduce((sum, item) => sum + item.count, 0);
+  let offset = 25;
+
+  return (
+    <div className="panel dashboard-chart-card">
+      <div className="section-heading compact-heading">
+        <div>
+          <h2>{title}</h2>
+          <p className="muted">{subtitle}</p>
+        </div>
+        <span className="count-pill">{total} total</span>
+      </div>
+      <div className="dashboard-donut-layout">
+        <svg className="dashboard-donut" viewBox="0 0 42 42" role="img" aria-label={title}>
+          <circle className="dashboard-donut-track" cx="21" cy="21" r="15.915" />
+          {total > 0
+            ? items.map((item, index) => {
+                const value = (item.count / total) * 100;
+                const segment = (
+                  <circle
+                    className="dashboard-donut-segment"
+                    cx="21"
+                    cy="21"
+                    key={item.label}
+                    r="15.915"
+                    stroke={chartColors[index % chartColors.length]}
+                    strokeDasharray={`${value} ${100 - value}`}
+                    strokeDashoffset={offset}
+                  />
+                );
+                offset -= value;
+                return segment;
+              })
+            : null}
+          <text x="21" y="20" textAnchor="middle" className="dashboard-donut-total">
+            {total}
+          </text>
+          <text x="21" y="25" textAnchor="middle" className="dashboard-donut-caption">
+            tickets
+          </text>
+        </svg>
+        <div className="dashboard-legend">
+          {items.length ? (
+            items.map((item, index) => (
+              <Link className="dashboard-legend-row" href={item.href} key={item.label}>
+                <span className="dashboard-legend-color" style={{ backgroundColor: chartColors[index % chartColors.length] }} />
+                <span>{item.label}</span>
+                <strong>{item.count}</strong>
+              </Link>
+            ))
+          ) : (
+            <p className="muted">No data yet.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActivityChart({ items }: { items: DashboardStats["activityByDay"] }) {
+  const maxValue = Math.max(1, ...items.flatMap((item) => [item.created, item.closed]));
+
+  return (
+    <div className="panel dashboard-chart-card dashboard-wide-card">
+      <div className="section-heading compact-heading">
+        <div>
+          <h2>Ticket Activity</h2>
+          <p className="muted">Created and closed tickets over the last 30 days.</p>
+        </div>
+      </div>
+      <div className="dashboard-activity-chart" role="img" aria-label="Tickets created and closed by day">
+        {items.map((item, index) => (
+          <div className="dashboard-activity-day" key={item.date} title={`${item.label}: ${item.created} created, ${item.closed} closed`}>
+            <div className="dashboard-activity-bars">
+              <span className="created" style={{ height: `${Math.max(4, (item.created / maxValue) * 100)}%` }} />
+              <span className="closed" style={{ height: `${Math.max(4, (item.closed / maxValue) * 100)}%` }} />
+            </div>
+            {index % 5 === 0 || index === items.length - 1 ? <small>{item.label}</small> : <small aria-hidden="true" />}
+          </div>
+        ))}
+      </div>
+      <div className="dashboard-chart-legend">
+        <span>
+          <i className="created" /> Created
+        </span>
+        <span>
+          <i className="closed" /> Closed
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function HourChart({ items }: { items: DashboardStats["createdByHour"] }) {
+  const maxValue = Math.max(1, ...items.map((item) => item.count));
+
+  return (
+    <div className="panel dashboard-chart-card">
+      <div className="section-heading compact-heading">
+        <div>
+          <h2>Created by Hour</h2>
+          <p className="muted">New ticket arrival pattern for the last 30 days.</p>
+        </div>
+      </div>
+      <div className="dashboard-hour-chart" role="img" aria-label="Tickets created by hour">
+        {items.map((item) => (
+          <span key={item.hour} title={`${item.label}: ${item.count}`} style={{ height: `${Math.max(4, (item.count / maxValue) * 100)}%` }} />
+        ))}
+      </div>
+      <div className="dashboard-hour-axis">
+        <span>00</span>
+        <span>06</span>
+        <span>12</span>
+        <span>18</span>
+        <span>23</span>
+      </div>
+    </div>
+  );
+}
+
+function HorizontalBarList({ title, subtitle, items }: { title: string; subtitle: string; items: Array<{ label: string; count: number; href?: string }> }) {
+  const maxValue = Math.max(1, ...items.map((item) => item.count));
+
+  return (
+    <div className="panel dashboard-chart-card">
+      <div className="section-heading compact-heading">
+        <div>
+          <h2>{title}</h2>
+          <p className="muted">{subtitle}</p>
+        </div>
+      </div>
+      <div className="dashboard-horizontal-bars">
+        {items.length ? (
+          items.map((item, index) => {
+            const content = (
+              <>
+                <span>{item.label}</span>
+                <strong>{item.count}</strong>
+                <i style={{ width: `${Math.max(8, (item.count / maxValue) * 100)}%`, backgroundColor: chartColors[index % chartColors.length] }} />
+              </>
+            );
+            return item.href ? (
+              <Link className="dashboard-horizontal-row" href={item.href} key={item.label}>
+                {content}
+              </Link>
+            ) : (
+              <div className="dashboard-horizontal-row" key={item.label}>
+                {content}
+              </div>
+            );
+          })
+        ) : (
+          <p className="muted">No data yet.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InsightTable({ title, subtitle, tickets }: { title: string; subtitle: string; tickets: DashboardTicket[] }) {
+  return (
+    <div className="panel dashboard-insight-card">
+      <div className="section-heading compact-heading">
+        <div>
+          <h2>{title}</h2>
+          <p className="muted">{subtitle}</p>
+        </div>
+      </div>
+      <div className="dashboard-insight-list">
+        {tickets.length ? (
+          tickets.map((ticket) => (
+            <Link className="dashboard-insight-row" href={ticket.href} key={ticket.ticketNumber}>
+              <span>
+                <strong>{ticket.ticketNumber}</strong>
+                <small>{ticket.subject}</small>
+              </span>
+              <span>
+                <small>{ticket.clientName}</small>
+                <small>Updated {formatDate(ticket.updatedAt)}</small>
+              </span>
+              <span className={`status-pill ticket-status-${ticket.status.toLowerCase().replaceAll("_", "-")}`}>{label(ticket.status)}</span>
+            </Link>
+          ))
+        ) : (
+          <p className="muted">No tickets in this group.</p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -90,122 +311,57 @@ export function DashboardWorkspace() {
     }
 
     return [
-      { title: "Total open tickets", value: stats.summary.totalOpen, href: ticketHref({ statuses: activeStatuses }) },
-      { title: "New tickets", value: stats.summary.newTickets, href: ticketHref({ statuses: ["NEW"] }) },
-      { title: "Closed tickets", value: stats.summary.closedTickets, href: ticketHref({ statuses: ["CLOSED"] }) },
-      { title: "Unassigned tickets", value: stats.summary.unassignedTickets, href: ticketHref({ scope: "unassigned", statuses: activeStatuses }) },
-      { title: "High priority tickets", value: stats.summary.highPriorityTickets, href: ticketHref({ priority: "HIGH", statuses: activeStatuses }) },
-      { title: "Awaiting customer response", value: stats.summary.awaitingCustomer, href: ticketHref({ statuses: ["WAITING_ON_CUSTOMER"] }) },
-      { title: "No recent update", value: stats.summary.noRecentUpdate, href: ticketHref({ statuses: activeStatuses, sortBy: "updatedAt", sortDirection: "asc" }) }
+      { title: "Open Tickets", value: stats.summary.totalOpen, href: ticketHref({ statuses: activeStatuses }), tone: "primary", icon: Ticket, note: "Active workload" },
+      { title: "New Tickets", value: stats.summary.newTickets, href: ticketHref({ statuses: ["NEW"] }), tone: "info", icon: Inbox, note: "Needs triage" },
+      { title: "Closed Tickets", value: stats.summary.closedTickets, href: ticketHref({ statuses: ["CLOSED"] }), tone: "success", icon: CheckCircle2, note: "Completed" },
+      { title: "Unassigned", value: stats.summary.unassignedTickets, href: ticketHref({ scope: "unassigned", statuses: activeStatuses }), tone: "warning", icon: UserX, note: "Needs owner" },
+      { title: "High Priority", value: stats.summary.highPriorityTickets, href: ticketHref({ priority: "HIGH", statuses: activeStatuses }), tone: "danger", icon: AlertTriangle, note: "Escalated" },
+      { title: "Awaiting Customer", value: stats.summary.awaitingCustomer, href: ticketHref({ statuses: ["WAITING_ON_CUSTOMER"] }), tone: "neutral", icon: Clock3, note: "External wait" },
+      { title: "No Recent Update", value: stats.summary.noRecentUpdate, href: ticketHref({ statuses: activeStatuses, sortBy: "updatedAt", sortDirection: "asc" }), tone: "muted", icon: Zap, note: "7+ days idle" }
     ];
   }, [stats]);
 
+  if (loading) {
+    return <div className="panel dashboard-loading">Loading dashboard statistics...</div>;
+  }
+
+  if (error) {
+    return <div className="error-banner">{error}</div>;
+  }
+
+  if (!stats) {
+    return null;
+  }
+
+  const statusItems = stats.byStatus.map((item) => ({ label: label(item.status), count: item.count, href: ticketHref({ statuses: item.filter.statuses }) }));
+  const priorityItems = stats.byPriority.map((item) => ({ label: label(item.priority), count: item.count, href: ticketHref({ priority: item.filter.priority }) }));
+  const sourceItems = stats.bySource.map((item) => ({ label: label(item.source), count: item.count, href: ticketHref({ source: item.filter.source }) }));
+  const clientItems = stats.byClient.map((item) => ({ label: item.name, count: item.count, href: item.clientId ? ticketHref({ clientId: item.clientId }) : undefined }));
+  const workloadItems = stats.workload.map((item) => ({ label: item.name, count: item.count, href: ticketHref({ assignedUserId: item.filter.assignedUserId, statuses: activeStatuses }) }));
+
   return (
-    <>
-      {error ? <div className="error-banner">{error}</div> : null}
-      {loading ? <div className="panel">Loading dashboard statistics...</div> : null}
-      {!loading && stats ? (
-        <>
-          <section className="grid columns-4 dashboard-stat-grid">
-            {summaryCards.map((card) => (
-              <StatCard key={card.title} title={card.title} value={card.value} href={card.href} />
-            ))}
-          </section>
+    <div className="dashboard-page">
+      <section className="dashboard-kpi-grid">
+        {summaryCards.map((card) => (
+          <KpiCard key={card.title} {...card} />
+        ))}
+      </section>
 
-          <section className="grid columns-2 dashboard-section-grid">
-            <div className="panel">
-              <div className="section-heading">
-                <div>
-                  <h2>Tickets by Status</h2>
-                  <p className="muted">Click a status to open filtered tickets.</p>
-                </div>
-              </div>
-              <div className="dashboard-list">
-                {stats.byStatus.length ? (
-                  stats.byStatus.map((item) => (
-                    <Link className="dashboard-list-row" href={ticketHref({ statuses: item.filter.statuses })} key={item.status}>
-                      <span>{label(item.status)}</span>
-                      <strong>{item.count}</strong>
-                    </Link>
-                  ))
-                ) : (
-                  <p className="muted">No ticket status data yet.</p>
-                )}
-              </div>
-            </div>
+      <section className="dashboard-main-grid">
+        <ActivityChart items={stats.activityByDay} />
+        <DonutChart title="Tickets by Status" subtitle="Click a segment label to filter tickets." items={statusItems} />
+        <DonutChart title="Tickets by Priority" subtitle="Workload distribution by urgency." items={priorityItems} />
+        <HourChart items={stats.createdByHour} />
+        <HorizontalBarList title="Technician Workload" subtitle="Active tickets by assigned technician." items={workloadItems} />
+        <HorizontalBarList title="Tickets by Client" subtitle="Top client workload across all active tickets." items={clientItems} />
+        <DonutChart title="Tickets by Source" subtitle="Where tickets are entering the helpdesk." items={sourceItems} />
+      </section>
 
-            <div className="panel">
-              <div className="section-heading">
-                <div>
-                  <h2>Tickets by Priority</h2>
-                  <p className="muted">Review workload by urgency.</p>
-                </div>
-              </div>
-              <div className="dashboard-list">
-                {stats.byPriority.length ? (
-                  stats.byPriority.map((item) => (
-                    <Link className="dashboard-list-row" href={ticketHref({ priority: item.filter.priority })} key={item.priority}>
-                      <span>{label(item.priority)}</span>
-                      <strong>{item.count}</strong>
-                    </Link>
-                  ))
-                ) : (
-                  <p className="muted">No priority data yet.</p>
-                )}
-              </div>
-            </div>
-
-            <div className="panel">
-              <div className="section-heading">
-                <div>
-                  <h2>Tickets by Client</h2>
-                  <p className="muted">Top client workload.</p>
-                </div>
-              </div>
-              <div className="dashboard-list">
-                {stats.byClient.length ? (
-                  stats.byClient.map((item) =>
-                    item.clientId ? (
-                      <Link className="dashboard-list-row" href={ticketHref({ clientId: item.clientId })} key={item.clientId}>
-                        <span>{item.name}</span>
-                        <strong>{item.count}</strong>
-                      </Link>
-                    ) : (
-                      <div className="dashboard-list-row" key="no-client">
-                        <span>{item.name}</span>
-                        <strong>{item.count}</strong>
-                      </div>
-                    )
-                  )
-                ) : (
-                  <p className="muted">No client workload yet.</p>
-                )}
-              </div>
-            </div>
-
-            <div className="panel">
-              <div className="section-heading">
-                <div>
-                  <h2>Technician Workload</h2>
-                  <p className="muted">Active tickets by assigned technician.</p>
-                </div>
-              </div>
-              <div className="dashboard-list">
-                {stats.workload.length ? (
-                  stats.workload.map((item) => (
-                    <Link className="dashboard-list-row" href={ticketHref({ assignedUserId: item.filter.assignedUserId, statuses: activeStatuses })} key={item.userId}>
-                      <span>{item.name}</span>
-                      <strong>{item.count}</strong>
-                    </Link>
-                  ))
-                ) : (
-                  <p className="muted">No assigned technician workload yet.</p>
-                )}
-              </div>
-            </div>
-          </section>
-        </>
-      ) : null}
-    </>
+      <section className="dashboard-insight-grid">
+        <InsightTable title="Critical and High Priority" subtitle="Open tickets that need fast attention." tickets={stats.insightTickets.critical} />
+        <InsightTable title="Unassigned Tickets" subtitle="Tickets waiting for ownership." tickets={stats.insightTickets.unassigned} />
+        <InsightTable title="No Recent Update" subtitle="Active tickets idle for more than 7 days." tickets={stats.insightTickets.stale} />
+      </section>
+    </div>
   );
 }

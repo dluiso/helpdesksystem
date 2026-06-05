@@ -156,7 +156,13 @@ export class TicketsService {
       byStatus,
       byPriority,
       byClient,
-      activeUsers
+      bySource,
+      activeUsers,
+      recentCreatedTickets,
+      recentClosedTickets,
+      criticalTickets,
+      unassignedTicketList,
+      staleTicketList
     ] = await Promise.all([
       this.prisma.ticket.count({ where: activeWhere }),
       this.prisma.ticket.count({ where: { ...baseWhere, status: TicketStatus.NEW } }),
@@ -192,10 +198,54 @@ export class TicketsService {
         orderBy: { _count: { clientId: "desc" } },
         take: 8
       }),
+      this.prisma.ticket.groupBy({
+        by: ["source"],
+        where: baseWhere,
+        _count: { _all: true },
+        orderBy: { _count: { source: "desc" } }
+      }),
       this.prisma.user.findMany({
         where: { organizationId: user.organizationId, deletedAt: null, isActive: true },
         select: { id: true, firstName: true, lastName: true },
         orderBy: [{ firstName: "asc" }, { lastName: "asc" }]
+      }),
+      this.prisma.ticket.findMany({
+        where: { ...baseWhere, createdAt: { gte: this.daysAgo(29) } },
+        select: { createdAt: true },
+        orderBy: { createdAt: "asc" }
+      }),
+      this.prisma.ticket.findMany({
+        where: {
+          ...baseWhere,
+          status: TicketStatus.CLOSED,
+          OR: [{ closedAt: { gte: this.daysAgo(29) } }, { closedAt: null, updatedAt: { gte: this.daysAgo(29) } }]
+        },
+        select: { closedAt: true, updatedAt: true },
+        orderBy: { updatedAt: "asc" }
+      }),
+      this.prisma.ticket.findMany({
+        where: { ...activeWhere, priority: { in: [TicketPriority.HIGH, TicketPriority.URGENT, TicketPriority.CRITICAL] } },
+        select: this.dashboardTicketSelect(),
+        orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
+        take: 8
+      }),
+      this.prisma.ticket.findMany({
+        where: {
+          ...activeWhere,
+          assignedUserId: null,
+          assignedTeamId: null,
+          assignedGroupId: null,
+          assignees: { none: {} }
+        },
+        select: this.dashboardTicketSelect(),
+        orderBy: { createdAt: "desc" },
+        take: 8
+      }),
+      this.prisma.ticket.findMany({
+        where: { ...activeWhere, updatedAt: { lt: staleCutoff } },
+        select: this.dashboardTicketSelect(),
+        orderBy: { updatedAt: "asc" },
+        take: 8
       })
     ]);
 
@@ -236,13 +286,104 @@ export class TicketsService {
       },
       byStatus: byStatus.map((item) => ({ status: item.status, count: item._count._all, filter: { statuses: [item.status] } })),
       byPriority: byPriority.map((item) => ({ priority: item.priority, count: item._count._all, filter: { priority: item.priority } })),
+      bySource: bySource.map((item) => ({ source: item.source, count: item._count._all, filter: { source: item.source } })),
       byClient: byClient.map((item) => ({
         clientId: item.clientId,
         name: item.clientId ? (clientNames.get(item.clientId) ?? "Unknown client") : "Unmapped / no client",
         count: item._count._all,
         filter: item.clientId ? { clientId: item.clientId } : {}
       })),
-      workload: workload.filter((item) => item.count > 0).sort((a, b) => b.count - a.count).slice(0, 8)
+      workload: workload.filter((item) => item.count > 0).sort((a, b) => b.count - a.count).slice(0, 8),
+      activityByDay: this.buildActivityByDay(recentCreatedTickets, recentClosedTickets),
+      createdByHour: this.buildCreatedByHour(recentCreatedTickets),
+      insightTickets: {
+        critical: criticalTickets.map((ticket) => this.toDashboardTicket(ticket)),
+        unassigned: unassignedTicketList.map((ticket) => this.toDashboardTicket(ticket)),
+        stale: staleTicketList.map((ticket) => this.toDashboardTicket(ticket))
+      }
+    };
+  }
+
+  private daysAgo(days: number) {
+    return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  }
+
+  private dashboardTicketSelect() {
+    return {
+      id: true,
+      ticketNumber: true,
+      subject: true,
+      status: true,
+      priority: true,
+      createdAt: true,
+      updatedAt: true,
+      client: { select: { name: true } },
+      assignedUser: { select: { firstName: true, lastName: true } }
+    } satisfies Prisma.TicketSelect;
+  }
+
+  private buildActivityByDay(createdTickets: Array<{ createdAt: Date }>, closedTickets: Array<{ closedAt: Date | null; updatedAt: Date }>) {
+    const buckets = Array.from({ length: 30 }, (_, index) => {
+      const date = this.daysAgo(29 - index);
+      const key = this.dateBucketKey(date);
+      return {
+        date: key,
+        label: date.toLocaleDateString("en-US", { month: "short", day: "2-digit" }),
+        created: 0,
+        closed: 0
+      };
+    });
+    const bucketMap = new Map(buckets.map((bucket) => [bucket.date, bucket]));
+
+    createdTickets.forEach((ticket) => {
+      const bucket = bucketMap.get(this.dateBucketKey(ticket.createdAt));
+      if (bucket) {
+        bucket.created += 1;
+      }
+    });
+
+    closedTickets.forEach((ticket) => {
+      const bucket = bucketMap.get(this.dateBucketKey(ticket.closedAt ?? ticket.updatedAt));
+      if (bucket) {
+        bucket.closed += 1;
+      }
+    });
+
+    return buckets;
+  }
+
+  private buildCreatedByHour(createdTickets: Array<{ createdAt: Date }>) {
+    const buckets = Array.from({ length: 24 }, (_, hour) => ({ hour, label: `${hour.toString().padStart(2, "0")}:00`, count: 0 }));
+    createdTickets.forEach((ticket) => {
+      buckets[ticket.createdAt.getHours()].count += 1;
+    });
+    return buckets;
+  }
+
+  private dateBucketKey(date: Date) {
+    return date.toISOString().slice(0, 10);
+  }
+
+  private toDashboardTicket(ticket: {
+    ticketNumber: string;
+    subject: string;
+    status: TicketStatus;
+    priority: TicketPriority;
+    createdAt: Date;
+    updatedAt: Date;
+    client: { name: string } | null;
+    assignedUser: { firstName: string; lastName: string } | null;
+  }) {
+    return {
+      ticketNumber: ticket.ticketNumber,
+      subject: ticket.subject,
+      status: ticket.status,
+      priority: ticket.priority,
+      clientName: ticket.client?.name ?? "Unmapped / no client",
+      assignedTo: ticket.assignedUser ? `${ticket.assignedUser.firstName} ${ticket.assignedUser.lastName}` : "Unassigned",
+      createdAt: ticket.createdAt.toISOString(),
+      updatedAt: ticket.updatedAt.toISOString(),
+      href: `/tickets/${ticket.ticketNumber}`
     };
   }
 
@@ -1683,6 +1824,10 @@ export class TicketsService {
 
     if (query.priority) {
       filters.push({ priority: query.priority });
+    }
+
+    if (query.source) {
+      filters.push({ source: query.source });
     }
 
     return {

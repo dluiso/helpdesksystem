@@ -1,4 +1,4 @@
-import { TicketPriority, TicketStatus } from "@prisma/client";
+import { TicketPriority, TicketSource, TicketStatus } from "@prisma/client";
 import { IsEnum, IsIn, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
 
 export class ListTicketsQueryDto {
@@ -39,6 +39,10 @@ export class ListTicketsQueryDto {
   @IsOptional()
   @IsEnum(TicketPriority)
   priority?: TicketPriority;
+
+  @IsOptional()
+  @IsEnum(TicketSource)
+  source?: TicketSource;
 
   @IsOptional()
   @IsIn(["ticketNumber", "subject", "status", "priority", "source", "createdAt", "updatedAt"])
