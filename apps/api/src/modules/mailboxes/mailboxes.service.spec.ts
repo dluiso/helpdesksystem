@@ -337,6 +337,9 @@ describe("MailboxesService", () => {
 
     expect(prisma.ticketMessage.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: expect.objectContaining({
+          direction: "INBOUND"
+        }),
         take: 200
       })
     );

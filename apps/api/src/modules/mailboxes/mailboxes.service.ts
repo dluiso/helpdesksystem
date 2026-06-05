@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Mailbox } from "@prisma/client";
+import { Mailbox, MessageDirection } from "@prisma/client";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { SpamManagementService } from "../spam-management/spam-management.service";
@@ -423,6 +423,7 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
 
   private async backfillExistingMessageAttachments(provider: MailProvider, mailbox: Mailbox, options: { broad?: boolean } = {}) {
     const baseWhere = {
+      direction: MessageDirection.INBOUND,
       emailMessageId: { not: null },
       ticket: {
         organizationId: mailbox.organizationId,
