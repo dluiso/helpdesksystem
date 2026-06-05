@@ -2422,6 +2422,48 @@ a.dashboard-list-row:hover {
   font-size: 12px;
 }
 
+.inline-status-select {
+  font-weight: 750;
+}
+
+.inline-ticket-select.ticket-status-new {
+  color: var(--pill-new-text);
+  background: var(--pill-new-bg);
+}
+
+.inline-ticket-select.ticket-status-open,
+.inline-ticket-select.ticket-status-reopened {
+  color: var(--pill-open-text);
+  background: var(--pill-open-bg);
+}
+
+.inline-ticket-select.ticket-status-in-progress {
+  color: var(--pill-progress-text);
+  background: var(--pill-progress-bg);
+}
+
+.inline-ticket-select.ticket-status-waiting-on-customer,
+.inline-ticket-select.ticket-status-waiting-on-third-party {
+  color: var(--pill-waiting-text);
+  background: var(--pill-waiting-bg);
+}
+
+.inline-ticket-select.ticket-status-resolved {
+  color: var(--pill-resolved-text);
+  background: var(--pill-resolved-bg);
+}
+
+.inline-ticket-select.ticket-status-closed,
+.inline-ticket-select.ticket-status-merged {
+  color: var(--pill-closed-text);
+  background: var(--pill-closed-bg);
+}
+
+.inline-ticket-select.ticket-status-cancelled {
+  color: var(--pill-critical-text);
+  background: var(--pill-critical-bg);
+}
+
 .ticket-create-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

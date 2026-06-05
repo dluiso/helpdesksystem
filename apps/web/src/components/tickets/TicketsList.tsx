@@ -89,6 +89,7 @@ interface PaginatedTickets {
 type SortBy = "ticketNumber" | "subject" | "status" | "priority" | "source" | "createdAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
 type TableDensity = "compact" | "comfortable";
+type InlineTicketField = "assignees" | "team" | "status" | "priority";
 type ColumnId =
   | "ticketNumber"
   | "subject"
@@ -192,9 +193,9 @@ const defaultColumnWidths: Record<ColumnId, number> = {
   requester: 165,
   readState: 60,
   assignees: 115,
-  team: 105,
-  status: 80,
-  priority: 75,
+  team: 125,
+  status: 145,
+  priority: 100,
   source: 110,
   createdAt: 118,
   updatedAt: 118,
@@ -382,7 +383,7 @@ export function TicketsList() {
   const [newTicketAssignedUserId, setNewTicketAssignedUserId] = useState("");
   const [newTicketAssignedTeamId, setNewTicketAssignedTeamId] = useState("");
   const [newTicketBusy, setNewTicketBusy] = useState(false);
-  const [inlineAssignmentTicketId, setInlineAssignmentTicketId] = useState<string | null>(null);
+  const [inlineUpdatingTicket, setInlineUpdatingTicket] = useState<{ ticketId: string; field: InlineTicketField } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -738,8 +739,20 @@ export function TicketsList() {
     }
   }
 
+  function isTicketInlineBusy(ticket: TicketListItem) {
+    return inlineUpdatingTicket?.ticketId === ticket.id;
+  }
+
+  function editableTicketTeams(ticket: TicketListItem) {
+    const activeTeams = ticketTeams.filter((team) => team.isActive);
+    if (ticket.assignedTeam && !activeTeams.some((team) => team.id === ticket.assignedTeam?.id)) {
+      return [...activeTeams, ticket.assignedTeam];
+    }
+    return activeTeams;
+  }
+
   async function assignTicketInline(ticket: TicketListItem, assignedUserId: string) {
-    setInlineAssignmentTicketId(ticket.id);
+    setInlineUpdatingTicket({ ticketId: ticket.id, field: "assignees" });
     setError(null);
     try {
       await apiFetch(`/tickets/${ticket.ticketNumber}/assignment`, {
@@ -753,7 +766,26 @@ export function TicketsList() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to assign ticket.");
     } finally {
-      setInlineAssignmentTicketId(null);
+      setInlineUpdatingTicket(null);
+    }
+  }
+
+  async function updateTicketInline(ticket: TicketListItem, field: Exclude<InlineTicketField, "assignees">, body: Record<string, string | null>) {
+    setInlineUpdatingTicket({ ticketId: ticket.id, field });
+    setError(null);
+    try {
+      await apiFetch("/tickets/bulk", {
+        method: "PATCH",
+        body: JSON.stringify({
+          ticketIds: [ticket.id],
+          ...body
+        })
+      });
+      await loadTickets();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update ticket.");
+    } finally {
+      setInlineUpdatingTicket(null);
     }
   }
 
@@ -935,7 +967,7 @@ export function TicketsList() {
             className="input inline-ticket-select"
             value={ticket.assignees?.[0]?.user.id ?? ticket.assignedUser?.id ?? ""}
             onChange={(event) => void assignTicketInline(ticket, event.target.value)}
-            disabled={inlineAssignmentTicketId === ticket.id || ticket.status === "MERGED" || trashMode}
+            disabled={isTicketInlineBusy(ticket) || ticket.status === "MERGED" || trashMode}
             title="Assign specialist"
           >
             <option value="">Unassigned</option>
@@ -947,11 +979,61 @@ export function TicketsList() {
           </select>
         );
       case "team":
-        return ticket.assignedTeam?.name ?? (ticket.assignedGroup ? `${ticket.assignedGroup.name} (legacy)` : "Unassigned");
+        return (
+          <select
+            className="input inline-ticket-select"
+            value={ticket.assignedTeam?.id ?? (ticket.assignedGroup ? "legacy" : "")}
+            onChange={(event) => {
+              if (event.target.value === "legacy") {
+                return;
+              }
+              void updateTicketInline(ticket, "team", { assignedTeamId: event.target.value || null, assignedGroupId: null });
+            }}
+            disabled={isTicketInlineBusy(ticket) || ticket.status === "MERGED" || trashMode}
+            title="Assign ticket team"
+          >
+            {ticket.assignedGroup && !ticket.assignedTeam ? <option value="legacy">{ticket.assignedGroup.name} (legacy)</option> : null}
+            <option value="">Unassigned</option>
+            {editableTicketTeams(ticket).map((team) => (
+              <option key={team.id} value={team.id}>
+                {team.name}
+              </option>
+            ))}
+          </select>
+        );
       case "status":
-        return <span className={`status-pill ${statusClass(ticket.status)}`}>{label(ticket.status)}</span>;
+        return (
+          <select
+            className={`input inline-ticket-select inline-status-select ${statusClass(ticket.status)}`}
+            value={ticket.status}
+            onChange={(event) => void updateTicketInline(ticket, "status", { status: event.target.value })}
+            disabled={isTicketInlineBusy(ticket) || ticket.status === "MERGED" || trashMode}
+            title="Change status"
+          >
+            {mutableStatuses.map((value) => (
+              <option key={value} value={value}>
+                {label(value)}
+              </option>
+            ))}
+            {ticket.status === "MERGED" ? <option value="MERGED">Merged</option> : null}
+          </select>
+        );
       case "priority":
-        return label(ticket.priority);
+        return (
+          <select
+            className="input inline-ticket-select"
+            value={ticket.priority}
+            onChange={(event) => void updateTicketInline(ticket, "priority", { priority: event.target.value })}
+            disabled={isTicketInlineBusy(ticket) || ticket.status === "MERGED" || trashMode}
+            title="Change priority"
+          >
+            {priorities.map((value) => (
+              <option key={value} value={value}>
+                {label(value)}
+              </option>
+            ))}
+          </select>
+        );
       case "source":
         return label(ticket.source);
       case "createdAt":
