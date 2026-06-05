@@ -1504,6 +1504,70 @@ export function TicketsList() {
             </tbody>
           </table>
         </div>
+        <div className="mobile-ticket-list">
+          {loading ? <div className="mobile-empty-state">Loading tickets...</div> : null}
+          {!loading && tickets.length === 0 ? <div className="mobile-empty-state">No tickets match the current filters.</div> : null}
+          {tickets.map((ticket, index) => (
+            <article className="mobile-ticket-card" key={ticket.id ?? `${ticket.ticketNumber}-mobile-${index}`}>
+              <div className="mobile-ticket-card-header">
+                <label className="mobile-ticket-select-row">
+                  <input
+                    type="checkbox"
+                    checked={selectedTicketIds.includes(ticket.id)}
+                    onChange={() => toggleTicketSelection(ticket.id)}
+                    aria-label={`Select ${ticket.ticketNumber}`}
+                  />
+                  <span>{ticket.ticketNumber}</span>
+                </label>
+                <span className={`status-pill ${statusClass(ticket.status)}`}>{label(ticket.status)}</span>
+              </div>
+              <Link className="mobile-ticket-subject" href={`/tickets/${ticket.ticketNumber}`}>
+                <strong>{ticket.subject}</strong>
+                <span>{ticket.senderEmail ?? label(ticket.source)}</span>
+              </Link>
+              <div className="mobile-ticket-meta-grid">
+                <span>
+                  <small>Client</small>
+                  <strong>{ticket.client?.name ?? (ticket.senderDomain ? `Unmapped: ${ticket.senderDomain}` : "Unassigned")}</strong>
+                </span>
+                <span>
+                  <small>Requester</small>
+                  <strong>{ticket.contact ? `${ticket.contact.firstName} ${ticket.contact.lastName}` : ticket.senderEmail ?? "Unknown"}</strong>
+                </span>
+                <span>
+                  <small>Created</small>
+                  <strong>{formatDate(ticket.createdAt)}</strong>
+                </span>
+                <span>
+                  <small>Modified</small>
+                  <strong>{formatDate(ticket.updatedAt)}</strong>
+                </span>
+              </div>
+              <div className="mobile-ticket-controls">
+                <label>
+                  <span>Specialist</span>
+                  {renderCell(ticket, "assignees")}
+                </label>
+                <label>
+                  <span>Team</span>
+                  {renderCell(ticket, "team")}
+                </label>
+                <label>
+                  <span>Status</span>
+                  {renderCell(ticket, "status")}
+                </label>
+                <label>
+                  <span>Priority</span>
+                  {renderCell(ticket, "priority")}
+                </label>
+              </div>
+              <Link className="button secondary mobile-ticket-open" href={`/tickets/${ticket.ticketNumber}`}>
+                <Eye size={16} aria-hidden="true" />
+                <span>Open Ticket</span>
+              </Link>
+            </article>
+          ))}
+        </div>
         <div className="pagination-bar">
           <div className="form-actions">
             <span className="muted">Rows</span>
