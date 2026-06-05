@@ -35,3 +35,8 @@
 - Added backend ticket statistics and a clickable Dashboard with status, priority, client, and technician workload filters.
 - Added Spam Management with email/domain block entries, inbound email blocking, blocked email logging, and ticket-level block actions.
 - Added Maintenance recycle bin settings, manual cleanup with confirmation, automatic retention cleanup, and audit logging.
+
+## 2026-06-05 - Production deploy correction and ticket date layout
+
+- Documented native systemd production update commands that explicitly load `.env.production` for Prisma and build without using `NODE_OPTIONS`.
+- Updated ticket subject metadata so Created and Modified timestamps render on separate lines.

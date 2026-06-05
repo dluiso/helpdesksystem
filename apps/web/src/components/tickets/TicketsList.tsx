@@ -867,7 +867,8 @@ export function TicketsList() {
             <strong>{ticket.subject}</strong>
             <span>{ticket.senderEmail ?? label(ticket.source)}</span>
             <span className="ticket-subject-meta">
-              Created {formatDate(ticket.createdAt)} / Modified {formatDate(ticket.updatedAt)}
+              <span>Created: {formatDate(ticket.createdAt)}</span>
+              <span>Modified: {formatDate(ticket.updatedAt)}</span>
             </span>
           </Link>
         ) : (
@@ -875,7 +876,8 @@ export function TicketsList() {
             <strong>{ticket.subject}</strong>
             <span>{ticket.senderEmail ?? label(ticket.source)}</span>
             <span className="ticket-subject-meta">
-              Created {formatDate(ticket.createdAt)} / Modified {formatDate(ticket.updatedAt)}
+              <span>Created: {formatDate(ticket.createdAt)}</span>
+              <span>Modified: {formatDate(ticket.updatedAt)}</span>
             </span>
           </span>
         );

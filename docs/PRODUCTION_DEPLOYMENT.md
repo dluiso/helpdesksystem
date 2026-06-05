@@ -106,6 +106,33 @@ docker compose --env-file .env.production -f docker-compose.prod.yml ps
 
 After the first seed, change the admin password through the application as soon as that workflow exists. Until then, use a strong `ADMIN_PASSWORD` and restrict admin access.
 
+## Native Systemd Production Updates
+
+The current native production host uses `/opt/avidity/app`, `.env.production`, and systemd services instead of Docker Compose. Prisma CLI does not load `.env.production` automatically, so run Prisma through `node -r dotenv/config` with `DOTENV_CONFIG_PATH=.env.production`.
+
+Do not use `NODE_OPTIONS="-r dotenv/config"` for `npm run build`; Next.js worker processes reject `-r` in `NODE_OPTIONS`.
+
+```bash
+cd /opt/avidity/app
+git pull origin main
+
+sudo -u avidity bash -lc 'cd /opt/avidity/app && DOTENV_CONFIG_PATH=.env.production node -r dotenv/config ./node_modules/prisma/build/index.js generate --schema prisma/schema.prisma'
+sudo -u avidity bash -lc 'cd /opt/avidity/app && DOTENV_CONFIG_PATH=.env.production node -r dotenv/config ./node_modules/prisma/build/index.js migrate deploy --schema prisma/schema.prisma'
+sudo -u avidity bash -lc 'cd /opt/avidity/app && node -e "require(\"dotenv\").config({ path: \".env.production\" }); const { spawnSync } = require(\"node:child_process\"); const result = spawnSync(\"npm\", [\"run\", \"build\"], { stdio: \"inherit\", env: process.env }); process.exit(result.status ?? 1);"'
+
+sudo systemctl restart avidity-api avidity-web
+sudo systemctl status avidity-api --no-pager
+sudo systemctl status avidity-web --no-pager
+```
+
+If a build fails with `EACCES` under `apps/api/dist`, `apps/web/.next`, or package `dist` folders, those artifacts were likely created by `root`. Fix ownership before rebuilding:
+
+```bash
+sudo chown -R avidity:avidity /opt/avidity/app/apps/api/dist 2>/dev/null || true
+sudo chown -R avidity:avidity /opt/avidity/app/apps/web/.next 2>/dev/null || true
+sudo find /opt/avidity/app/packages -type d -name dist -exec chown -R avidity:avidity {} +
+```
+
 ## Nginx And SSL
 
 Install the bootstrap HTTP config first:

@@ -1967,9 +1967,16 @@ a.dashboard-list-row:hover {
 }
 
 .ticket-subject-meta {
+  display: grid;
+  gap: 1px;
   color: var(--text-muted);
   font-size: 10px;
   font-weight: 650;
+  line-height: 1.25;
+}
+
+.ticket-subject-link .ticket-subject-meta {
+  white-space: normal;
 }
 
 .table-sort-button {
