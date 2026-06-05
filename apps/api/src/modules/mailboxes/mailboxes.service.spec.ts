@@ -89,6 +89,7 @@ describe("MailboxesService", () => {
       createdTickets: 1,
       skippedDuplicates: 0,
       blockedSpamMessages: 0,
+      attachmentBackfilled: 0,
       attachmentBackfillFailures: 0,
       attachmentBackfillErrors: [],
       nextSyncCursor: "cursor-1"
@@ -159,6 +160,7 @@ describe("MailboxesService", () => {
       createdTickets: 0,
       skippedDuplicates: 1,
       blockedSpamMessages: 0,
+      attachmentBackfilled: 0,
       attachmentBackfillFailures: 0,
       attachmentBackfillErrors: [],
       nextSyncCursor: null
@@ -195,7 +197,7 @@ describe("MailboxesService", () => {
       createFromInboundEmail: jest.fn().mockResolvedValue({ ticket: { id: "ticket-1" }, message: { id: "message-1" } })
     };
     const ticketAttachmentsService = {
-      createInboundEmailAttachment: jest.fn().mockResolvedValue({ id: "attachment-record-1" })
+      createInboundEmailAttachment: jest.fn().mockResolvedValue({ attachment: { id: "attachment-record-1" }, created: true })
     };
     const microsoftGraphProvider = {
       syncInboundMessages: jest.fn().mockResolvedValue({
@@ -238,6 +240,7 @@ describe("MailboxesService", () => {
       expect.objectContaining({
         receivedMessages: 1,
         createdTickets: 1,
+        attachmentBackfilled: 1,
         attachmentBackfillFailures: 0
       })
     );
@@ -260,5 +263,96 @@ describe("MailboxesService", () => {
       where: { id: "message-1" },
       data: { hasAttachments: true }
     });
+  });
+
+  it("recovers attachments for existing Microsoft 365 messages during manual sync", async () => {
+    const prisma = {
+      mailbox: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "mailbox-1",
+          organizationId: "org-1",
+          emailAddress: "support@example.org",
+          provider: "MICROSOFT365",
+          connectionMode: "GRAPH_DIRECT",
+          lastSyncCursor: "cursor-1",
+          tenantId: "tenant-1",
+          microsoftClientId: "client-1",
+          encryptedClientSecretReference: "env:MICROSOFT_CLIENT_SECRET",
+          autoSyncEnabled: false,
+          autoSyncIntervalSeconds: null,
+          nextAutoSyncAt: null
+        }),
+        update: jest.fn()
+      },
+      ticketMessage: {
+        findFirst: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "message-existing",
+            ticketId: "ticket-1",
+            emailMessageId: "graph-message-existing"
+          }
+        ]),
+        update: jest.fn()
+      }
+    };
+    const ticketAttachmentsService = {
+      createInboundEmailAttachment: jest.fn().mockResolvedValue({ attachment: { id: "attachment-record-1" }, created: true })
+    };
+    const microsoftGraphProvider = {
+      syncInboundMessages: jest.fn().mockResolvedValue({
+        messages: [],
+        nextSyncCursor: "cursor-2"
+      }),
+      getMessageAttachments: jest.fn().mockResolvedValue([
+        {
+          id: "graph-attachment-1",
+          originalFilename: "agenda.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 12,
+          contentBytes: Buffer.from("attachment"),
+          isInline: false,
+          contentId: null
+        }
+      ])
+    };
+    const service = new MailboxesService(
+      prisma as never,
+      { get: jest.fn() } as never,
+      { createFromInboundEmail: jest.fn() } as never,
+      ticketAttachmentsService as never,
+      { findBlockForSender: jest.fn().mockResolvedValue(null), logBlockedInboundEmail: jest.fn() } as never,
+      {} as never,
+      microsoftGraphProvider as never
+    );
+
+    await expect(service.syncInbound("mailbox-1", user)).resolves.toEqual(
+      expect.objectContaining({
+        receivedMessages: 0,
+        createdTickets: 0,
+        attachmentBackfilled: 1,
+        attachmentBackfillFailures: 0
+      })
+    );
+
+    expect(prisma.ticketMessage.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        take: 200
+      })
+    );
+    expect(microsoftGraphProvider.getMessageAttachments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mailboxId: "mailbox-1",
+        providerMessageId: "graph-message-existing"
+      })
+    );
+    expect(ticketAttachmentsService.createInboundEmailAttachment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ticketId: "ticket-1",
+        ticketMessageId: "message-existing",
+        originalFilename: "agenda.pdf",
+        emailAttachmentId: "graph-attachment-1"
+      })
+    );
   });
 });

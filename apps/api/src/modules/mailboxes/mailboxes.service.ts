@@ -18,9 +18,14 @@ export interface SyncMailboxResult {
   createdTickets: number;
   skippedDuplicates: number;
   blockedSpamMessages: number;
+  attachmentBackfilled?: number;
   attachmentBackfillFailures?: number;
   attachmentBackfillErrors?: string[];
   nextSyncCursor?: string | null;
+}
+
+interface SyncMailboxOptions {
+  broadAttachmentBackfill?: boolean;
 }
 
 @Injectable()
@@ -98,7 +103,7 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
 
   async syncInbound(mailboxId: string, user: AuthenticatedUser): Promise<SyncMailboxResult> {
     const mailbox = await this.getMailboxForUser(mailboxId, user);
-    return this.syncMailbox(mailbox);
+    return this.syncMailbox(mailbox, { broadAttachmentBackfill: true });
   }
 
   private async runDueAutoSyncs() {
@@ -148,7 +153,7 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async syncMailbox(mailbox: Mailbox): Promise<SyncMailboxResult> {
+  private async syncMailbox(mailbox: Mailbox, options: SyncMailboxOptions = {}): Promise<SyncMailboxResult> {
     const { providerName, provider } = this.resolveProvider(mailbox);
     const syncResult = await provider.syncInboundMessages({
       mailboxId: mailbox.id,
@@ -165,6 +170,7 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
     let createdTickets = 0;
     let skippedDuplicates = 0;
     let blockedSpamMessages = 0;
+    let attachmentBackfilled = 0;
     let attachmentBackfillFailures = 0;
     const attachmentBackfillErrors: string[] = [];
 
@@ -182,6 +188,7 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
       if (exists) {
         if (this.shouldFetchInboundAttachments(providerName, message)) {
           const stored = await this.storeInboundAttachments(provider, mailbox, message.providerMessageId, exists.ticketId, exists.id);
+          attachmentBackfilled += stored.stored;
           attachmentBackfillFailures += stored.failed;
           attachmentBackfillErrors.push(...stored.errors);
         }
@@ -227,13 +234,17 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
 
       if (this.shouldFetchInboundAttachments(providerName, message)) {
         const stored = await this.storeInboundAttachments(provider, mailbox, message.providerMessageId, result.ticket.id, result.message.id);
+        attachmentBackfilled += stored.stored;
         attachmentBackfillFailures += stored.failed;
         attachmentBackfillErrors.push(...stored.errors);
       }
       createdTickets += 1;
     }
 
-    const backfill = await this.backfillExistingMessageAttachments(provider, mailbox);
+    const backfill = await this.backfillExistingMessageAttachments(provider, mailbox, {
+      broad: providerName === "microsoft365" && options.broadAttachmentBackfill
+    });
+    attachmentBackfilled += backfill.stored;
     attachmentBackfillFailures += backfill.failed;
     attachmentBackfillErrors.push(...backfill.errors);
 
@@ -255,6 +266,7 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
       createdTickets,
       skippedDuplicates,
       blockedSpamMessages,
+      attachmentBackfilled,
       attachmentBackfillFailures,
       attachmentBackfillErrors: attachmentBackfillErrors.slice(0, 10),
       nextSyncCursor: syncResult.nextSyncCursor
@@ -359,7 +371,7 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
       }
 
       try {
-        await this.ticketAttachmentsService.createInboundEmailAttachment({
+        const result = await this.ticketAttachmentsService.createInboundEmailAttachment({
           ticketId,
           ticketMessageId,
           originalFilename: attachment.originalFilename,
@@ -369,7 +381,9 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
           contentId: attachment.contentId,
           emailAttachmentId: attachment.id
         });
-        stored += 1;
+        if (result.created) {
+          stored += 1;
+        }
       } catch (error) {
         failed += 1;
         const message = `Unable to store attachment ${attachment.originalFilename} from message ${providerMessageId}: ${this.errorMessage(error)}`;
@@ -407,41 +421,48 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
     return Boolean(value && /cid:/i.test(value));
   }
 
-  private async backfillExistingMessageAttachments(provider: MailProvider, mailbox: Mailbox) {
+  private async backfillExistingMessageAttachments(provider: MailProvider, mailbox: Mailbox, options: { broad?: boolean } = {}) {
+    const baseWhere = {
+      emailMessageId: { not: null },
+      ticket: {
+        organizationId: mailbox.organizationId,
+        mailboxId: mailbox.id,
+        deletedAt: null
+      }
+    };
     const candidates = await this.prisma.ticketMessage.findMany({
-      where: {
-        emailMessageId: { not: null },
-        ticket: {
-          organizationId: mailbox.organizationId,
-          mailboxId: mailbox.id,
-          deletedAt: null
-        },
-        OR: [
-          { hasAttachments: true },
-          { bodyHtml: { contains: "cid:", mode: "insensitive" } },
-          { sanitizedBodyHtml: { contains: "cid:", mode: "insensitive" } }
-        ]
-      },
+      where: options.broad
+        ? baseWhere
+        : {
+            ...baseWhere,
+            OR: [
+              { hasAttachments: true },
+              { bodyHtml: { contains: "cid:", mode: "insensitive" } },
+              { sanitizedBodyHtml: { contains: "cid:", mode: "insensitive" } }
+            ]
+          },
       select: {
         id: true,
         ticketId: true,
         emailMessageId: true
       },
       orderBy: { createdAt: "desc" },
-      take: 100
+      take: options.broad ? 200 : 100
     });
+    let storedCount = 0;
     let failures = 0;
     const errors: string[] = [];
 
     for (const message of candidates) {
       if (message.emailMessageId) {
         const stored = await this.storeInboundAttachments(provider, mailbox, message.emailMessageId, message.ticketId, message.id);
+        storedCount += stored.stored;
         failures += stored.failed;
         errors.push(...stored.errors);
       }
     }
 
-    return { failed: failures, errors };
+    return { stored: storedCount, failed: failures, errors };
   }
 
   private errorMessage(error: unknown) {

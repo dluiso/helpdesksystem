@@ -34,6 +34,7 @@ interface SyncResult {
   createdTickets: number;
   skippedDuplicates: number;
   blockedSpamMessages?: number;
+  attachmentBackfilled?: number;
   attachmentBackfillFailures?: number;
   attachmentBackfillErrors?: string[];
   nextSyncCursor?: string | null;
@@ -647,6 +648,8 @@ export function SettingsWorkspace() {
       const result = await apiFetch<SyncResult>(`/mailboxes/${mailbox.id}/sync`, { method: "POST" });
       setNotice(
         `Mailbox sync completed: ${result.receivedMessages} received, ${result.createdTickets} tickets created, ${result.skippedDuplicates} duplicates skipped, ${result.blockedSpamMessages ?? 0} blocked${
+          result.attachmentBackfilled ? `, ${result.attachmentBackfilled} attachments recovered` : ""
+        }${
           result.attachmentBackfillFailures ? `, ${result.attachmentBackfillFailures} attachment backfill failures` : ""
         }.${
           result.attachmentBackfillErrors?.length ? ` Attachment errors: ${result.attachmentBackfillErrors.slice(0, 2).join(" | ")}` : ""

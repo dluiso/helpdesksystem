@@ -71,11 +71,11 @@ export class TicketAttachmentsService {
       });
 
       if (existing) {
-        return existing;
+        return { attachment: existing, created: false };
       }
     }
 
-    return this.createAttachmentRecord({
+    const attachment = await this.createAttachmentRecord({
       ticketId: input.ticketId,
       ticketMessageId: input.ticketMessageId,
       uploadedByUserId: null,
@@ -87,6 +87,8 @@ export class TicketAttachmentsService {
       contentId: input.contentId ?? null,
       emailAttachmentId: input.emailAttachmentId ?? null
     });
+
+    return { attachment, created: true };
   }
 
   async getDownload(ticketId: string, attachmentId: string, user: AuthenticatedUser, preview: boolean) {
