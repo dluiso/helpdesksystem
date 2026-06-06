@@ -450,6 +450,30 @@ export function SettingsWorkspace() {
     setGeneralDraft(merged);
   }
 
+  function generalSettingsPayload(settings: GeneralSettings) {
+    return {
+      applicationName: settings.applicationName,
+      companyName: settings.companyName,
+      supportEmail: settings.supportEmail,
+      logoUrl: settings.logoUrl,
+      loginLogoUrl: settings.loginLogoUrl,
+      appIconUrl: settings.appIconUrl,
+      loginHeadline: settings.loginHeadline,
+      loginSubtitle: settings.loginSubtitle,
+      loginFooterText: settings.loginFooterText,
+      primaryColor: settings.primaryColor,
+      secondaryColor: settings.secondaryColor,
+      supportButtonEnabled: settings.supportButtonEnabled,
+      supportButtonLabel: settings.supportButtonLabel,
+      supportButtonUrl: settings.supportButtonUrl,
+      defaultTimezone: settings.defaultTimezone,
+      defaultLanguage: settings.defaultLanguage,
+      defaultLandingPage: settings.defaultLandingPage,
+      dateFormat: settings.dateFormat,
+      timeFormat: settings.timeFormat
+    };
+  }
+
   function auditQueryString(nextFilters = auditFilters) {
     const params = new URLSearchParams();
     Object.entries(nextFilters).forEach(([key, value]) => {
@@ -572,7 +596,7 @@ export function SettingsWorkspace() {
     try {
       const saved = await apiFetch<GeneralSettings>("/system-settings/general", {
         method: "PATCH",
-        body: JSON.stringify(generalDraft)
+        body: JSON.stringify(generalSettingsPayload(generalDraft))
       });
       applyGeneralSettings(saved);
       setNotice("General settings saved.");

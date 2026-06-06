@@ -51,7 +51,7 @@ export class SystemSettingsService {
 
   async getGeneralSettings(user: AuthenticatedUser) {
     const settings = await this.getOrCreateSettings(user.organizationId);
-    return settings;
+    return this.toGeneralSettings(settings);
   }
 
   async updateGeneralSettings(user: AuthenticatedUser, input: UpdateGeneralSettingsDto) {
@@ -90,7 +90,7 @@ export class SystemSettingsService {
       metadata: { applicationName: updated.applicationName, companyName: updated.companyName }
     });
 
-    return updated;
+    return this.toGeneralSettings(updated);
   }
 
   async uploadBrandingAsset(user: AuthenticatedUser, assetType: "logo" | "loginLogo" | "appIcon", file: { originalname: string; mimetype: string; size: number; buffer: Buffer }) {
@@ -157,6 +157,50 @@ export class SystemSettingsService {
         supportEmail: this.config.get<string>("DEFAULT_SUPPORT_EMAIL") ?? "support@aviditytechnologies.com"
       }
     });
+  }
+
+  private toGeneralSettings(settings: {
+    applicationName: string;
+    companyName: string;
+    supportEmail: string;
+    logoUrl: string | null;
+    loginLogoUrl: string | null;
+    appIconUrl: string | null;
+    loginHeadline: string | null;
+    loginSubtitle: string | null;
+    loginFooterText: string | null;
+    primaryColor: string;
+    secondaryColor: string;
+    supportButtonEnabled: boolean;
+    supportButtonLabel: string;
+    supportButtonUrl: string | null;
+    defaultTimezone: string;
+    defaultLanguage: string;
+    defaultLandingPage: string;
+    dateFormat: string;
+    timeFormat: string;
+  }) {
+    return {
+      applicationName: settings.applicationName,
+      companyName: settings.companyName,
+      supportEmail: settings.supportEmail,
+      logoUrl: settings.logoUrl,
+      loginLogoUrl: settings.loginLogoUrl,
+      appIconUrl: settings.appIconUrl,
+      loginHeadline: settings.loginHeadline,
+      loginSubtitle: settings.loginSubtitle,
+      loginFooterText: settings.loginFooterText,
+      primaryColor: settings.primaryColor,
+      secondaryColor: settings.secondaryColor,
+      supportButtonEnabled: settings.supportButtonEnabled,
+      supportButtonLabel: settings.supportButtonLabel,
+      supportButtonUrl: settings.supportButtonUrl,
+      defaultTimezone: settings.defaultTimezone,
+      defaultLanguage: settings.defaultLanguage,
+      defaultLandingPage: settings.defaultLandingPage,
+      dateFormat: settings.dateFormat,
+      timeFormat: settings.timeFormat
+    };
   }
 
   private optionalString(value: string | null | undefined) {
