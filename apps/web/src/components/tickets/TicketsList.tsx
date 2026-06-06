@@ -9,6 +9,7 @@ import {
   ArrowUpDown,
   Eye,
   GitMerge,
+  MoreHorizontal,
   Plus,
   RefreshCcw,
   RotateCcw,
@@ -355,6 +356,7 @@ export function TicketsList() {
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnId>>(new Set(defaultVisibleColumns));
   const [columnWidths, setColumnWidths] = useState<Record<ColumnId, number>>(defaultColumnWidths);
   const [showColumnsPanel, setShowColumnsPanel] = useState(false);
+  const [showMobileActions, setShowMobileActions] = useState(false);
   const [density, setDensity] = useState<TableDensity>("comfortable");
   const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([]);
   const [trashMode, setTrashMode] = useState(false);
@@ -1211,32 +1213,43 @@ export function TicketsList() {
             <SlidersHorizontal size={16} aria-hidden="true" />
             <span>{hasActiveFilters ? "Filters Active" : "Filters"}</span>
           </button>
-          <button className="button" type="button" onClick={() => setShowNewTicketModal(true)}>
-            <Plus size={16} aria-hidden="true" />
-            <span>New Ticket</span>
+          <button
+            className="button secondary tickets-mobile-actions-trigger"
+            type="button"
+            aria-expanded={showMobileActions}
+            onClick={() => setShowMobileActions((current) => !current)}
+          >
+            <MoreHorizontal size={16} aria-hidden="true" />
+            <span>Actions</span>
           </button>
-          <button className="button secondary" type="button" onClick={saveCurrentView}>
-            <Save size={16} aria-hidden="true" />
-            <span>Save View</span>
-          </button>
-          {selectedViewId.startsWith("saved:") ? (
-            <button className="button secondary" type="button" onClick={deleteCurrentView}>
-              <X size={16} aria-hidden="true" />
-              <span>Delete View</span>
+          <div className={`tickets-secondary-actions ${showMobileActions ? "open" : ""}`}>
+            <button className="button" type="button" onClick={() => setShowNewTicketModal(true)}>
+              <Plus size={16} aria-hidden="true" />
+              <span>New Ticket</span>
             </button>
-          ) : null}
-          <button className="button secondary" type="button" onClick={() => void loadTickets()} disabled={loading}>
-            <RefreshCcw size={16} aria-hidden="true" />
-            <span>Refresh</span>
-          </button>
-          <button className="button secondary" type="button" onClick={() => setShowColumnsPanel((current) => !current)}>
-            <SlidersHorizontal size={16} aria-hidden="true" />
-            <span>Columns</span>
-          </button>
-          <button className={`button ${trashMode ? "" : "secondary"}`} type="button" onClick={() => setTrashMode((current) => !current)}>
-            {trashMode ? <RotateCcw size={16} aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
-            <span>{trashMode ? "Active Tickets" : "Recycle Bin"}</span>
-          </button>
+            <button className="button secondary" type="button" onClick={saveCurrentView}>
+              <Save size={16} aria-hidden="true" />
+              <span>Save View</span>
+            </button>
+            {selectedViewId.startsWith("saved:") ? (
+              <button className="button secondary" type="button" onClick={deleteCurrentView}>
+                <X size={16} aria-hidden="true" />
+                <span>Delete View</span>
+              </button>
+            ) : null}
+            <button className="button secondary" type="button" onClick={() => void loadTickets()} disabled={loading}>
+              <RefreshCcw size={16} aria-hidden="true" />
+              <span>Refresh</span>
+            </button>
+            <button className="button secondary" type="button" onClick={() => setShowColumnsPanel((current) => !current)}>
+              <SlidersHorizontal size={16} aria-hidden="true" />
+              <span>Columns</span>
+            </button>
+            <button className={`button ${trashMode ? "" : "secondary"}`} type="button" onClick={() => setTrashMode((current) => !current)}>
+              {trashMode ? <RotateCcw size={16} aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
+              <span>{trashMode ? "Active Tickets" : "Recycle Bin"}</span>
+            </button>
+          </div>
         </div>
       </div>
       {error ? <div className="error-banner">{error}</div> : null}
