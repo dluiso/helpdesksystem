@@ -17,6 +17,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const logoBackgroundStyle = {
+    background: branding.brandLogoTransparentBackground ? "transparent" : (branding.brandLogoBackgroundColor ?? "#ffffff")
+  };
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -45,7 +48,7 @@ export default function LoginPage() {
               className="brand-logo login-brand-logo desktop-brand-logo"
               src={branding.loginLogoUrl ?? branding.logoUrl ?? ""}
               alt=""
-              style={{ width: branding.loginLogoWidth ?? 160, height: branding.loginLogoHeight ?? 48 }}
+              style={{ ...logoBackgroundStyle, width: branding.loginLogoWidth ?? 160, height: branding.loginLogoHeight ?? 48 }}
             />
           ) : null}
           {branding.mobileLoginLogoUrl || branding.loginLogoUrl || branding.logoUrl ? (
@@ -53,7 +56,7 @@ export default function LoginPage() {
               className="brand-logo login-brand-logo mobile-brand-logo"
               src={branding.mobileLoginLogoUrl ?? branding.loginLogoUrl ?? branding.logoUrl ?? ""}
               alt=""
-              style={{ width: branding.mobileLoginLogoWidth ?? 140, height: branding.mobileLoginLogoHeight ?? 44 }}
+              style={{ ...logoBackgroundStyle, width: branding.mobileLoginLogoWidth ?? 140, height: branding.mobileLoginLogoHeight ?? 44 }}
             />
           ) : (
             <span className="brand-mark">{branding.applicationName.slice(0, 1)}</span>
@@ -140,7 +143,7 @@ export default function LoginPage() {
             className="login-form-logo"
             src={branding.loginFormLogoUrl}
             alt={branding.applicationName}
-            style={{ width: branding.loginFormLogoWidth ?? 220, height: branding.loginFormLogoHeight ?? 72 }}
+            style={{ ...logoBackgroundStyle, width: branding.loginFormLogoWidth ?? 220, height: branding.loginFormLogoHeight ?? 72 }}
           />
         ) : null}
         <div className="page-header">

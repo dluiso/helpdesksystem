@@ -205,6 +205,7 @@ select {
   object-fit: contain;
   align-self: flex-start;
   margin-bottom: 28px;
+  border-radius: 8px;
 }
 
 .login-copy {

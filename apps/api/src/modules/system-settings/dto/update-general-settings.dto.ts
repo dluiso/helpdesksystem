@@ -105,6 +105,13 @@ export class UpdateGeneralSettingsDto {
   @MaxLength(24)
   brandTextColor!: string;
 
+  @IsString()
+  @MaxLength(24)
+  brandLogoBackgroundColor!: string;
+
+  @IsBoolean()
+  brandLogoTransparentBackground!: boolean;
+
   @Type(() => Number)
   @IsInt()
   @Min(12)

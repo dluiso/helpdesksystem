@@ -228,6 +228,8 @@ model SystemSetting {
   loginFormLogoHeight        Int      @default(72)
   brandTextSize              Int      @default(16)
   brandTextColor             String   @default("#ffffff")
+  brandLogoBackgroundColor   String   @default("#ffffff")
+  brandLogoTransparentBackground Boolean @default(false)
   appBrandTextSize           Int      @default(16)
   appBrandTextColor          String   @default("#ffffff")
   mobileLogoWidth            Int      @default(34)

@@ -38,6 +38,8 @@ export class SystemSettingsService {
       loginFormLogoHeight: settings?.loginFormLogoHeight ?? 72,
       brandTextSize: settings?.brandTextSize ?? 16,
       brandTextColor: settings?.brandTextColor ?? "#ffffff",
+      brandLogoBackgroundColor: settings?.brandLogoBackgroundColor ?? "#ffffff",
+      brandLogoTransparentBackground: settings?.brandLogoTransparentBackground ?? false,
       appBrandTextSize: settings?.appBrandTextSize ?? 16,
       appBrandTextColor: settings?.appBrandTextColor ?? "#ffffff",
       mobileLogoWidth: settings?.mobileLogoWidth ?? 34,
@@ -104,6 +106,7 @@ export class SystemSettingsService {
     this.validateHexColor(input.primaryColor, "Primary color");
     this.validateHexColor(input.secondaryColor, "Secondary color");
     this.validateHexColor(input.brandTextColor, "Brand text color");
+    this.validateHexColor(input.brandLogoBackgroundColor, "Brand logo background color");
     this.validateHexColor(input.appBrandTextColor, "App brand text color");
     this.validateHexColor(input.mobileBrandTextColor, "Mobile brand text color");
     this.validateHexColor(input.mobileLoginBrandTextColor, "Mobile login brand text color");
@@ -142,6 +145,8 @@ export class SystemSettingsService {
         loginFormLogoHeight: input.loginFormLogoHeight,
         brandTextSize: input.brandTextSize,
         brandTextColor: input.brandTextColor.trim(),
+        brandLogoBackgroundColor: input.brandLogoBackgroundColor.trim(),
+        brandLogoTransparentBackground: input.brandLogoTransparentBackground,
         appBrandTextSize: input.appBrandTextSize,
         appBrandTextColor: input.appBrandTextColor.trim(),
         mobileLogoWidth: input.mobileLogoWidth,
@@ -299,6 +304,8 @@ export class SystemSettingsService {
     loginFormLogoHeight: number;
     brandTextSize: number;
     brandTextColor: string;
+    brandLogoBackgroundColor: string;
+    brandLogoTransparentBackground: boolean;
     appBrandTextSize: number;
     appBrandTextColor: string;
     mobileLogoWidth: number;
@@ -366,6 +373,8 @@ export class SystemSettingsService {
       loginFormLogoHeight: settings.loginFormLogoHeight,
       brandTextSize: settings.brandTextSize,
       brandTextColor: settings.brandTextColor,
+      brandLogoBackgroundColor: settings.brandLogoBackgroundColor,
+      brandLogoTransparentBackground: settings.brandLogoTransparentBackground,
       appBrandTextSize: settings.appBrandTextSize,
       appBrandTextColor: settings.appBrandTextColor,
       mobileLogoWidth: settings.mobileLogoWidth,

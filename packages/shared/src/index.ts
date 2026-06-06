@@ -164,6 +164,8 @@ export interface PublicBrandingSettings {
   loginFormLogoHeight?: number;
   brandTextSize?: number;
   brandTextColor?: string;
+  brandLogoBackgroundColor?: string;
+  brandLogoTransparentBackground?: boolean;
   appBrandTextSize?: number;
   appBrandTextColor?: string;
   mobileLogoWidth?: number;

@@ -86,14 +86,18 @@ export function AppShell({ children }: { children: ReactNode }) {
     setMobileNavOpen(false);
   }, [pathname]);
 
+  const logoBackgroundStyle = {
+    background: branding.brandLogoTransparentBackground ? "transparent" : (branding.brandLogoBackgroundColor ?? "#ffffff")
+  };
+
   return (
     <div className="shell">
       {mobileNavOpen ? <button className="mobile-nav-backdrop" type="button" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} /> : null}
       <aside className={`sidebar${mobileNavOpen ? " mobile-open" : ""}`}>
         <Link className="brand" href="/dashboard">
-          {branding.logoUrl ? <img className="brand-logo desktop-brand-logo" src={branding.logoUrl} alt="" /> : null}
+          {branding.logoUrl ? <img className="brand-logo desktop-brand-logo" src={branding.logoUrl} alt="" style={logoBackgroundStyle} /> : null}
           {branding.mobileLogoUrl || branding.logoUrl ? (
-            <img className="brand-logo mobile-brand-logo" src={branding.mobileLogoUrl ?? branding.logoUrl ?? ""} alt="" style={{ width: branding.mobileLogoWidth ?? 34, height: branding.mobileLogoHeight ?? 34 }} />
+            <img className="brand-logo mobile-brand-logo" src={branding.mobileLogoUrl ?? branding.logoUrl ?? ""} alt="" style={{ ...logoBackgroundStyle, width: branding.mobileLogoWidth ?? 34, height: branding.mobileLogoHeight ?? 34 }} />
           ) : null}
           {!branding.logoUrl && !branding.mobileLogoUrl ? <span className="brand-mark">{branding.applicationName.slice(0, 1)}</span> : null}
           <span className={`brand-title-wrap subtitle-${branding.subtitlePlacement === "RIGHT" ? "right" : "below"} mobile-subtitle-${branding.mobileSubtitlePlacement === "RIGHT" ? "right" : "below"}`}>

@@ -231,6 +231,8 @@ interface GeneralSettings {
   loginFormLogoHeight: number;
   brandTextSize: number;
   brandTextColor: string;
+  brandLogoBackgroundColor: string;
+  brandLogoTransparentBackground: boolean;
   appBrandTextSize: number;
   appBrandTextColor: string;
   mobileLogoWidth: number;
@@ -360,6 +362,8 @@ const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   loginFormLogoHeight: 72,
   brandTextSize: 16,
   brandTextColor: "#ffffff",
+  brandLogoBackgroundColor: "#ffffff",
+  brandLogoTransparentBackground: false,
   appBrandTextSize: 16,
   appBrandTextColor: "#ffffff",
   mobileLogoWidth: 34,
@@ -572,6 +576,8 @@ export function SettingsWorkspace() {
       loginFormLogoHeight: settings.loginFormLogoHeight,
       brandTextSize: settings.brandTextSize,
       brandTextColor: settings.brandTextColor,
+      brandLogoBackgroundColor: settings.brandLogoBackgroundColor,
+      brandLogoTransparentBackground: settings.brandLogoTransparentBackground,
       appBrandTextSize: settings.appBrandTextSize,
       appBrandTextColor: settings.appBrandTextColor,
       mobileLogoWidth: settings.mobileLogoWidth,
@@ -1593,6 +1599,24 @@ export function SettingsWorkspace() {
                     <span>Secondary color</span>
                     <input className="input" type="color" value={generalDraft.secondaryColor} onChange={(event) => setGeneralDraft((current) => ({ ...current, secondaryColor: event.target.value }))} />
                   </label>
+                  <label className="field">
+                    <span>Logo background color</span>
+                    <input
+                      className="input"
+                      type="color"
+                      value={generalDraft.brandLogoBackgroundColor}
+                      disabled={generalDraft.brandLogoTransparentBackground}
+                      onChange={(event) => setGeneralDraft((current) => ({ ...current, brandLogoBackgroundColor: event.target.value }))}
+                    />
+                  </label>
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={generalDraft.brandLogoTransparentBackground}
+                      onChange={(event) => setGeneralDraft((current) => ({ ...current, brandLogoTransparentBackground: event.target.checked }))}
+                    />
+                    Transparent logo background
+                  </label>
                   <label className="field full-span">
                     <span>Application subtitle</span>
                     <input className="input" value={generalDraft.appSubtitle ?? ""} onChange={(event) => setGeneralDraft((current) => ({ ...current, appSubtitle: event.target.value }))} />
@@ -1700,7 +1724,10 @@ export function SettingsWorkspace() {
                     { type: "appIcon" as const, label: "Browser icon", value: generalDraft.appIconUrl }
                   ].map((asset) => (
                     <div className="branding-asset-row" key={asset.type}>
-                      <div className="branding-preview">
+                      <div
+                        className="branding-preview"
+                        style={{ background: generalDraft.brandLogoTransparentBackground ? "transparent" : generalDraft.brandLogoBackgroundColor }}
+                      >
                         {asset.value ? <img src={asset.value} alt="" /> : <span>{generalDraft.applicationName.slice(0, 1)}</span>}
                       </div>
                       <div>

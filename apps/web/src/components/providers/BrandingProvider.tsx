@@ -19,6 +19,8 @@ const fallbackBranding: PublicBrandingSettings = {
   loginFormLogoHeight: 72,
   brandTextSize: 16,
   brandTextColor: "#ffffff",
+  brandLogoBackgroundColor: "#ffffff",
+  brandLogoTransparentBackground: false,
   appBrandTextSize: 16,
   appBrandTextColor: "#ffffff",
   mobileLogoWidth: 34,
