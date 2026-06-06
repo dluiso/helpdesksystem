@@ -154,7 +154,14 @@ export interface PublicBrandingSettings {
   companyName: string;
   logoUrl: string | null;
   loginLogoUrl?: string | null;
+  loginFormLogoUrl?: string | null;
   appIconUrl?: string | null;
+  loginLogoWidth?: number;
+  loginLogoHeight?: number;
+  loginFormLogoWidth?: number;
+  loginFormLogoHeight?: number;
+  brandTextSize?: number;
+  brandTextColor?: string;
   primaryColor: string;
   secondaryColor: string;
   supportEmail: string;

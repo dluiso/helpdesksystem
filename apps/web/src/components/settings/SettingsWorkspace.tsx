@@ -208,10 +208,17 @@ interface GeneralSettings {
   supportEmail: string;
   logoUrl: string | null;
   loginLogoUrl: string | null;
+  loginFormLogoUrl: string | null;
   appIconUrl: string | null;
   loginHeadline: string | null;
   loginSubtitle: string | null;
   loginFooterText: string | null;
+  loginLogoWidth: number;
+  loginLogoHeight: number;
+  loginFormLogoWidth: number;
+  loginFormLogoHeight: number;
+  brandTextSize: number;
+  brandTextColor: string;
   primaryColor: string;
   secondaryColor: string;
   supportButtonEnabled: boolean;
@@ -291,10 +298,17 @@ const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   supportEmail: "support@aviditytechnologies.com",
   logoUrl: null,
   loginLogoUrl: null,
+  loginFormLogoUrl: null,
   appIconUrl: null,
   loginHeadline: "Avidity IT Management Tool",
   loginSubtitle: "Secure service desk operations, client context, attachments, mail flow, reporting, and remote access readiness in one configurable platform.",
   loginFooterText: "Avidity Technologies",
+  loginLogoWidth: 160,
+  loginLogoHeight: 48,
+  loginFormLogoWidth: 220,
+  loginFormLogoHeight: 72,
+  brandTextSize: 16,
+  brandTextColor: "#ffffff",
   primaryColor: "#155eef",
   secondaryColor: "#0f172a",
   supportButtonEnabled: true,
@@ -457,10 +471,17 @@ export function SettingsWorkspace() {
       supportEmail: settings.supportEmail,
       logoUrl: settings.logoUrl,
       loginLogoUrl: settings.loginLogoUrl,
+      loginFormLogoUrl: settings.loginFormLogoUrl,
       appIconUrl: settings.appIconUrl,
       loginHeadline: settings.loginHeadline,
       loginSubtitle: settings.loginSubtitle,
       loginFooterText: settings.loginFooterText,
+      loginLogoWidth: settings.loginLogoWidth,
+      loginLogoHeight: settings.loginLogoHeight,
+      loginFormLogoWidth: settings.loginFormLogoWidth,
+      loginFormLogoHeight: settings.loginFormLogoHeight,
+      brandTextSize: settings.brandTextSize,
+      brandTextColor: settings.brandTextColor,
       primaryColor: settings.primaryColor,
       secondaryColor: settings.secondaryColor,
       supportButtonEnabled: settings.supportButtonEnabled,
@@ -607,7 +628,7 @@ export function SettingsWorkspace() {
     }
   }
 
-  async function uploadBrandingAsset(assetType: "logo" | "loginLogo" | "appIcon", file: File | null) {
+  async function uploadBrandingAsset(assetType: "logo" | "loginLogo" | "loginFormLogo" | "appIcon", file: File | null) {
     if (!file) {
       return;
     }
@@ -615,6 +636,7 @@ export function SettingsWorkspace() {
     const fieldByType = {
       logo: "logoUrl",
       loginLogo: "loginLogoUrl",
+      loginFormLogo: "loginFormLogoUrl",
       appIcon: "appIconUrl"
     } as const;
     const formData = new FormData();
@@ -1466,6 +1488,7 @@ export function SettingsWorkspace() {
                   {[
                     { type: "logo" as const, label: "App logo", value: generalDraft.logoUrl },
                     { type: "loginLogo" as const, label: "Login logo", value: generalDraft.loginLogoUrl },
+                    { type: "loginFormLogo" as const, label: "Login form logo", value: generalDraft.loginFormLogoUrl },
                     { type: "appIcon" as const, label: "Browser icon", value: generalDraft.appIconUrl }
                   ].map((asset) => (
                     <div className="branding-asset-row" key={asset.type}>
@@ -1494,6 +1517,43 @@ export function SettingsWorkspace() {
                   </div>
                 </div>
                 <div className="client-form-grid settings-section">
+                  <label className="field">
+                    <span>Login header logo width</span>
+                    <input
+                      className="input"
+                      type="number"
+                      min={24}
+                      max={420}
+                      value={generalDraft.loginLogoWidth}
+                      onChange={(event) => setGeneralDraft((current) => ({ ...current, loginLogoWidth: Number(event.target.value) }))}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Login header logo height</span>
+                    <input
+                      className="input"
+                      type="number"
+                      min={24}
+                      max={180}
+                      value={generalDraft.loginLogoHeight}
+                      onChange={(event) => setGeneralDraft((current) => ({ ...current, loginLogoHeight: Number(event.target.value) }))}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Header text size</span>
+                    <input
+                      className="input"
+                      type="number"
+                      min={12}
+                      max={32}
+                      value={generalDraft.brandTextSize}
+                      onChange={(event) => setGeneralDraft((current) => ({ ...current, brandTextSize: Number(event.target.value) }))}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Header text color</span>
+                    <input className="input" type="color" value={generalDraft.brandTextColor} onChange={(event) => setGeneralDraft((current) => ({ ...current, brandTextColor: event.target.value }))} />
+                  </label>
                   <label className="field full-span">
                     <span>Headline</span>
                     <input className="input" value={generalDraft.loginHeadline ?? ""} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginHeadline: event.target.value }))} />
@@ -1505,6 +1565,28 @@ export function SettingsWorkspace() {
                   <label className="field full-span">
                     <span>Footer text</span>
                     <input className="input" value={generalDraft.loginFooterText ?? ""} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginFooterText: event.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Form logo width</span>
+                    <input
+                      className="input"
+                      type="number"
+                      min={48}
+                      max={420}
+                      value={generalDraft.loginFormLogoWidth}
+                      onChange={(event) => setGeneralDraft((current) => ({ ...current, loginFormLogoWidth: Number(event.target.value) }))}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Form logo height</span>
+                    <input
+                      className="input"
+                      type="number"
+                      min={32}
+                      max={180}
+                      value={generalDraft.loginFormLogoHeight}
+                      onChange={(event) => setGeneralDraft((current) => ({ ...current, loginFormLogoHeight: Number(event.target.value) }))}
+                    />
                   </label>
                 </div>
               </div>

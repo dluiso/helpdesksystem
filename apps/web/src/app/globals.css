@@ -200,6 +200,13 @@ select {
   border-left: 1px solid var(--line);
 }
 
+.login-form-logo {
+  max-width: 100%;
+  object-fit: contain;
+  align-self: flex-start;
+  margin-bottom: 28px;
+}
+
 .login-copy {
   padding: 64px;
   display: flex;
@@ -229,11 +236,6 @@ select {
   max-width: 620px;
   font-size: 18px;
   line-height: 1.6;
-}
-
-.login-copy .brand-logo {
-  width: 34px;
-  height: 34px;
 }
 
 .form {
@@ -354,6 +356,11 @@ select {
   object-fit: contain;
   border-radius: 8px;
   background: #ffffff;
+}
+
+.login-brand-logo {
+  max-width: min(420px, 42vw);
+  object-fit: contain;
 }
 
 .brand-name {

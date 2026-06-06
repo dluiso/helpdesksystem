@@ -1,4 +1,5 @@
-import { IsBoolean, IsEmail, IsIn, IsOptional, IsString, MaxLength } from "class-validator";
+import { Type } from "class-transformer";
+import { IsBoolean, IsEmail, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 
 export class UpdateGeneralSettingsDto {
   @IsString()
@@ -21,6 +22,11 @@ export class UpdateGeneralSettingsDto {
   @IsString()
   @MaxLength(500)
   loginLogoUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  loginFormLogoUrl?: string | null;
 
   @IsOptional()
   @IsString()
@@ -49,6 +55,40 @@ export class UpdateGeneralSettingsDto {
   @IsString()
   @MaxLength(24)
   secondaryColor!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(24)
+  @Max(420)
+  loginLogoWidth!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(24)
+  @Max(180)
+  loginLogoHeight!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(48)
+  @Max(420)
+  loginFormLogoWidth!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(32)
+  @Max(180)
+  loginFormLogoHeight!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(12)
+  @Max(32)
+  brandTextSize!: number;
+
+  @IsString()
+  @MaxLength(24)
+  brandTextColor!: string;
 
   @IsBoolean()
   supportButtonEnabled!: boolean;

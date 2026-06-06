@@ -28,7 +28,14 @@ export class SystemSettingsService {
       companyName: settings?.companyName ?? this.config.get<string>("DEFAULT_COMPANY_NAME") ?? "Avidity Technologies",
       logoUrl: settings?.logoUrl ?? null,
       loginLogoUrl: settings?.loginLogoUrl ?? settings?.logoUrl ?? null,
+      loginFormLogoUrl: settings?.loginFormLogoUrl ?? null,
       appIconUrl: settings?.appIconUrl ?? null,
+      loginLogoWidth: settings?.loginLogoWidth ?? 160,
+      loginLogoHeight: settings?.loginLogoHeight ?? 48,
+      loginFormLogoWidth: settings?.loginFormLogoWidth ?? 220,
+      loginFormLogoHeight: settings?.loginFormLogoHeight ?? 72,
+      brandTextSize: settings?.brandTextSize ?? 16,
+      brandTextColor: settings?.brandTextColor ?? "#ffffff",
       primaryColor: settings?.primaryColor ?? "#155eef",
       secondaryColor: settings?.secondaryColor ?? "#0f172a",
       supportEmail:
@@ -57,6 +64,7 @@ export class SystemSettingsService {
   async updateGeneralSettings(user: AuthenticatedUser, input: UpdateGeneralSettingsDto) {
     this.validateHexColor(input.primaryColor, "Primary color");
     this.validateHexColor(input.secondaryColor, "Secondary color");
+    this.validateHexColor(input.brandTextColor, "Brand text color");
     const updated = await this.prisma.systemSetting.update({
       where: { organizationId: user.organizationId },
       data: {
@@ -65,10 +73,17 @@ export class SystemSettingsService {
         supportEmail: input.supportEmail.trim().toLowerCase(),
         logoUrl: this.optionalString(input.logoUrl),
         loginLogoUrl: this.optionalString(input.loginLogoUrl),
+        loginFormLogoUrl: this.optionalString(input.loginFormLogoUrl),
         appIconUrl: this.optionalString(input.appIconUrl),
         loginHeadline: this.optionalString(input.loginHeadline),
         loginSubtitle: this.optionalString(input.loginSubtitle),
         loginFooterText: this.optionalString(input.loginFooterText),
+        loginLogoWidth: input.loginLogoWidth,
+        loginLogoHeight: input.loginLogoHeight,
+        loginFormLogoWidth: input.loginFormLogoWidth,
+        loginFormLogoHeight: input.loginFormLogoHeight,
+        brandTextSize: input.brandTextSize,
+        brandTextColor: input.brandTextColor.trim(),
         primaryColor: input.primaryColor.trim(),
         secondaryColor: input.secondaryColor.trim(),
         supportButtonEnabled: input.supportButtonEnabled,
@@ -93,7 +108,7 @@ export class SystemSettingsService {
     return this.toGeneralSettings(updated);
   }
 
-  async uploadBrandingAsset(user: AuthenticatedUser, assetType: "logo" | "loginLogo" | "appIcon", file: { originalname: string; mimetype: string; size: number; buffer: Buffer }) {
+  async uploadBrandingAsset(user: AuthenticatedUser, assetType: "logo" | "loginLogo" | "loginFormLogo" | "appIcon", file: { originalname: string; mimetype: string; size: number; buffer: Buffer }) {
     if (!BRANDING_MIME_TYPES.has(file.mimetype)) {
       throw new BadRequestException("Branding asset must be a PNG, JPG, WEBP, SVG, or ICO image.");
     }
@@ -108,7 +123,7 @@ export class SystemSettingsService {
       folder: "branding"
     });
     const assetUrl = `/api/system-settings/assets?key=${encodeURIComponent(stored.storageKey)}`;
-    const field = assetType === "loginLogo" ? "loginLogoUrl" : assetType === "appIcon" ? "appIconUrl" : "logoUrl";
+    const field = assetType === "loginLogo" ? "loginLogoUrl" : assetType === "loginFormLogo" ? "loginFormLogoUrl" : assetType === "appIcon" ? "appIconUrl" : "logoUrl";
     const settings = await this.getOrCreateSettings(user.organizationId);
     const updated = await this.prisma.systemSetting.update({
       where: { id: settings.id },
@@ -165,10 +180,17 @@ export class SystemSettingsService {
     supportEmail: string;
     logoUrl: string | null;
     loginLogoUrl: string | null;
+    loginFormLogoUrl: string | null;
     appIconUrl: string | null;
     loginHeadline: string | null;
     loginSubtitle: string | null;
     loginFooterText: string | null;
+    loginLogoWidth: number;
+    loginLogoHeight: number;
+    loginFormLogoWidth: number;
+    loginFormLogoHeight: number;
+    brandTextSize: number;
+    brandTextColor: string;
     primaryColor: string;
     secondaryColor: string;
     supportButtonEnabled: boolean;
@@ -186,10 +208,17 @@ export class SystemSettingsService {
       supportEmail: settings.supportEmail,
       logoUrl: settings.logoUrl,
       loginLogoUrl: settings.loginLogoUrl,
+      loginFormLogoUrl: settings.loginFormLogoUrl,
       appIconUrl: settings.appIconUrl,
       loginHeadline: settings.loginHeadline,
       loginSubtitle: settings.loginSubtitle,
       loginFooterText: settings.loginFooterText,
+      loginLogoWidth: settings.loginLogoWidth,
+      loginLogoHeight: settings.loginLogoHeight,
+      loginFormLogoWidth: settings.loginFormLogoWidth,
+      loginFormLogoHeight: settings.loginFormLogoHeight,
+      brandTextSize: settings.brandTextSize,
+      brandTextColor: settings.brandTextColor,
       primaryColor: settings.primaryColor,
       secondaryColor: settings.secondaryColor,
       supportButtonEnabled: settings.supportButtonEnabled,

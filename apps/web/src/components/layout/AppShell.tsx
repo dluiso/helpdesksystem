@@ -86,7 +86,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       <aside className={`sidebar${mobileNavOpen ? " mobile-open" : ""}`}>
         <Link className="brand" href="/dashboard">
           {branding.logoUrl ? <img className="brand-logo" src={branding.logoUrl} alt="" /> : <span className="brand-mark">{branding.applicationName.slice(0, 1)}</span>}
-          <span className="brand-name">{branding.applicationName}</span>
+          <span className="brand-name" style={{ color: branding.brandTextColor ?? "#ffffff", fontSize: branding.brandTextSize ?? 16 }}>
+            {branding.applicationName}
+          </span>
         </Link>
         <nav className="nav" aria-label="Main navigation">
           {navigation.map((item) => {

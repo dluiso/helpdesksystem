@@ -35,11 +35,18 @@ export default function LoginPage() {
       <section className="login-copy">
         <div className="brand">
           {branding.loginLogoUrl || branding.logoUrl ? (
-            <img className="brand-logo" src={branding.loginLogoUrl ?? branding.logoUrl ?? ""} alt="" />
+            <img
+              className="brand-logo login-brand-logo"
+              src={branding.loginLogoUrl ?? branding.logoUrl ?? ""}
+              alt=""
+              style={{ width: branding.loginLogoWidth ?? 160, height: branding.loginLogoHeight ?? 48 }}
+            />
           ) : (
             <span className="brand-mark">{branding.applicationName.slice(0, 1)}</span>
           )}
-          <span className="brand-name">{branding.applicationName}</span>
+          <span className="brand-name" style={{ color: branding.brandTextColor ?? "#ffffff", fontSize: branding.brandTextSize ?? 16 }}>
+            {branding.applicationName}
+          </span>
         </div>
         <div>
           <h1>{branding.loginHeadline ?? branding.applicationName}</h1>
@@ -48,6 +55,14 @@ export default function LoginPage() {
         <p>{branding.loginFooterText ?? branding.companyName}</p>
       </section>
       <section className="login-panel">
+        {branding.loginFormLogoUrl ? (
+          <img
+            className="login-form-logo"
+            src={branding.loginFormLogoUrl}
+            alt={branding.applicationName}
+            style={{ width: branding.loginFormLogoWidth ?? 220, height: branding.loginFormLogoHeight ?? 72 }}
+          />
+        ) : null}
         <div className="page-header">
           <div>
             <h1>Sign In</h1>
