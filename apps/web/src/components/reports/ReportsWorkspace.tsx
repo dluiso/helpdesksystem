@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Filter, RefreshCw } from "lucide-react";
+import { Download, FileSpreadsheet, Filter, RefreshCw, Save, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
 
@@ -61,6 +61,29 @@ interface ReportSummary {
   }>;
   detailLimit: number;
   totalMatched: number;
+}
+
+interface SavedReport {
+  id: string;
+  name: string;
+  description: string | null;
+  reportType: string;
+  filters: Partial<{
+    startDate: string;
+    endDate: string;
+    groupBy: "day" | "week" | "month" | "year";
+    clientId: string;
+    assignedUserId: string;
+    assignedTeamId: string;
+    statuses: string[];
+    priority: string;
+    source: string;
+    attachments: "all" | "with" | "without";
+    estimateMode: "none" | "perTicket";
+    valuePerTicket: string;
+  }>;
+  updatedAt: string;
+  createdBy: string | null;
 }
 
 const chartColors = ["#4f7cff", "#16a34a", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#64748b", "#ec4899"];
@@ -167,6 +190,11 @@ export function ReportsWorkspace() {
   const [estimateMode, setEstimateMode] = useState<"none" | "perTicket">("none");
   const [valuePerTicket, setValuePerTicket] = useState("0");
   const [data, setData] = useState<ReportSummary | null>(null);
+  const [savedReports, setSavedReports] = useState<SavedReport[]>([]);
+  const [selectedSavedReportId, setSelectedSavedReportId] = useState("");
+  const [saveName, setSaveName] = useState("");
+  const [saveDescription, setSaveDescription] = useState("");
+  const [savedBusy, setSavedBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -202,17 +230,124 @@ export function ReportsWorkspace() {
     }
   }
 
+  async function loadSavedReports() {
+    try {
+      const reports = await apiFetch<SavedReport[]>("/reports/definitions");
+      setSavedReports(reports);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load saved reports.");
+    }
+  }
+
   useEffect(() => {
     void loadReport();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
+  useEffect(() => {
+    void loadSavedReports();
+  }, []);
+
+  function currentFilters(): SavedReport["filters"] {
+    return {
+      startDate,
+      endDate,
+      groupBy,
+      clientId,
+      assignedUserId,
+      assignedTeamId,
+      statuses,
+      priority,
+      source,
+      attachments,
+      estimateMode,
+      valuePerTicket
+    };
+  }
+
+  function applySavedReport(reportId: string) {
+    setSelectedSavedReportId(reportId);
+    const report = savedReports.find((item) => item.id === reportId);
+    if (!report) return;
+    const filters = report.filters;
+    setStartDate(filters.startDate ?? defaultStartDate());
+    setEndDate(filters.endDate ?? today());
+    setGroupBy(filters.groupBy ?? "day");
+    setClientId(filters.clientId ?? "");
+    setAssignedUserId(filters.assignedUserId ?? "");
+    setAssignedTeamId(filters.assignedTeamId ?? "");
+    setStatuses(Array.isArray(filters.statuses) ? filters.statuses : []);
+    setPriority(filters.priority ?? "");
+    setSource(filters.source ?? "");
+    setAttachments(filters.attachments ?? "all");
+    setEstimateMode(filters.estimateMode ?? "none");
+    setValuePerTicket(filters.valuePerTicket ?? "0");
+    setSaveName(report.name);
+    setSaveDescription(report.description ?? "");
+  }
+
+  async function saveReport() {
+    const name = saveName.trim();
+    if (!name) {
+      setError("Enter a report name before saving.");
+      return;
+    }
+    setSavedBusy(true);
+    setError("");
+    try {
+      const report = await apiFetch<SavedReport>("/reports/definitions", {
+        method: "POST",
+        body: JSON.stringify({ name, description: saveDescription.trim() || undefined, filters: currentFilters() })
+      });
+      await loadSavedReports();
+      setSelectedSavedReportId(report.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save report.");
+    } finally {
+      setSavedBusy(false);
+    }
+  }
+
+  async function updateSavedReport() {
+    if (!selectedSavedReportId) return;
+    setSavedBusy(true);
+    setError("");
+    try {
+      await apiFetch<SavedReport>(`/reports/definitions/${selectedSavedReportId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: saveName.trim(), description: saveDescription.trim(), filters: currentFilters() })
+      });
+      await loadSavedReports();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update saved report.");
+    } finally {
+      setSavedBusy(false);
+    }
+  }
+
+  async function deleteSavedReport() {
+    if (!selectedSavedReportId || !window.confirm("Delete this saved report?")) return;
+    setSavedBusy(true);
+    setError("");
+    try {
+      await apiFetch(`/reports/definitions/${selectedSavedReportId}`, { method: "DELETE" });
+      setSelectedSavedReportId("");
+      setSaveName("");
+      setSaveDescription("");
+      await loadSavedReports();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete saved report.");
+    } finally {
+      setSavedBusy(false);
+    }
+  }
+
   function toggleStatus(status: string) {
     setStatuses((current) => current.includes(status) ? current.filter((item) => item !== status) : [...current, status]);
   }
 
-  function exportCsv() {
-    window.location.href = `${apiBaseUrl}/reports/tickets/export?${query.toString()}&format=csv`;
+  function exportReport(format: "csv" | "xlsx") {
+    window.location.href = `${apiBaseUrl}/reports/tickets/export?${query.toString()}&format=${format}`;
   }
 
   const options = data?.options;
@@ -231,11 +366,34 @@ export function ReportsWorkspace() {
               <RefreshCw size={16} aria-hidden="true" />
               <span>Refresh</span>
             </button>
-            <button className="button" type="button" onClick={exportCsv} disabled={!data}>
+            <button className="button" type="button" onClick={() => exportReport("csv")} disabled={!data}>
               <Download size={16} aria-hidden="true" />
               <span>Export CSV</span>
             </button>
+            <button className="button secondary" type="button" onClick={() => exportReport("xlsx")} disabled={!data}>
+              <FileSpreadsheet size={16} aria-hidden="true" />
+              <span>Excel</span>
+            </button>
           </div>
+        </div>
+        <div className="reports-saved-row">
+          <select className="input" value={selectedSavedReportId} onChange={(event) => applySavedReport(event.target.value)}>
+            <option value="">Saved reports</option>
+            {savedReports.map((report) => <option key={report.id} value={report.id}>{report.name}</option>)}
+          </select>
+          <input className="input" value={saveName} onChange={(event) => setSaveName(event.target.value)} placeholder="Report name" />
+          <input className="input" value={saveDescription} onChange={(event) => setSaveDescription(event.target.value)} placeholder="Optional description" />
+          <button className="button secondary" type="button" onClick={saveReport} disabled={savedBusy}>
+            <Save size={16} aria-hidden="true" />
+            <span>Save</span>
+          </button>
+          <button className="button secondary" type="button" onClick={updateSavedReport} disabled={savedBusy || !selectedSavedReportId}>
+            <span>Update</span>
+          </button>
+          <button className="button secondary danger-soft" type="button" onClick={deleteSavedReport} disabled={savedBusy || !selectedSavedReportId}>
+            <Trash2 size={16} aria-hidden="true" />
+            <span>Delete</span>
+          </button>
         </div>
         <div className="reports-filter-grid">
           <input className="input" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
@@ -319,7 +477,7 @@ export function ReportsWorkspace() {
             <div className="section-heading compact-heading">
               <div>
                 <h2>Report Detail</h2>
-                <p className="muted">Showing {data.detail.length} of {data.totalMatched} tickets. Export CSV for the report table.</p>
+                <p className="muted">Showing {data.detail.length} of {data.totalMatched} tickets. Export CSV or Excel for the report table.</p>
               </div>
             </div>
             <div className="table-scroll">
@@ -341,11 +499,21 @@ export function ReportsWorkspace() {
                   {data.detail.map((ticket) => (
                     <tr key={ticket.ticketNumber}>
                       <td>{ticket.ticketNumber}</td>
-                      <td><strong>{ticket.subject}</strong><span className="muted">{ticket.requester}</span></td>
+                      <td>
+                        <span className="report-cell-stack">
+                          <strong>{ticket.subject}</strong>
+                          <span className="muted">{ticket.requester}</span>
+                        </span>
+                      </td>
                       <td>{ticket.clientName}</td>
                       <td><span className={`status-pill ticket-status-${ticket.status.toLowerCase().replaceAll("_", "-")}`}>{label(ticket.status)}</span></td>
                       <td>{label(ticket.priority)}</td>
-                      <td>{ticket.assignedTo}<span className="muted">{ticket.team}</span></td>
+                      <td>
+                        <span className="report-cell-stack">
+                          <strong>{ticket.assignedTo}</strong>
+                          <span className="muted">Team: {ticket.team}</span>
+                        </span>
+                      </td>
                       <td>{formatDate(ticket.createdAt)}</td>
                       <td>{ticket.attachmentCount}</td>
                       <td>{currency(ticket.estimatedValue)}</td>

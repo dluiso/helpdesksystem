@@ -2308,6 +2308,17 @@ a.dashboard-list-row:hover {
   gap: 10px;
 }
 
+.reports-saved-row {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) minmax(160px, 1fr) minmax(220px, 1.4fr) auto auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+}
+
 .reports-status-filter {
   display: grid;
   gap: 8px;
@@ -2333,6 +2344,31 @@ a.dashboard-list-row:hover {
 
 .report-kpi-card {
   cursor: default;
+}
+
+.report-cell-stack {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.report-cell-stack strong,
+.report-cell-stack span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.danger-soft {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+[data-theme="dark"] .danger-soft,
+[data-theme="oled"] .danger-soft {
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.55);
 }
 
 .report-activity-chart {
@@ -3649,6 +3685,7 @@ a.dashboard-list-row:hover {
   .dashboard-donut-layout,
   .dashboard-insight-row,
   .reports-filter-grid,
+  .reports-saved-row,
   .knowledge-toolbar,
   .knowledge-layout,
   .knowledge-editor-grid {

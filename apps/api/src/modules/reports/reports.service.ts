@@ -1,7 +1,9 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { Workbook } from "exceljs";
 import { Prisma, TicketPriority, TicketSource, TicketStatus } from "@prisma/client";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
+import { CreateReportDefinitionDto, UpdateReportDefinitionDto } from "./dto/report-definition.dto";
 import { TicketReportExportQueryDto, TicketReportQueryDto } from "./dto/ticket-report-query.dto";
 
 const ACTIVE_STATUSES: TicketStatus[] = [
@@ -21,6 +23,73 @@ type ReportTicket = Prisma.TicketGetPayload<{
 @Injectable()
 export class ReportsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async listDefinitions(user: AuthenticatedUser) {
+    const definitions = await this.prisma.reportDefinition.findMany({
+      where: { organizationId: user.organizationId, reportType: "ticket-report" },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        reportType: true,
+        filters: true,
+        createdAt: true,
+        updatedAt: true,
+        createdBy: { select: { firstName: true, lastName: true } }
+      },
+      orderBy: [{ updatedAt: "desc" }, { name: "asc" }]
+    });
+
+    return definitions.map((definition) => ({
+      ...definition,
+      createdBy: definition.createdBy ? `${definition.createdBy.firstName} ${definition.createdBy.lastName}` : null
+    }));
+  }
+
+  async createDefinition(user: AuthenticatedUser, input: CreateReportDefinitionDto) {
+    try {
+      return await this.prisma.reportDefinition.create({
+        data: {
+          organizationId: user.organizationId,
+          createdById: user.id,
+          name: input.name.trim(),
+          description: input.description?.trim() || null,
+          reportType: input.reportType?.trim() || "ticket-report",
+          filters: input.filters as Prisma.InputJsonValue
+        }
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw new ConflictException("A report with this name already exists.");
+      }
+      throw error;
+    }
+  }
+
+  async updateDefinition(user: AuthenticatedUser, definitionId: string, input: UpdateReportDefinitionDto) {
+    await this.ensureDefinitionAccess(user, definitionId);
+    try {
+      return await this.prisma.reportDefinition.update({
+        where: { id: definitionId },
+        data: {
+          ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+          ...(input.description !== undefined ? { description: input.description.trim() || null } : {}),
+          ...(input.filters !== undefined ? { filters: input.filters as Prisma.InputJsonValue } : {})
+        }
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw new ConflictException("A report with this name already exists.");
+      }
+      throw error;
+    }
+  }
+
+  async deleteDefinition(user: AuthenticatedUser, definitionId: string) {
+    await this.ensureDefinitionAccess(user, definitionId);
+    await this.prisma.reportDefinition.delete({ where: { id: definitionId } });
+    return { deleted: true };
+  }
 
   async ticketSummary(user: AuthenticatedUser, query: TicketReportQueryDto) {
     const range = this.resolveDateRange(query);
@@ -98,7 +167,11 @@ export class ReportsService {
     };
   }
 
-  async exportTicketsCsv(user: AuthenticatedUser, query: TicketReportExportQueryDto) {
+  async exportTickets(user: AuthenticatedUser, query: TicketReportExportQueryDto) {
+    return query.format === "xlsx" ? this.exportTicketsXlsx(user, query) : this.exportTicketsCsv(user, query);
+  }
+
+  private async exportTicketsCsv(user: AuthenticatedUser, query: TicketReportExportQueryDto) {
     const result = await this.ticketSummary(user, query);
     const rows = result.detail.map((ticket) => [
       ticket.ticketNumber,
@@ -137,6 +210,70 @@ export class ReportsService {
     };
   }
 
+  private async exportTicketsXlsx(user: AuthenticatedUser, query: TicketReportExportQueryDto) {
+    const result = await this.ticketSummary(user, query);
+    const workbook = new Workbook();
+    workbook.creator = "Avidity IT Management Tool";
+    workbook.created = new Date();
+
+    const summary = workbook.addWorksheet("Summary");
+    summary.columns = [
+      { header: "Metric", key: "metric", width: 28 },
+      { header: "Value", key: "value", width: 22 }
+    ];
+    summary.addRows([
+      { metric: "Total tickets", value: result.summary.totalTickets },
+      { metric: "Active tickets", value: result.summary.activeTickets },
+      { metric: "Closed tickets", value: result.summary.closedTickets },
+      { metric: "Resolved tickets", value: result.summary.resolvedTickets },
+      { metric: "Unassigned tickets", value: result.summary.unassignedTickets },
+      { metric: "High priority tickets", value: result.summary.highPriorityTickets },
+      { metric: "Tickets with attachments", value: result.summary.withAttachments },
+      { metric: "Estimated total", value: result.summary.estimatedTotal ?? "" }
+    ]);
+
+    const detail = workbook.addWorksheet("Tickets");
+    detail.columns = [
+      { header: "Ticket", key: "ticketNumber", width: 14 },
+      { header: "Subject", key: "subject", width: 42 },
+      { header: "Client", key: "clientName", width: 28 },
+      { header: "Requester", key: "requester", width: 28 },
+      { header: "Status", key: "status", width: 18 },
+      { header: "Priority", key: "priority", width: 14 },
+      { header: "Source", key: "source", width: 14 },
+      { header: "Assigned To", key: "assignedTo", width: 26 },
+      { header: "Team", key: "team", width: 24 },
+      { header: "Created", key: "createdAt", width: 24 },
+      { header: "Modified", key: "updatedAt", width: 24 },
+      { header: "Closed", key: "closedAt", width: 24 },
+      { header: "Attachments", key: "attachmentCount", width: 14 },
+      { header: "Estimated Value", key: "estimatedValue", width: 18 }
+    ];
+    detail.addRows(result.detail.map((ticket) => ({ ...ticket, estimatedValue: ticket.estimatedValue ?? "" })));
+
+    for (const sheet of [summary, detail]) {
+      sheet.getRow(1).font = { bold: true };
+      sheet.views = [{ state: "frozen", ySplit: 1 }];
+      sheet.autoFilter = { from: "A1", to: `${sheet.getColumn(sheet.columnCount).letter}1` };
+    }
+
+    await this.prisma.reportExport.create({
+      data: {
+        requestedById: user.id,
+        reportType: "ticket-report",
+        filters: query as Prisma.InputJsonValue,
+        format: "xlsx"
+      }
+    });
+
+    const body = Buffer.from(await workbook.xlsx.writeBuffer());
+    return {
+      filename: `ticket-report-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      body
+    };
+  }
+
   private ticketSelect() {
     return {
       id: true,
@@ -159,6 +296,16 @@ export class ReportsService {
       assignees: { select: { userId: true } },
       _count: { select: { attachments: true } }
     } satisfies Prisma.TicketSelect;
+  }
+
+  private async ensureDefinitionAccess(user: AuthenticatedUser, definitionId: string) {
+    const definition = await this.prisma.reportDefinition.findFirst({
+      where: { id: definitionId, organizationId: user.organizationId },
+      select: { id: true }
+    });
+    if (!definition) {
+      throw new NotFoundException("Saved report was not found.");
+    }
   }
 
   private buildTicketWhere(user: AuthenticatedUser, query: TicketReportQueryDto, range: { start: Date; end: Date }) {

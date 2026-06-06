@@ -191,6 +191,7 @@ model Organization {
   aiActionSettings    AiActionSetting[]
   spamBlockEntries    SpamBlockEntry[]
   blockedInboundEmails BlockedInboundEmail[]
+  reportDefinitions   ReportDefinition[]
 
   @@map("organizations")
 }
@@ -263,6 +264,7 @@ model User {
   updatedKnowledgeArticles KnowledgeArticle[] @relation("KnowledgeArticleUpdatedBy")
   uploadedKnowledgeArticleAttachments KnowledgeArticleAttachment[] @relation("KnowledgeArticleAttachmentUploadedBy")
   reportExports       ReportExport[]
+  reportDefinitions   ReportDefinition[]
   performedTicketMerges TicketMerge[]
   createdSpamBlockEntries SpamBlockEntry[] @relation("SpamBlockEntryCreatedBy")
 
@@ -1126,6 +1128,25 @@ model ReportExport {
 
   @@index([requestedById, createdAt])
   @@map("report_exports")
+}
+
+model ReportDefinition {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  createdById    String?  @db.Uuid
+  name           String
+  description    String?
+  reportType     String   @default("ticket-report")
+  filters        Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy      User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, name])
+  @@index([organizationId, reportType])
+  @@index([createdById])
+  @@map("report_definitions")
 }
 
 model Device {
