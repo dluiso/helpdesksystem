@@ -173,7 +173,6 @@ export function PublicEventServiceRequest() {
       <section className="public-event-hero">
         <div className="public-event-brand">
           {logoUrl ? <img src={logoUrl} alt="" style={logoBackgroundStyle} /> : <span>{branding.applicationName.slice(0, 1)}</span>}
-          <strong>{config?.organization.name ?? branding.companyName}</strong>
         </div>
         <div>
           <p>Event & Services</p>
@@ -195,18 +194,20 @@ export function PublicEventServiceRequest() {
           <label>Event Name *<input className="public-event-input" required value={fieldValue(formData, "eventName")} onChange={(event) => updateField("eventName", event.target.value)} /></label>
           <label>Event Address and Venue Name *<input className="public-event-input" required value={fieldValue(formData, "venue")} onChange={(event) => updateField("venue", event.target.value)} /></label>
           <label className="span-2">Organizer *<input className="public-event-input" required value={fieldValue(formData, "organizer")} onChange={(event) => updateField("organizer", event.target.value)} /></label>
-          <label><CalendarDays size={15} /> Date *<input className="public-event-input" type="date" required value={fieldValue(formData, "eventDate")} onChange={(event) => updateField("eventDate", event.target.value)} /></label>
-          <div className="public-event-time-group">
-            <span><Clock size={15} /> Start Time *</span>
-            <select required value={startHour} onChange={(event) => setStartHour(event.target.value)}><option value="">HH</option>{hourOptions.map((hour) => <option key={hour} value={hour}>{hour}</option>)}</select>
-            <select value={startMinute} onChange={(event) => setStartMinute(event.target.value)}>{minuteOptions.map((minute) => <option key={minute} value={minute}>{minute}</option>)}</select>
-            {usesTwelveHourTime ? <select value={startPeriod} onChange={(event) => setStartPeriod(event.target.value as "AM" | "PM")}><option value="AM">AM</option><option value="PM">PM</option></select> : null}
-          </div>
-          <div className="public-event-time-group">
-            <span><Clock size={15} /> End Time *</span>
-            <select required value={endHour} onChange={(event) => setEndHour(event.target.value)}><option value="">HH</option>{hourOptions.map((hour) => <option key={hour} value={hour}>{hour}</option>)}</select>
-            <select value={endMinute} onChange={(event) => setEndMinute(event.target.value)}>{minuteOptions.map((minute) => <option key={minute} value={minute}>{minute}</option>)}</select>
-            {usesTwelveHourTime ? <select value={endPeriod} onChange={(event) => setEndPeriod(event.target.value as "AM" | "PM")}><option value="AM">AM</option><option value="PM">PM</option></select> : null}
+          <div className="public-event-schedule-row span-2">
+            <label><CalendarDays size={15} /> Date *<input className="public-event-input" type="date" required value={fieldValue(formData, "eventDate")} onChange={(event) => updateField("eventDate", event.target.value)} /></label>
+            <div className="public-event-time-group">
+              <span><Clock size={15} /> Start Time *</span>
+              <select required value={startHour} onChange={(event) => setStartHour(event.target.value)}><option value="">HH</option>{hourOptions.map((hour) => <option key={hour} value={hour}>{hour}</option>)}</select>
+              <select value={startMinute} onChange={(event) => setStartMinute(event.target.value)}>{minuteOptions.map((minute) => <option key={minute} value={minute}>{minute}</option>)}</select>
+              {usesTwelveHourTime ? <select value={startPeriod} onChange={(event) => setStartPeriod(event.target.value as "AM" | "PM")}><option value="AM">AM</option><option value="PM">PM</option></select> : null}
+            </div>
+            <div className="public-event-time-group">
+              <span><Clock size={15} /> End Time *</span>
+              <select required value={endHour} onChange={(event) => setEndHour(event.target.value)}><option value="">HH</option>{hourOptions.map((hour) => <option key={hour} value={hour}>{hour}</option>)}</select>
+              <select value={endMinute} onChange={(event) => setEndMinute(event.target.value)}>{minuteOptions.map((minute) => <option key={minute} value={minute}>{minute}</option>)}</select>
+              {usesTwelveHourTime ? <select value={endPeriod} onChange={(event) => setEndPeriod(event.target.value as "AM" | "PM")}><option value="AM">AM</option><option value="PM">PM</option></select> : null}
+            </div>
           </div>
         </div>
 

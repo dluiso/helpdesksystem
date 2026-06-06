@@ -323,6 +323,9 @@ model SystemSetting {
   turnstileSecretReference   String?
   turnstileProtectLogin      Boolean  @default(false)
   turnstileProtectPasswordReset Boolean @default(false)
+  eventTurnstileEnabled      Boolean  @default(false)
+  eventTurnstileSiteKey      String?
+  eventTurnstileSecretReference String?
   defaultTicketAutoReplyTemplate String?
   aiAssistantEnabled         Boolean  @default(true)
   remoteAccessProviderEnabled Boolean @default(false)

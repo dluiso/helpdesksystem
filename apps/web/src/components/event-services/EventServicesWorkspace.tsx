@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, CheckCircle2, ClipboardList, MessageSquare, Plus, RefreshCw, Save, Settings2, UsersRound } from "lucide-react";
+import { CalendarDays, CheckCircle2, ClipboardList, MessageSquare, Plus, RefreshCw, Save, UsersRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
@@ -55,14 +55,6 @@ interface EventServiceRequest {
   assignees: Array<{ user: UserOption; role: string | null }>;
   tasks: Array<{ id: string; title: string; description: string | null; status: TaskStatus; progressPercent: number; assignedUser: UserOption | null }>;
   comments?: Array<{ id: string; body: string; createdAt: string; user: UserOption | null }>;
-  activity?: Array<{ id: string; action: string; createdAt: string; user: UserOption | null }>;
-}
-
-interface EventForm {
-  id: string;
-  name: string;
-  introText: string | null;
-  fields: Array<{ id: string; label: string; fieldKey: string; type: string; isRequired: boolean; sortOrder: number; isActive: boolean }>;
 }
 
 const statuses: EventStatus[] = ["NEW", "UNDER_REVIEW", "SCHEDULED", "ASSIGNED", "IN_PROGRESS", "WAITING_ON_CLIENT", "WAITING_ON_INTERNAL_TEAM", "COMPLETED", "CANCELLED", "CONVERTED_TO_TICKET"];
@@ -88,13 +80,10 @@ export function EventServicesWorkspace() {
   const [services, setServices] = useState<EventServiceCatalogItem[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [teams, setTeams] = useState<TicketTeam[]>([]);
-  const [form, setForm] = useState<EventForm | null>(null);
   const [filters, setFilters] = useState({ search: "", status: "", assignedUserId: "", assignedTeamId: "", serviceId: "" });
   const [draft, setDraft] = useState({ status: "NEW" as EventStatus, priority: "NORMAL" as Priority, progressPercent: 0, assignedTeamId: "", assignedUserIds: [] as string[], additionalInfo: "" });
   const [taskDraft, setTaskDraft] = useState({ title: "", assignedUserId: "", description: "" });
   const [commentDraft, setCommentDraft] = useState("");
-  const [serviceDraft, setServiceDraft] = useState({ name: "", description: "", icon: "", isActive: true });
-  const [fieldDraft, setFieldDraft] = useState({ label: "", fieldKey: "", type: "TEXT", isRequired: false, sortOrder: 100 });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -115,18 +104,16 @@ export function EventServicesWorkspace() {
       if (value) params.set(key, value);
     });
     try {
-      const [requestData, serviceData, userData, teamData, formData] = await Promise.all([
+      const [requestData, serviceData, userData, teamData] = await Promise.all([
         apiFetch<EventServiceRequest[]>(`/event-services?${params.toString()}`),
         apiFetch<EventServiceCatalogItem[]>("/event-services/services"),
         apiFetch<UserOption[]>("/users"),
-        apiFetch<TicketTeam[]>("/ticket-teams"),
-        apiFetch<EventForm>("/event-services/form").catch(() => null)
+        apiFetch<TicketTeam[]>("/ticket-teams")
       ]);
       setRequests(requestData);
       setServices(serviceData);
       setUsers(userData);
       setTeams(teamData);
-      setForm(formData);
       if (!selectedId && requestData[0]) {
         setSelectedId(requestData[0].id);
       }
@@ -229,39 +216,6 @@ export function EventServicesWorkspace() {
     }
   }
 
-  async function createService() {
-    if (!serviceDraft.name.trim()) return;
-    setBusy("service");
-    try {
-      await apiFetch("/event-services/services", { method: "POST", body: JSON.stringify(serviceDraft) });
-      setServiceDraft({ name: "", description: "", icon: "", isActive: true });
-      await loadData();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to create service.");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function createField() {
-    if (!fieldDraft.label.trim() || !fieldDraft.fieldKey.trim()) return;
-    setBusy("field");
-    try {
-      await apiFetch("/event-services/form/fields", { method: "POST", body: JSON.stringify(fieldDraft) });
-      setFieldDraft({ label: "", fieldKey: "", type: "TEXT", isRequired: false, sortOrder: 100 });
-      const formData = await apiFetch<EventForm>("/event-services/form");
-      setForm(formData);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to create form field.");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  function applyFilters() {
-    void loadData(filters);
-  }
-
   return (
     <div className="event-services-page">
       <div className="page-title-row">
@@ -298,7 +252,7 @@ export function EventServicesWorkspace() {
           <option value="">All technicians</option>
           {users.map((user) => <option key={user.id} value={user.id}>{userName(user)}</option>)}
         </select>
-        <button className="button" type="button" onClick={applyFilters}>Apply Filters</button>
+        <button className="button" type="button" onClick={() => void loadData(filters)}>Apply Filters</button>
       </section>
 
       <div className="event-services-layout">
@@ -310,7 +264,7 @@ export function EventServicesWorkspace() {
               <span>
                 <strong>{request.trackingNumber}</strong>
                 <span>{request.eventName}</span>
-                <small>{request.requesterFirstName} {request.requesterLastName} · {formatDate(request.eventDate)}</small>
+                <small>{request.requesterFirstName} {request.requesterLastName} - {formatDate(request.eventDate)}</small>
               </span>
               <span className={`status-pill status-${request.status.toLowerCase().replaceAll("_", "-")}`}>{label(request.status)}</span>
             </button>
@@ -386,33 +340,6 @@ export function EventServicesWorkspace() {
           ) : <p className="muted">Select a request to review details.</p>}
         </section>
       </div>
-
-      <section className="panel event-admin-panel">
-        <div className="section-heading"><div><h2><Settings2 size={18} />Public Form Setup</h2><p className="muted">Manage service options and basic form fields used by the public scheduling form.</p></div></div>
-        <div className="event-admin-grid">
-          <div className="nested-panel">
-            <h3>Services</h3>
-            <div className="event-service-create">
-              <input className="input" placeholder="Service name" value={serviceDraft.name} onChange={(event) => setServiceDraft((current) => ({ ...current, name: event.target.value }))} />
-              <input className="input" placeholder="Description" value={serviceDraft.description} onChange={(event) => setServiceDraft((current) => ({ ...current, description: event.target.value }))} />
-              <button className="button secondary" type="button" onClick={createService} disabled={busy === "service"}>Add Service</button>
-            </div>
-            {services.map((service) => <div className="event-admin-row" key={service.id}><strong>{service.name}</strong><span>{service.isActive ? "Active" : "Inactive"}</span></div>)}
-          </div>
-          <div className="nested-panel">
-            <h3>Form Fields</h3>
-            <div className="event-service-create">
-              <input className="input" placeholder="Label" value={fieldDraft.label} onChange={(event) => setFieldDraft((current) => ({ ...current, label: event.target.value }))} />
-              <input className="input" placeholder="field_key" value={fieldDraft.fieldKey} onChange={(event) => setFieldDraft((current) => ({ ...current, fieldKey: event.target.value }))} />
-              <select className="input" value={fieldDraft.type} onChange={(event) => setFieldDraft((current) => ({ ...current, type: event.target.value }))}>
-                {["TEXT", "TEXTAREA", "EMAIL", "PHONE", "DATE", "TIME", "SELECT", "MULTI_SELECT", "CHECKBOX", "RADIO", "NUMBER"].map((type) => <option key={type} value={type}>{label(type)}</option>)}
-              </select>
-              <button className="button secondary" type="button" onClick={createField} disabled={busy === "field"}>Add Field</button>
-            </div>
-            {form?.fields.map((field) => <div className="event-admin-row" key={field.id}><strong>{field.label}</strong><span>{label(field.type)} · {field.isRequired ? "Required" : "Optional"}</span></div>)}
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

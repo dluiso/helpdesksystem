@@ -2,6 +2,7 @@
 
 import { Download, Plus, RefreshCcw, RotateCw, TestTube2, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { EventServicesConfigPanel } from "@/components/settings/EventServicesConfigPanel";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
 
 interface Mailbox {
@@ -550,7 +551,7 @@ export function SettingsWorkspace() {
   const [selectedClientByDomain, setSelectedClientByDomain] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<"general" | "mailboxes" | "autoReplies" | "teams" | "routing" | "domains" | "notifications" | "spam" | "maintenance" | "logs" | "security" | "ai">("general");
+  const [activeSection, setActiveSection] = useState<"general" | "mailboxes" | "autoReplies" | "teams" | "routing" | "domains" | "notifications" | "events" | "spam" | "maintenance" | "logs" | "security" | "ai">("general");
   const [generalTab, setGeneralTab] = useState<GeneralTab>("identity");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1636,6 +1637,9 @@ export function SettingsWorkspace() {
           </button>
           <button className={activeSection === "notifications" ? "active" : ""} type="button" onClick={() => setActiveSection("notifications")}>
             Notifications
+          </button>
+          <button className={activeSection === "events" ? "active" : ""} type="button" onClick={() => setActiveSection("events")}>
+            Events Config
           </button>
           <button className={activeSection === "spam" ? "active" : ""} type="button" onClick={() => setActiveSection("spam")}>
             Spam Management
@@ -2958,6 +2962,8 @@ export function SettingsWorkspace() {
               </div>
             </section>
           ) : null}
+
+          {activeSection === "events" ? <EventServicesConfigPanel /> : null}
 
           {activeSection === "maintenance" ? (
             <section className="grid columns-2">

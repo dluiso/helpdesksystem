@@ -9,6 +9,7 @@ import { CreateEventServiceCommentDto } from "./dto/create-event-service-comment
 import { CreateEventServiceTaskDto } from "./dto/create-event-service-task.dto";
 import { CreatePublicEventServiceRequestDto } from "./dto/create-public-event-service-request.dto";
 import { ListEventServiceRequestsDto } from "./dto/list-event-service-requests.dto";
+import { UpdateEventServiceTurnstileDto } from "./dto/update-event-service-turnstile.dto";
 import { UpdateEventServiceRequestDto } from "./dto/update-event-service-request.dto";
 import { UpdateEventServiceTaskDto } from "./dto/update-event-service-task.dto";
 import { UpsertEventServiceFormFieldDto } from "./dto/upsert-event-service-form-field.dto";
@@ -44,6 +45,20 @@ export class EventServicesController {
   @RequirePermissions("event_services.view")
   listServices(@CurrentUser() user: AuthenticatedUser) {
     return this.eventServices.listServices(user);
+  }
+
+  @Get("event-services/config/turnstile")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.manage_forms")
+  getTurnstileConfig(@CurrentUser() user: AuthenticatedUser) {
+    return this.eventServices.getTurnstileConfig(user);
+  }
+
+  @Patch("event-services/config/turnstile")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.manage_forms")
+  updateTurnstileConfig(@CurrentUser() user: AuthenticatedUser, @Body() body: UpdateEventServiceTurnstileDto) {
+    return this.eventServices.updateTurnstileConfig(user, body);
   }
 
   @Post("event-services/services")

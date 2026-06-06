@@ -1526,7 +1526,7 @@ select {
   display: grid;
   gap: 20px;
   width: min(1180px, calc(100% - 32px));
-  margin: -72px auto 48px;
+  margin: -34px auto 48px;
   padding: 28px;
   border: 1px solid #d7e0eb;
   border-radius: 14px;
@@ -1566,6 +1566,19 @@ select {
   grid-column: 1 / -1;
 }
 
+.public-event-schedule-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.9fr) minmax(250px, 1fr) minmax(250px, 1fr);
+  gap: 16px;
+  align-items: end;
+}
+
+.public-event-schedule-row > label {
+  display: grid;
+  gap: 8px;
+  font-weight: 750;
+}
+
 .public-event-input,
 .public-event-time-group select {
   width: 100%;
@@ -1586,7 +1599,7 @@ textarea.public-event-input {
 
 .public-event-time-group {
   display: grid;
-  grid-template-columns: minmax(92px, 1fr) 76px 76px;
+  grid-template-columns: minmax(84px, 1fr) 70px 70px;
   gap: 8px;
   align-items: end;
 }
@@ -4966,6 +4979,7 @@ a.dashboard-list-row:hover {
   .event-detail-columns,
   .event-admin-grid,
   .public-event-grid,
+  .public-event-schedule-row,
   .public-event-service-grid {
     grid-template-columns: 1fr;
   }
@@ -4990,7 +5004,7 @@ a.dashboard-list-row:hover {
   .public-event-form-card,
   .public-event-success {
     width: calc(100% - 20px);
-    margin-top: -64px;
+    margin-top: -42px;
     padding: 18px;
     border-radius: 10px;
   }

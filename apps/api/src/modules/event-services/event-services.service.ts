@@ -9,6 +9,7 @@ import { CreateEventServiceCommentDto } from "./dto/create-event-service-comment
 import { CreateEventServiceTaskDto } from "./dto/create-event-service-task.dto";
 import { CreatePublicEventServiceRequestDto } from "./dto/create-public-event-service-request.dto";
 import { ListEventServiceRequestsDto } from "./dto/list-event-service-requests.dto";
+import { UpdateEventServiceTurnstileDto } from "./dto/update-event-service-turnstile.dto";
 import { UpdateEventServiceRequestDto } from "./dto/update-event-service-request.dto";
 import { UpdateEventServiceTaskDto } from "./dto/update-event-service-task.dto";
 import { UpsertEventServiceFormFieldDto } from "./dto/upsert-event-service-form-field.dto";
@@ -31,7 +32,7 @@ export class EventServicesService {
     const [settings, services, form] = await Promise.all([
       this.prisma.systemSetting.findUnique({
         where: { organizationId: organization.id },
-        select: { companyName: true, supportEmail: true, turnstileEnabled: true, turnstileSiteKey: true }
+        select: { companyName: true, supportEmail: true, eventTurnstileEnabled: true, eventTurnstileSiteKey: true }
       }),
       this.prisma.eventServiceService.findMany({
         where: { organizationId: organization.id, isActive: true },
@@ -45,7 +46,7 @@ export class EventServicesService {
         name: settings?.companyName ?? organization.name,
         supportEmail: settings?.supportEmail ?? "support@aviditytechnologies.com"
       },
-      turnstileSiteKey: settings?.turnstileEnabled ? settings.turnstileSiteKey : null,
+      turnstileSiteKey: settings?.eventTurnstileEnabled ? settings.eventTurnstileSiteKey : null,
       services,
       form
     };
@@ -272,6 +273,58 @@ export class EventServicesService {
     });
   }
 
+  async getTurnstileConfig(user: AuthenticatedUser) {
+    const settings = await this.prisma.systemSetting.findUnique({
+      where: { organizationId: user.organizationId },
+      select: {
+        eventTurnstileEnabled: true,
+        eventTurnstileSiteKey: true,
+        eventTurnstileSecretReference: true
+      }
+    });
+
+    return {
+      eventTurnstileEnabled: settings?.eventTurnstileEnabled ?? false,
+      eventTurnstileSiteKey: settings?.eventTurnstileSiteKey ?? null,
+      eventTurnstileSecretReference: settings?.eventTurnstileSecretReference ?? "env:EVENT_TURNSTILE_SECRET_KEY"
+    };
+  }
+
+  async updateTurnstileConfig(user: AuthenticatedUser, input: UpdateEventServiceTurnstileDto) {
+    const settings = await this.prisma.systemSetting.upsert({
+      where: { organizationId: user.organizationId },
+      create: {
+        organizationId: user.organizationId,
+        applicationName: this.config.get<string>("APP_NAME") ?? "Avidity IT Management Tool",
+        companyName: this.config.get<string>("DEFAULT_COMPANY_NAME") ?? "Avidity Technologies",
+        supportEmail: this.config.get<string>("DEFAULT_SUPPORT_EMAIL") ?? "support@aviditytechnologies.com",
+        eventTurnstileEnabled: input.eventTurnstileEnabled,
+        eventTurnstileSiteKey: this.optionalTrim(input.eventTurnstileSiteKey),
+        eventTurnstileSecretReference: this.optionalTrim(input.eventTurnstileSecretReference)
+      },
+      update: {
+        eventTurnstileEnabled: input.eventTurnstileEnabled,
+        eventTurnstileSiteKey: this.optionalTrim(input.eventTurnstileSiteKey),
+        eventTurnstileSecretReference: this.optionalTrim(input.eventTurnstileSecretReference)
+      },
+      select: {
+        eventTurnstileEnabled: true,
+        eventTurnstileSiteKey: true,
+        eventTurnstileSecretReference: true
+      }
+    });
+
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "EventServiceConfig",
+      entityId: user.organizationId,
+      action: "event_service.turnstile_updated",
+      metadata: { eventTurnstileEnabled: settings.eventTurnstileEnabled }
+    });
+
+    return settings;
+  }
+
   async createService(user: AuthenticatedUser, input: UpsertEventServiceServiceDto) {
     const service = await this.prisma.eventServiceService.create({
       data: this.serviceCreateData(user.organizationId, input)
@@ -425,15 +478,15 @@ export class EventServicesService {
   private async verifyPublicTurnstile(organizationId: string, token: string | undefined, remoteIp?: string) {
     const settings = await this.prisma.systemSetting.findUnique({
       where: { organizationId },
-      select: { turnstileEnabled: true, turnstileSecretReference: true, turnstileSiteKey: true }
+      select: { eventTurnstileEnabled: true, eventTurnstileSecretReference: true, eventTurnstileSiteKey: true }
     });
-    if (!settings?.turnstileEnabled || !settings.turnstileSiteKey) {
+    if (!settings?.eventTurnstileEnabled || !settings.eventTurnstileSiteKey) {
       return;
     }
     if (!token) {
       throw new UnauthorizedException("Security verification is required.");
     }
-    const secret = this.resolveSecret(settings.turnstileSecretReference);
+    const secret = this.resolveSecret(settings.eventTurnstileSecretReference);
     if (!secret) {
       throw new UnauthorizedException("Security verification is not configured.");
     }
