@@ -17,6 +17,7 @@ describe("AuthService", () => {
   };
   const auditLogs = { create: jest.fn() };
   const mailDelivery = { sendTicketReply: jest.fn() };
+  const moduleRef = { get: jest.fn(() => mailDelivery) };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -49,7 +50,7 @@ describe("AuthService", () => {
         findUnique: jest.fn().mockResolvedValue(null)
       }
     };
-    const service = new AuthService(prisma as never, config as never, auditLogs as never, mailDelivery as never);
+    const service = new AuthService(prisma as never, config as never, auditLogs as never, moduleRef as never);
 
     const result = await service.login(
       { email: "ADMIN@example.com", password: "ChangeMeNow!123" },
@@ -71,7 +72,7 @@ describe("AuthService", () => {
         findFirst: jest.fn().mockResolvedValue(null)
       }
     };
-    const service = new AuthService(prisma as never, config as never, auditLogs as never, mailDelivery as never);
+    const service = new AuthService(prisma as never, config as never, auditLogs as never, moduleRef as never);
 
     await expect(
       service.login({ email: "missing@example.com", password: "ChangeMeNow!123" }, { ipAddress: "127.0.0.1" })
@@ -80,7 +81,7 @@ describe("AuthService", () => {
   });
 
   it("uses HttpOnly cookie settings", () => {
-    const service = new AuthService({} as never, config as never, auditLogs as never, mailDelivery as never);
+    const service = new AuthService({} as never, config as never, auditLogs as never, moduleRef as never);
     expect(service.getCookieOptions()).toMatchObject({
       httpOnly: true,
       secure: false,

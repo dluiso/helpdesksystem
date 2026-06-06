@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { ModuleRef } from "@nestjs/core";
 import { ConfigService } from "@nestjs/config";
 import { User } from "@prisma/client";
 import argon2 from "argon2";
@@ -25,7 +26,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly auditLogs: AuditLogsService,
-    private readonly mailDelivery: MailDeliveryService
+    private readonly moduleRef: ModuleRef
   ) {}
 
   getCookieName(): string {
@@ -491,7 +492,8 @@ export class AuthService {
     const bodyText = `A password reset was requested for your ${settings.applicationName} account.\n\nOpen this link within ${settings.passwordResetTokenTtlMinutes} minutes:\n${resetUrl}\n\nIf you did not request this, ignore this email.`;
     const escapedUrl = resetUrl.replace(/"/g, "%22");
     const bodyHtml = `<p>A password reset was requested for your ${this.escapeHtml(settings.applicationName)} account.</p><p><a href="${escapedUrl}">Reset your password</a></p><p>This link expires in ${settings.passwordResetTokenTtlMinutes} minutes.</p><p>If you did not request this, ignore this email.</p>`;
-    await this.mailDelivery.sendTicketReply({
+    const mailDelivery = this.moduleRef.get(MailDeliveryService, { strict: false });
+    await mailDelivery.sendTicketReply({
       organizationId,
       to: [email],
       subject: `${settings.applicationName} password reset`,
