@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/layout/AppShell";
+import { ReportsWorkspace } from "@/components/reports/ReportsWorkspace";
 
 export default function ReportsPage() {
   return (
@@ -6,19 +7,10 @@ export default function ReportsPage() {
       <div className="page-header">
         <div>
           <h1>Reports</h1>
-          <p className="muted">CSV exports and ticket performance metrics are reserved for the reporting milestone.</p>
+          <p className="muted">Ticket performance, client workload, operational trends, estimates, and CSV exports.</p>
         </div>
       </div>
-      <section className="grid columns-2">
-        <div className="panel">
-          <h2>Ticket Volume</h2>
-          <p className="muted">Date range filters will drive created and closed ticket counts.</p>
-        </div>
-        <div className="panel">
-          <h2>Response Metrics</h2>
-          <p className="muted">First response and resolution time calculations will appear here.</p>
-        </div>
-      </section>
+      <ReportsWorkspace />
     </AppShell>
   );
 }

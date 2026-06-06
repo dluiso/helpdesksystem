@@ -2292,6 +2292,105 @@ a.dashboard-list-row:hover {
   font-size: 12px;
 }
 
+.reports-workspace {
+  display: grid;
+  gap: 16px;
+}
+
+.reports-filter-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.reports-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.reports-status-filter {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+}
+
+.reports-status-filter > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-weight: 800;
+}
+
+.reports-status-filter > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.report-kpi-card {
+  cursor: default;
+}
+
+.report-activity-chart {
+  height: 240px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18px, 1fr));
+  gap: 4px;
+  align-items: end;
+  padding: 12px 6px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+
+.report-activity-day {
+  height: 100%;
+  min-width: 18px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 18px;
+  gap: 6px;
+  align-items: end;
+}
+
+.report-activity-day small {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.report-activity-bars {
+  height: 100%;
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  gap: 2px;
+}
+
+.report-activity-bars span {
+  width: 7px;
+  min-height: 4px;
+  border-radius: 999px 999px 0 0;
+}
+
+.report-activity-bars .created,
+.dashboard-chart-legend .created {
+  background: var(--brand-primary);
+}
+
+.report-activity-bars .resolved,
+.dashboard-chart-legend .resolved {
+  background: var(--success);
+}
+
+.report-activity-bars .closed,
+.dashboard-chart-legend .closed {
+  background: #64748b;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3549,6 +3648,7 @@ a.dashboard-list-row:hover {
   .dashboard-insight-grid,
   .dashboard-donut-layout,
   .dashboard-insight-row,
+  .reports-filter-grid,
   .knowledge-toolbar,
   .knowledge-layout,
   .knowledge-editor-grid {
