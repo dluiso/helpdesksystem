@@ -171,6 +171,10 @@ export class UsersService {
       },
       select: { id: true, email: true, firstName: true, lastName: true, mfaEnabled: true }
     });
+    await this.prisma.mfaTrustedDevice.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() }
+    });
 
     await this.auditLogs.create({
       userId: user.id,

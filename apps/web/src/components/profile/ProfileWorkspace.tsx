@@ -483,7 +483,7 @@ export function ProfileWorkspace() {
                 <div className="section-heading">
                   <div>
                     <h3>Two-Factor Authentication</h3>
-                    <p className="muted">Use an authenticator app for an additional sign-in step.</p>
+                    <p className="muted">Enable 2FA with Google Authenticator, Microsoft Authenticator, or any compatible authenticator app.</p>
                   </div>
                   <span className={`status-pill ${profile?.user.mfaEnabled ? "success" : "muted-pill"}`}>{profile?.user.mfaEnabled ? "Enabled" : "Disabled"}</span>
                 </div>
@@ -493,8 +493,8 @@ export function ProfileWorkspace() {
                     <input className="input" type="password" value={mfaPassword} onChange={(event) => setMfaPassword(event.target.value)} />
                   </label>
                   <label>
-                    Authenticator or recovery code
-                    <input className="input" value={mfaCode} onChange={(event) => setMfaCode(event.target.value)} placeholder={profile?.user.mfaEnabled ? "Required to disable" : "6-digit code"} />
+                    {profile?.user.mfaEnabled ? "Authenticator or recovery code" : "Authenticator code"}
+                    <input className="input" value={mfaCode} onChange={(event) => setMfaCode(event.target.value)} placeholder={profile?.user.mfaEnabled ? "Required to disable 2FA" : "Enter 6-digit setup code"} />
                   </label>
                 </div>
                 {mfaSetup ? (
@@ -525,7 +525,7 @@ export function ProfileWorkspace() {
                     </button>
                   ) : (
                     <button className="button secondary" type="button" onClick={startMfaSetup} disabled={busy === "mfa" || !mfaPassword}>
-                      Set Up 2FA
+                      Enable 2FA
                     </button>
                   )}
                 </div>

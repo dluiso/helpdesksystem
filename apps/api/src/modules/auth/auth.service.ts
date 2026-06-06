@@ -18,6 +18,7 @@ import { decryptSecret, generateSecurityToken, hashSecurityToken, verifyTotpCode
 interface RequestContext {
   ipAddress?: string | null;
   userAgent?: string | null;
+  trustedDeviceToken?: string | null;
 }
 
 @Injectable()
@@ -33,6 +34,10 @@ export class AuthService {
     return this.config.get<string>("SESSION_COOKIE_NAME") ?? "avidity_session";
   }
 
+  getTrustedDeviceCookieName(): string {
+    return `${this.getCookieName()}_mfa_device`;
+  }
+
   getCookieOptions(): CookieOptions {
     return {
       ...this.getBaseCookieOptions(),
@@ -42,6 +47,13 @@ export class AuthService {
 
   getClearCookieOptions(): CookieOptions {
     return this.getBaseCookieOptions();
+  }
+
+  getTrustedDeviceCookieOptions(expiresAt: Date): CookieOptions {
+    return {
+      ...this.getBaseCookieOptions(),
+      expires: expiresAt
+    };
   }
 
   private getBaseCookieOptions(): CookieOptions {
@@ -107,6 +119,24 @@ export class AuthService {
         });
         throw new UnauthorizedException("Multi-factor authentication is required for this account.");
       }
+      const trustedDevice = await this.validateTrustedDevice(user.id, context.trustedDeviceToken);
+      if (trustedDevice) {
+        const sessionToken = await this.createSession(user.id, context);
+        await this.auditLogs.create({
+          userId: user.id,
+          entityType: "User",
+          entityId: user.id,
+          action: "auth.login_success_trusted_device",
+          ipAddress: context.ipAddress,
+          userAgent: context.userAgent
+        });
+
+        return {
+          mfaRequired: false,
+          sessionToken,
+          user: await this.buildAuthenticatedUser(user.id)
+        };
+      }
       const challengeToken = generateSecurityToken();
       await this.prisma.mfaLoginChallenge.create({
         data: {
@@ -128,7 +158,8 @@ export class AuthService {
         userAgent: context.userAgent
       });
 
-      return { mfaRequired: true, challengeToken };
+      const settings = await this.getSecuritySettings(user.organizationId);
+      return { mfaRequired: true, challengeToken, trustedDeviceDays: settings.mfaTrustedDeviceDays };
     }
 
     const sessionToken = await this.createSession(user.id, context);
@@ -178,6 +209,7 @@ export class AuthService {
     });
 
     const sessionToken = await this.createSession(challenge.user.id, context);
+    const trustedDevice = input.trustDevice ? await this.createTrustedDevice(challenge.user, context) : null;
     await this.auditLogs.create({
       userId: challenge.user.id,
       entityType: "User",
@@ -189,6 +221,8 @@ export class AuthService {
 
     return {
       sessionToken,
+      trustedDeviceToken: trustedDevice?.token,
+      trustedDeviceExpiresAt: trustedDevice?.expiresAt,
       user: await this.buildAuthenticatedUser(challenge.user.id)
     };
   }
@@ -253,6 +287,24 @@ export class AuthService {
     if (!reset || reset.usedAt || reset.expiresAt <= new Date() || reset.user.deletedAt || !reset.user.isActive) {
       throw new UnauthorizedException("The password reset link is invalid or expired.");
     }
+    if (reset.user.mfaEnabled && reset.user.totpSecretEncrypted) {
+      if (!input.mfaCode) {
+        throw new UnauthorizedException("Two-factor authentication code is required to reset this password.");
+      }
+      const secret = decryptSecret(reset.user.totpSecretEncrypted, this.getSecretEncryptionKey());
+      const recoveryCodeMatched = await this.consumeRecoveryCode(reset.user.id, input.mfaCode);
+      if (!recoveryCodeMatched && !verifyTotpCode(secret, input.mfaCode)) {
+        await this.auditLogs.create({
+          userId: reset.userId,
+          entityType: "User",
+          entityId: reset.userId,
+          action: "auth.password_reset_mfa_failure",
+          ipAddress: context.ipAddress,
+          userAgent: context.userAgent
+        });
+        throw new UnauthorizedException("The authentication code was not accepted.");
+      }
+    }
 
     await this.prisma.$transaction([
       this.prisma.user.update({
@@ -263,7 +315,8 @@ export class AuthService {
         }
       }),
       this.prisma.passwordResetToken.update({ where: { id: reset.id }, data: { usedAt: new Date() } }),
-      this.prisma.session.updateMany({ where: { userId: reset.userId, revokedAt: null }, data: { revokedAt: new Date() } })
+      this.prisma.session.updateMany({ where: { userId: reset.userId, revokedAt: null }, data: { revokedAt: new Date() } }),
+      this.prisma.mfaTrustedDevice.updateMany({ where: { userId: reset.userId, revokedAt: null }, data: { revokedAt: new Date() } })
     ]);
 
     await this.auditLogs.create({
@@ -404,6 +457,66 @@ export class AuthService {
     return true;
   }
 
+  private async validateTrustedDevice(userId: string, token: string | null | undefined) {
+    if (!token) {
+      return null;
+    }
+    const trustedDevice = await this.prisma.mfaTrustedDevice.findFirst({
+      where: {
+        userId,
+        tokenHash: hashSecurityToken(token),
+        revokedAt: null,
+        expiresAt: { gt: new Date() }
+      }
+    });
+    if (!trustedDevice) {
+      return null;
+    }
+    await this.prisma.mfaTrustedDevice.update({
+      where: { id: trustedDevice.id },
+      data: { lastUsedAt: new Date() }
+    });
+    return trustedDevice;
+  }
+
+  private async createTrustedDevice(user: User, context: RequestContext) {
+    const settings = await this.getSecuritySettings(user.organizationId);
+    const days = Math.min(90, Math.max(1, settings.mfaTrustedDeviceDays));
+    const token = generateSecurityToken();
+    const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    await this.prisma.mfaTrustedDevice.create({
+      data: {
+        organizationId: user.organizationId,
+        userId: user.id,
+        tokenHash: hashSecurityToken(token),
+        label: this.trustedDeviceLabel(context.userAgent),
+        ipAddress: context.ipAddress,
+        userAgent: context.userAgent,
+        expiresAt,
+        lastUsedAt: new Date()
+      }
+    });
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "MfaTrustedDevice",
+      entityId: user.id,
+      action: "auth.mfa_trusted_device_created",
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent,
+      metadata: { expiresAt }
+    });
+    return { token, expiresAt };
+  }
+
+  private trustedDeviceLabel(userAgent: string | null | undefined) {
+    if (!userAgent) {
+      return "Trusted device";
+    }
+    const browser = userAgent.includes("Edg/") ? "Edge" : userAgent.includes("Chrome/") ? "Chrome" : userAgent.includes("Firefox/") ? "Firefox" : userAgent.includes("Safari/") ? "Safari" : "Browser";
+    const platform = userAgent.includes("Windows") ? "Windows" : userAgent.includes("Macintosh") ? "macOS" : userAgent.includes("Android") ? "Android" : userAgent.includes("iPhone") || userAgent.includes("iPad") ? "iOS" : "Device";
+    return `${browser} on ${platform}`;
+  }
+
   private async getSecuritySettings(organizationId: string) {
     const settings = await this.prisma.systemSetting.findUnique({
       where: { organizationId },
@@ -415,6 +528,7 @@ export class AuthService {
         passwordResetTokenTtlMinutes: true,
         mfaRequiredForAdmins: true,
         mfaRequiredForAllUsers: true,
+        mfaTrustedDeviceDays: true,
         turnstileEnabled: true,
         turnstileSecretReference: true,
         turnstileProtectLogin: true,
@@ -429,6 +543,7 @@ export class AuthService {
       passwordResetTokenTtlMinutes: settings?.passwordResetTokenTtlMinutes ?? 30,
       mfaRequiredForAdmins: settings?.mfaRequiredForAdmins ?? false,
       mfaRequiredForAllUsers: settings?.mfaRequiredForAllUsers ?? false,
+      mfaTrustedDeviceDays: settings?.mfaTrustedDeviceDays ?? 30,
       turnstileEnabled: settings?.turnstileEnabled ?? false,
       turnstileSecretReference: settings?.turnstileSecretReference ?? null,
       turnstileProtectLogin: settings?.turnstileProtectLogin ?? false,

@@ -197,6 +197,7 @@ model Organization {
   passwordResetTokens  PasswordResetToken[]
   mfaLoginChallenges   MfaLoginChallenge[]
   mfaSetupChallenges   MfaSetupChallenge[]
+  mfaTrustedDevices    MfaTrustedDevice[]
 
   @@map("organizations")
 }
@@ -277,6 +278,7 @@ model SystemSetting {
   mfaUserManagedEnabled      Boolean  @default(true)
   mfaRequiredForAdmins       Boolean  @default(false)
   mfaRequiredForAllUsers     Boolean  @default(false)
+  mfaTrustedDeviceDays       Int      @default(30)
   turnstileEnabled           Boolean  @default(false)
   turnstileSiteKey           String?
   turnstileSecretReference   String?
@@ -320,6 +322,7 @@ model User {
   passwordResetTokens PasswordResetToken[]
   mfaLoginChallenges  MfaLoginChallenge[]
   mfaSetupChallenges  MfaSetupChallenge[]
+  mfaTrustedDevices   MfaTrustedDevice[]
   groups              UserGroup[]
   authoredMessages    TicketMessage[] @relation("UserAuthoredMessages")
   assignedTickets     Ticket[] @relation("AssignedTickets")
@@ -421,6 +424,29 @@ model MfaSetupChallenge {
   @@index([userId])
   @@index([expiresAt])
   @@map("mfa_setup_challenges")
+}
+
+model MfaTrustedDevice {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @db.Uuid
+  userId         String    @db.Uuid
+  tokenHash      String    @unique
+  label          String?
+  ipAddress      String?
+  userAgent      String?
+  expiresAt      DateTime
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("mfa_trusted_devices")
 }
 
 model Group {

@@ -240,6 +240,7 @@ export class SystemSettingsService {
         mfaUserManagedEnabled: input.mfaUserManagedEnabled,
         mfaRequiredForAdmins: input.mfaRequiredForAdmins,
         mfaRequiredForAllUsers: input.mfaRequiredForAllUsers,
+        mfaTrustedDeviceDays: input.mfaTrustedDeviceDays,
         turnstileEnabled: input.turnstileEnabled,
         turnstileSiteKey: this.optionalString(input.turnstileSiteKey),
         turnstileSecretReference,
@@ -258,6 +259,7 @@ export class SystemSettingsService {
         mfaUserManagedEnabled: updated.mfaUserManagedEnabled,
         mfaRequiredForAdmins: updated.mfaRequiredForAdmins,
         mfaRequiredForAllUsers: updated.mfaRequiredForAllUsers,
+        mfaTrustedDeviceDays: updated.mfaTrustedDeviceDays,
         turnstileEnabled: updated.turnstileEnabled,
         turnstileProtectLogin: updated.turnstileProtectLogin,
         turnstileProtectPasswordReset: updated.turnstileProtectPasswordReset,
@@ -493,6 +495,7 @@ export class SystemSettingsService {
     mfaUserManagedEnabled: boolean;
     mfaRequiredForAdmins: boolean;
     mfaRequiredForAllUsers: boolean;
+    mfaTrustedDeviceDays: number;
     turnstileEnabled: boolean;
     turnstileSiteKey: string | null;
     turnstileSecretReference: string | null;
@@ -505,6 +508,7 @@ export class SystemSettingsService {
       mfaUserManagedEnabled: settings.mfaUserManagedEnabled,
       mfaRequiredForAdmins: settings.mfaRequiredForAdmins,
       mfaRequiredForAllUsers: settings.mfaRequiredForAllUsers,
+      mfaTrustedDeviceDays: settings.mfaTrustedDeviceDays,
       turnstileEnabled: settings.turnstileEnabled,
       turnstileSiteKey: settings.turnstileSiteKey,
       turnstileSecretReference: settings.turnstileSecretReference,

@@ -8,6 +8,8 @@ export default function ResetPasswordPage() {
   const token = useMemo(() => (typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("token") ?? ""), []);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaRequired, setMfaRequired] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -24,13 +26,18 @@ export default function ResetPasswordPage() {
     try {
       await apiFetch("/auth/reset-password", {
         method: "POST",
-        body: JSON.stringify({ token, newPassword })
+        body: JSON.stringify({ token, newPassword, mfaCode: mfaCode || undefined })
       });
       setMessage("Password reset completed. You can sign in with the new password.");
       setNewPassword("");
       setConfirmPassword("");
+      setMfaCode("");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to reset password.");
+      const message = caught instanceof Error ? caught.message : "Unable to reset password.";
+      if (message.includes("Two-factor authentication code is required")) {
+        setMfaRequired(true);
+      }
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -54,6 +61,12 @@ export default function ResetPasswordPage() {
             <label htmlFor="confirmPassword">Confirm password</label>
             <input className="input" id="confirmPassword" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required minLength={12} />
           </div>
+          {mfaRequired ? (
+            <div className="field">
+              <label htmlFor="mfaCode">Authenticator or recovery code</label>
+              <input className="input" id="mfaCode" autoComplete="one-time-code" value={mfaCode} onChange={(event) => setMfaCode(event.target.value)} required minLength={6} />
+            </div>
+          ) : null}
           {message ? <div className="success-banner compact-banner">{message}</div> : null}
           {error ? <div className="error">{error}</div> : null}
           <button className="button" type="submit" disabled={loading || !token}>

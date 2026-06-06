@@ -1,4 +1,4 @@
-import { IsString, MinLength } from "class-validator";
+import { IsBoolean, IsOptional, IsString, MinLength } from "class-validator";
 
 export class VerifyMfaLoginDto {
   @IsString()
@@ -7,4 +7,8 @@ export class VerifyMfaLoginDto {
   @IsString()
   @MinLength(6)
   code!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  trustDevice?: boolean;
 }

@@ -20,6 +20,12 @@ export class UpdateSecuritySettingsDto {
   @IsBoolean()
   mfaRequiredForAllUsers!: boolean;
 
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(90)
+  mfaTrustedDeviceDays!: number;
+
   @IsBoolean()
   turnstileEnabled!: boolean;
 

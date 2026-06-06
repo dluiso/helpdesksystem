@@ -279,6 +279,7 @@ interface SecuritySettings {
   mfaUserManagedEnabled: boolean;
   mfaRequiredForAdmins: boolean;
   mfaRequiredForAllUsers: boolean;
+  mfaTrustedDeviceDays: number;
   turnstileEnabled: boolean;
   turnstileSiteKey: string;
   turnstileSecretReference: string;
@@ -434,6 +435,7 @@ const DEFAULT_SECURITY_SETTINGS: SecuritySettings = {
   mfaUserManagedEnabled: true,
   mfaRequiredForAdmins: false,
   mfaRequiredForAllUsers: false,
+  mfaTrustedDeviceDays: 30,
   turnstileEnabled: false,
   turnstileSiteKey: "",
   turnstileSecretReference: "",
@@ -674,6 +676,7 @@ export function SettingsWorkspace() {
       mfaUserManagedEnabled: settings.mfaUserManagedEnabled,
       mfaRequiredForAdmins: settings.mfaRequiredForAdmins,
       mfaRequiredForAllUsers: settings.mfaRequiredForAllUsers,
+      mfaTrustedDeviceDays: Number(settings.mfaTrustedDeviceDays) || DEFAULT_SECURITY_SETTINGS.mfaTrustedDeviceDays,
       turnstileEnabled: settings.turnstileEnabled,
       turnstileSiteKey: settings.turnstileSiteKey.trim() || null,
       turnstileSecretReference: turnstileSecretReference || null,
@@ -3235,6 +3238,17 @@ export function SettingsWorkspace() {
                       {securityDraft.mfaRequiredForAllUsers ? (
                         <p className="warning-text">Only enable after users have configured 2FA, otherwise they will be blocked at sign-in until an admin resets or disables the requirement.</p>
                       ) : null}
+                      <label>
+                        Trust device duration days
+                        <input
+                          className="input"
+                          type="number"
+                          min={1}
+                          max={90}
+                          value={securityDraft.mfaTrustedDeviceDays}
+                          onChange={(event) => setSecurityDraft((current) => ({ ...current, mfaTrustedDeviceDays: Number(event.target.value) }))}
+                        />
+                      </label>
                     </div>
                   </div>
                 </div>

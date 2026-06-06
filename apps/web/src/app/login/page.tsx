@@ -26,6 +26,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [mfaCode, setMfaCode] = useState("");
   const [mfaChallengeToken, setMfaChallengeToken] = useState<string | null>(null);
+  const [mfaTrustedDeviceDays, setMfaTrustedDeviceDays] = useState(30);
+  const [trustDevice, setTrustDevice] = useState(false);
   const [mode, setMode] = useState<"login" | "forgot">("login");
   const [publicAuth, setPublicAuth] = useState<{ passwordResetEnabled: boolean; turnstileSiteKey: string | null; turnstileProtectLogin: boolean; turnstileProtectPasswordReset: boolean } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -54,12 +56,14 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const result = await apiFetch<{ mfaRequired?: boolean; challengeToken?: string; user?: unknown }>("/auth/login", {
+      const result = await apiFetch<{ mfaRequired?: boolean; challengeToken?: string; trustedDeviceDays?: number; user?: unknown }>("/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password, captchaToken: captchaToken || undefined })
       });
       if (result.mfaRequired && result.challengeToken) {
         setMfaChallengeToken(result.challengeToken);
+        setMfaTrustedDeviceDays(result.trustedDeviceDays ?? 30);
+        setTrustDevice(false);
         setPassword("");
         setMfaCode("");
         return;
@@ -82,7 +86,7 @@ export default function LoginPage() {
     try {
       await apiFetch("/auth/mfa/verify-login", {
         method: "POST",
-        body: JSON.stringify({ challengeToken: mfaChallengeToken, code: mfaCode })
+        body: JSON.stringify({ challengeToken: mfaChallengeToken, code: mfaCode, trustDevice })
       });
       window.location.assign("/dashboard");
     } catch (caught) {
@@ -243,6 +247,10 @@ export default function LoginPage() {
             <label htmlFor="mfaCode">Authentication code</label>
             <input className="input" id="mfaCode" autoComplete="one-time-code" value={mfaCode} onChange={(event) => setMfaCode(event.target.value)} required />
           </div>
+          <label className="checkbox-row">
+            <input type="checkbox" checked={trustDevice} onChange={(event) => setTrustDevice(event.target.checked)} />
+            <span>Trust this device for {mfaTrustedDeviceDays} days</span>
+          </label>
           {error ? <div className="error">{error}</div> : null}
           <button className="button" type="submit" disabled={loading}>
             <LogIn size={16} aria-hidden="true" />

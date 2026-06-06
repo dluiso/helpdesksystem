@@ -19,7 +19,8 @@ export class AuthController {
   async login(@Body() body: LoginDto, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
     const result = await this.authService.login(body, {
       ipAddress: request.ip,
-      userAgent: request.header("user-agent") ?? null
+      userAgent: request.header("user-agent") ?? null,
+      trustedDeviceToken: request.cookies?.[this.authService.getTrustedDeviceCookieName()] as string | undefined
     });
 
     if (result.mfaRequired) {
@@ -40,6 +41,9 @@ export class AuthController {
     });
 
     response.cookie(this.authService.getCookieName(), result.sessionToken, this.authService.getCookieOptions());
+    if (result.trustedDeviceToken && result.trustedDeviceExpiresAt) {
+      response.cookie(this.authService.getTrustedDeviceCookieName(), result.trustedDeviceToken, this.authService.getTrustedDeviceCookieOptions(result.trustedDeviceExpiresAt));
+    }
     return { user: result.user };
   }
 

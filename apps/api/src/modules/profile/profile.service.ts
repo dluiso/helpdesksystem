@@ -243,6 +243,10 @@ export class ProfileService {
         recoveryCodesHash: { set: [] }
       }
     });
+    await this.prisma.mfaTrustedDevice.updateMany({
+      where: { userId: user.id, revokedAt: null },
+      data: { revokedAt: new Date() }
+    });
 
     await this.auditLogs.create({
       userId: user.id,
