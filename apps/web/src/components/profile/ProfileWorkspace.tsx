@@ -110,6 +110,7 @@ const SECTIONS: Array<{ key: ProfileSection; label: string; icon: typeof UserRou
 const THEME_OPTIONS: Array<{ value: ThemePreference; label: string; description: string }> = [
   { value: "light", label: "Light", description: "Use the standard bright interface." },
   { value: "dark", label: "Dark", description: "Use a darker interface for low-light work." },
+  { value: "oled", label: "OLED Dark", description: "Use true black surfaces with high-contrast content." },
   { value: "system", label: "System", description: "Follow your operating system setting." }
 ];
 

@@ -1,11 +1,12 @@
 "use client";
 
-import { Laptop, Moon, Sun } from "lucide-react";
+import { Laptop, Moon, MoonStar, Sun } from "lucide-react";
 import { ThemePreference, useTheme } from "@/components/providers/ThemeProvider";
 
 const themeOptions: Array<{ value: ThemePreference; label: string; icon: typeof Sun }> = [
   { value: "light", label: "Light", icon: Sun },
   { value: "dark", label: "Dark", icon: Moon },
+  { value: "oled", label: "OLED Dark", icon: MoonStar },
   { value: "system", label: "System", icon: Laptop }
 ];
 

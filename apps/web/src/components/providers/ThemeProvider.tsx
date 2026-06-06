@@ -2,7 +2,7 @@
 
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 
-export type ThemePreference = "light" | "dark" | "system";
+export type ThemePreference = "light" | "dark" | "oled" | "system";
 
 const THEME_STORAGE_KEY = "avidity.theme";
 
@@ -17,7 +17,7 @@ const ThemeContext = createContext<ThemeContextValue>({
 });
 
 function isThemePreference(value: string | null): value is ThemePreference {
-  return value === "light" || value === "dark" || value === "system";
+  return value === "light" || value === "dark" || value === "oled" || value === "system";
 }
 
 function resolvedTheme(theme: ThemePreference) {
@@ -72,7 +72,7 @@ export function ThemeScript() {
     (function () {
       try {
         var saved = window.localStorage.getItem("${THEME_STORAGE_KEY}");
-        var preference = saved === "light" || saved === "dark" || saved === "system" ? saved : "system";
+        var preference = saved === "light" || saved === "dark" || saved === "oled" || saved === "system" ? saved : "system";
         var resolved = preference === "system" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : preference;
         document.documentElement.dataset.themePreference = preference;
         document.documentElement.dataset.theme = resolved;
