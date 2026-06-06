@@ -6,6 +6,14 @@ import Script from "next/script";
 import { apiFetch } from "@/lib/api";
 import { useBranding } from "@/components/providers/BrandingProvider";
 
+declare global {
+  interface Window {
+    turnstile?: {
+      reset: () => void;
+    };
+  }
+}
+
 function brandingFontFamily(value?: string) {
   if (value === "serif") return "Georgia, 'Times New Roman', serif";
   if (value === "mono") return "'SFMono-Regular', Consolas, monospace";
@@ -34,6 +42,10 @@ export default function LoginPage() {
       .catch(() => setPublicAuth({ passwordResetEnabled: false, turnstileSiteKey: null, turnstileProtectLogin: false, turnstileProtectPasswordReset: false }));
   }, []);
 
+  function resetTurnstile() {
+    window.turnstile?.reset();
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const captchaToken = String(new FormData(event.currentTarget).get("cf-turnstile-response") ?? "");
@@ -53,8 +65,10 @@ export default function LoginPage() {
         return;
       }
       window.location.assign("/dashboard");
-    } catch {
-      setError("The email or password was not accepted.");
+    } catch (caught) {
+      resetTurnstile();
+      const message = caught instanceof Error ? caught.message : "";
+      setError(message.startsWith("Security verification") ? message : "The email or password was not accepted.");
     } finally {
       setLoading(false);
     }
@@ -91,6 +105,7 @@ export default function LoginPage() {
       });
       setNotice("If that email exists, password reset instructions were sent.");
     } catch (caught) {
+      resetTurnstile();
       setError(caught instanceof Error ? caught.message : "Unable to request password reset.");
     } finally {
       setLoading(false);

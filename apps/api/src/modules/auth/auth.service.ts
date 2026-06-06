@@ -460,15 +460,19 @@ export class AuthService {
     const formData = new URLSearchParams();
     formData.set("secret", secret);
     formData.set("response", token);
-    if (context.ipAddress) {
-      formData.set("remoteip", context.ipAddress);
-    }
     const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
       method: "POST",
       body: formData
     });
-    const payload = (await response.json()) as { success?: boolean };
+    const payload = (await response.json()) as { success?: boolean; "error-codes"?: string[] };
     if (!payload.success) {
+      await this.auditLogs.create({
+        entityType: "Auth",
+        action: "auth.turnstile_failure",
+        ipAddress: context.ipAddress ?? undefined,
+        userAgent: context.userAgent ?? undefined,
+        metadata: { flow, errorCodes: payload["error-codes"] ?? [] }
+      });
       throw new UnauthorizedException("Security verification failed.");
     }
   }
