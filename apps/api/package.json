@@ -18,6 +18,7 @@
     "@nestjs/platform-express": "^11.1.24",
     "@nestjs/throttler": "^6.5.0",
     "@prisma/client": "^5.22.0",
+    "@types/pdf-parse": "^1.1.5",
     "argon2": "^0.41.1",
     "bullmq": "^5.26.2",
     "class-transformer": "^0.5.1",
@@ -25,6 +26,7 @@
     "cookie-parser": "^1.4.7",
     "helmet": "^8.0.0",
     "ioredis": "^5.4.1",
+    "pdf-parse": "^2.4.5",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "sanitize-html": "^2.13.1"

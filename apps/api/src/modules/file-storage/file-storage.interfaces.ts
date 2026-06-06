@@ -4,7 +4,7 @@ export interface SaveFileInput {
   originalFilename: string;
   mimeType: string;
   buffer: Buffer;
-  folder: "attachments" | "exports" | "temp";
+  folder: "attachments" | "exports" | "knowledge-base" | "temp";
 }
 
 export interface StoredFileResult {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Download, ExternalLink, Eye, GitMerge, RefreshCcw, Save, Search, Sparkles, X } from "lucide-react";
+import { BookOpen, Download, ExternalLink, Eye, GitMerge, RefreshCcw, Save, Search, Sparkles, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
 import { TicketReplyEditor } from "./TicketReplyEditor";
@@ -289,6 +289,22 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
     }
   }
 
+  async function createKnowledgeArticleDraft() {
+    if (!ticket) {
+      return;
+    }
+    setToolBusy("KB");
+    setError(null);
+    try {
+      const article = await apiFetch<{ id: string }>(`/knowledge-base/articles/from-ticket/${ticket.ticketNumber}`, { method: "POST" });
+      router.push(`/knowledge-base?articleId=${article.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create a Knowledge Base draft.");
+    } finally {
+      setToolBusy(null);
+    }
+  }
+
   useEffect(() => {
     void load();
   }, [ticketId]);
@@ -418,6 +434,10 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
             <button className="button secondary full-width-button" type="button" onClick={openMergeModal} disabled={isMergedTicket}>
               <GitMerge size={16} aria-hidden="true" />
               <span>Merge Tickets</span>
+            </button>
+            <button className="button secondary full-width-button" type="button" onClick={() => void createKnowledgeArticleDraft()} disabled={toolBusy === "KB"}>
+              <BookOpen size={16} aria-hidden="true" />
+              <span>Create KB Draft</span>
             </button>
             {isMergedTicket && ticket.mergedIntoTicket ? (
               <Link className="button secondary full-width-button" href={`/tickets/${ticket.mergedIntoTicket.ticketNumber}`}>
