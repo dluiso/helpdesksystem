@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { ClipboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import { apiFetch } from "@/lib/api";
 import { ThemePreference, useTheme } from "@/components/providers/ThemeProvider";
 
@@ -499,14 +500,25 @@ export function ProfileWorkspace() {
                 </div>
                 {mfaSetup ? (
                   <div className="settings-section stack">
+                    <div className="mfa-qr-panel">
+                      <div className="mfa-qr-frame" aria-label="Authenticator app QR code">
+                        <QRCodeSVG value={mfaSetup.otpauthUrl} size={192} level="M" includeMargin />
+                      </div>
+                      <div className="mfa-qr-copy">
+                        <strong>Scan QR code</strong>
+                        <p className="muted">
+                          Scan this code with Google Authenticator, Microsoft Authenticator, or another compatible authenticator app.
+                        </p>
+                      </div>
+                    </div>
                     <div className="security-code-box">
                       <strong>Setup key</strong>
                       <code>{mfaSetup.secret}</code>
                     </div>
-                    <div className="security-code-box">
-                      <strong>Authenticator URL</strong>
+                    <details className="security-code-box">
+                      <summary>Show manual authenticator URL</summary>
                       <code>{mfaSetup.otpauthUrl}</code>
-                    </div>
+                    </details>
                     <button className="button" type="button" onClick={confirmMfaSetup} disabled={busy === "mfa" || !mfaCode}>
                       Confirm and Enable 2FA
                     </button>

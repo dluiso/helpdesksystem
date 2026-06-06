@@ -1291,6 +1291,45 @@ select {
   font: 700 13px/1.4 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 }
 
+.security-code-box summary {
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.mfa-qr-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.mfa-qr-frame {
+  display: grid;
+  place-items: center;
+  width: 214px;
+  min-height: 214px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.mfa-qr-frame svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.mfa-qr-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
 .general-settings-panel {
   display: grid;
   gap: 12px;
@@ -4592,6 +4631,17 @@ a.dashboard-list-row:hover {
   .dashboard-insight-card,
   .panel {
     border-radius: 7px;
+  }
+
+  .mfa-qr-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .mfa-qr-frame {
+    justify-self: center;
+    width: 100%;
+    max-width: 240px;
+    min-height: 0;
   }
 
   .modal-backdrop {
