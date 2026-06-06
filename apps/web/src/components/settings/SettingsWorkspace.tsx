@@ -1550,7 +1550,7 @@ export function SettingsWorkspace() {
                         <td>{template.client?.name ?? "All clients"}</td>
                         <td>{template.mailbox?.name ?? "Any mailbox"}</td>
                         <td>
-                          <span className="status-pill">{template.isActive ? "Active" : "Inactive"}</span>
+                          <span className={`status-pill ${template.isActive ? "success" : "muted-pill"}`}>{template.isActive ? "Active" : "Inactive"}</span>
                         </td>
                         <td>{template.subject}</td>
                         <td>
@@ -1662,7 +1662,7 @@ export function SettingsWorkspace() {
                     </td>
                     <td>{team.members.length ? team.members.map((member) => `${member.user.firstName} ${member.user.lastName}`).join(", ") : "No members"}</td>
                     <td>
-                      <span className="status-pill">{team.isActive ? "Active" : "Inactive"}</span>
+                      <span className={`status-pill ${team.isActive ? "success" : "muted-pill"}`}>{team.isActive ? "Active" : "Inactive"}</span>
                     </td>
                     <td>{team._count?.assignedTickets ?? 0}</td>
                     <td>
@@ -2180,7 +2180,7 @@ export function SettingsWorkspace() {
                           <td>{AI_PROVIDER_LABELS[provider.provider] ?? provider.provider}</td>
                           <td>{provider.defaultModel ?? "No default model"}</td>
                           <td>
-                            <span className="status-pill">{provider.isEnabled ? "Enabled" : "Disabled"}</span>
+                            <span className={`status-pill ${provider.isEnabled ? "success" : "muted-pill"}`}>{provider.isEnabled ? "Enabled" : "Disabled"}</span>
                           </td>
                           <td>
                             <div className="ai-model-cell">

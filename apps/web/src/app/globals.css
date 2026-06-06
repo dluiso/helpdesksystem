@@ -35,6 +35,8 @@
   --pill-read-text: #0f5138;
   --pill-unread-bg: #e8eef9;
   --pill-unread-text: #24416f;
+  --pill-default-bg: #e8eef9;
+  --pill-default-text: #24416f;
   --count-pill-bg: #e8eef9;
   --count-pill-text: #1f3a64;
   --editor-bg: #ffffff;
@@ -85,6 +87,8 @@
   --pill-read-text: #c6f7dd;
   --pill-unread-bg: #263752;
   --pill-unread-text: #dbeafe;
+  --pill-default-bg: #263752;
+  --pill-default-text: #dbeafe;
   --count-pill-bg: #dbeafe;
   --count-pill-text: #172554;
   --editor-bg: #ffffff;
@@ -135,6 +139,8 @@
   --pill-read-text: #c7f9dc;
   --pill-unread-bg: #11284d;
   --pill-unread-text: #dbeafe;
+  --pill-default-bg: #11284d;
+  --pill-default-text: #dbeafe;
   --count-pill-bg: #dbeafe;
   --count-pill-text: #0b1220;
   --editor-bg: #ffffff;
@@ -2885,12 +2891,15 @@ a.dashboard-list-row:hover {
   display: inline-flex;
   align-items: center;
   min-height: 24px;
+  border: 1px solid var(--line);
   border-radius: 999px;
   padding: 0 8px;
-  color: var(--brand-secondary);
-  background: var(--surface-selected);
+  color: var(--pill-default-text);
+  background: var(--pill-default-bg);
   font-size: 12px;
   font-weight: 750;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .count-pill {
@@ -3378,6 +3387,13 @@ a.dashboard-list-row:hover {
   background: var(--surface-selected);
   font-size: 12px;
   font-weight: 700;
+}
+
+[data-theme="dark"] .tag-chip,
+[data-theme="oled"] .tag-chip {
+  color: var(--pill-default-text);
+  background: var(--pill-default-bg);
+  border: 1px solid var(--line);
 }
 
 .knowledge-category-create {
