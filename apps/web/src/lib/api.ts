@@ -1,8 +1,15 @@
 export const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
+export function getApiBaseUrl() {
+  if (typeof window !== "undefined" && window.location.hostname.startsWith("events.")) {
+    return "/api";
+  }
+  return apiBaseUrl;
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const isFormData = init?.body instanceof FormData;
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
     ...init,
     credentials: "include",
     headers: {

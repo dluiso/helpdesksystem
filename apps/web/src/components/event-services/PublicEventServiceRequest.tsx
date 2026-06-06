@@ -33,7 +33,8 @@ interface PublicFormConfig {
 }
 
 const minuteOptions = ["00", "15", "30", "45"];
-const hourOptions = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
+const hourOptions24 = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
+const hourOptions12 = Array.from({ length: 12 }, (_, index) => String(index + 1));
 
 function fieldValue(data: Record<string, string>, key: string) {
   return data[key] ?? "";
@@ -46,8 +47,10 @@ export function PublicEventServiceRequest() {
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
   const [startHour, setStartHour] = useState("");
   const [startMinute, setStartMinute] = useState("00");
+  const [startPeriod, setStartPeriod] = useState<"AM" | "PM">("AM");
   const [endHour, setEndHour] = useState("");
   const [endMinute, setEndMinute] = useState("00");
+  const [endPeriod, setEndPeriod] = useState<"AM" | "PM">("AM");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [trackingNumber, setTrackingNumber] = useState<string | null>(null);
@@ -55,6 +58,8 @@ export function PublicEventServiceRequest() {
 
   const requiredService = selectedServiceIds.length > 0;
   const logoUrl = branding.loginLogoUrl ?? branding.logoUrl;
+  const usesTwelveHourTime = branding.timeFormat === "12h";
+  const hourOptions = usesTwelveHourTime ? hourOptions12 : hourOptions24;
   const logoBackgroundStyle = {
     background: branding.brandLogoTransparentBackground ? "transparent" : (branding.brandLogoBackgroundColor ?? "#ffffff")
   };
@@ -80,6 +85,18 @@ export function PublicEventServiceRequest() {
     window.turnstile?.reset();
   }
 
+  function toApiTime(hour: string, minute: string, period: "AM" | "PM") {
+    if (!hour) {
+      return undefined;
+    }
+    if (!usesTwelveHourTime) {
+      return `${hour.padStart(2, "0")}:${minute}`;
+    }
+    const numericHour = Number(hour);
+    const normalizedHour = period === "AM" ? (numericHour === 12 ? 0 : numericHour) : (numericHour === 12 ? 12 : numericHour + 12);
+    return `${String(normalizedHour).padStart(2, "0")}:${minute}`;
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -97,8 +114,8 @@ export function PublicEventServiceRequest() {
           organizer: fieldValue(formData, "organizer"),
           venue: fieldValue(formData, "venue"),
           eventDate: fieldValue(formData, "eventDate"),
-          startTime: startHour ? `${startHour}:${startMinute}` : undefined,
-          endTime: endHour ? `${endHour}:${endMinute}` : undefined,
+          startTime: toApiTime(startHour, startMinute, startPeriod),
+          endTime: toApiTime(endHour, endMinute, endPeriod),
           serviceIds: selectedServiceIds,
           additionalInfo: fieldValue(formData, "additionalInfo"),
           requesterFirstName: fieldValue(formData, "requesterFirstName"),
@@ -183,11 +200,13 @@ export function PublicEventServiceRequest() {
             <span><Clock size={15} /> Start Time *</span>
             <select required value={startHour} onChange={(event) => setStartHour(event.target.value)}><option value="">HH</option>{hourOptions.map((hour) => <option key={hour} value={hour}>{hour}</option>)}</select>
             <select value={startMinute} onChange={(event) => setStartMinute(event.target.value)}>{minuteOptions.map((minute) => <option key={minute} value={minute}>{minute}</option>)}</select>
+            {usesTwelveHourTime ? <select value={startPeriod} onChange={(event) => setStartPeriod(event.target.value as "AM" | "PM")}><option value="AM">AM</option><option value="PM">PM</option></select> : null}
           </div>
           <div className="public-event-time-group">
             <span><Clock size={15} /> End Time *</span>
             <select required value={endHour} onChange={(event) => setEndHour(event.target.value)}><option value="">HH</option>{hourOptions.map((hour) => <option key={hour} value={hour}>{hour}</option>)}</select>
             <select value={endMinute} onChange={(event) => setEndMinute(event.target.value)}>{minuteOptions.map((minute) => <option key={minute} value={minute}>{minute}</option>)}</select>
+            {usesTwelveHourTime ? <select value={endPeriod} onChange={(event) => setEndPeriod(event.target.value as "AM" | "PM")}><option value="AM">AM</option><option value="PM">PM</option></select> : null}
           </div>
         </div>
 
@@ -234,7 +253,7 @@ export function PublicEventServiceRequest() {
 
       <footer className="public-event-footer">
         <MapPin size={16} aria-hidden="true" />
-        <span>{config?.organization.name ?? "Avidity Technologies"} · {config?.organization.supportEmail}</span>
+        <span>{config?.organization.name ?? "Avidity Technologies"} - {config?.organization.supportEmail}</span>
       </footer>
     </main>
   );

@@ -1586,7 +1586,7 @@ textarea.public-event-input {
 
 .public-event-time-group {
   display: grid;
-  grid-template-columns: 1fr 88px 88px;
+  grid-template-columns: minmax(92px, 1fr) 76px 76px;
   gap: 8px;
   align-items: end;
 }

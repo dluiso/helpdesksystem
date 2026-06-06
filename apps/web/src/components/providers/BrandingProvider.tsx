@@ -3,7 +3,7 @@
 import { PublicBrandingSettings } from "@avidity/shared";
 import { usePathname } from "next/navigation";
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
-import { apiBaseUrl } from "@/lib/api";
+import { getApiBaseUrl } from "@/lib/api";
 
 const fallbackBranding: PublicBrandingSettings = {
   applicationName: "Avidity IT Management Tool",
@@ -104,7 +104,7 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    fetch(`${apiBaseUrl}/system-settings/public-branding`, { credentials: "include" })
+    fetch(`${getApiBaseUrl()}/system-settings/public-branding`, { credentials: "include" })
       .then((response) => (response.ok ? response.json() : fallbackBranding))
       .then((settings: PublicBrandingSettings) => {
         if (mounted) {
