@@ -16,6 +16,7 @@ import { UpsertEventServiceFormFieldDto } from "./dto/upsert-event-service-form-
 import { UpsertEventServiceServiceDto } from "./dto/upsert-event-service-service.dto";
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):(00|15|30|45)$/;
+const DEFAULT_EVENT_TURNSTILE_SECRET_REFERENCE = "env:EVENT_TURNSTILE_SECRET_KEY";
 
 @Injectable()
 export class EventServicesService {
@@ -286,11 +287,16 @@ export class EventServicesService {
     return {
       eventTurnstileEnabled: settings?.eventTurnstileEnabled ?? false,
       eventTurnstileSiteKey: settings?.eventTurnstileSiteKey ?? null,
-      eventTurnstileSecretReference: settings?.eventTurnstileSecretReference ?? "env:EVENT_TURNSTILE_SECRET_KEY"
+      eventTurnstileSecretReference: settings?.eventTurnstileSecretReference ?? DEFAULT_EVENT_TURNSTILE_SECRET_REFERENCE
     };
   }
 
   async updateTurnstileConfig(user: AuthenticatedUser, input: UpdateEventServiceTurnstileDto) {
+    const eventTurnstileSecretReference = this.eventTurnstileSecretReference(input.eventTurnstileSecretReference);
+    if (input.eventTurnstileEnabled && !eventTurnstileSecretReference.startsWith("env:")) {
+      throw new BadRequestException("Event Turnstile secret reference must use an environment reference such as env:EVENT_TURNSTILE_SECRET_KEY.");
+    }
+
     const settings = await this.prisma.systemSetting.upsert({
       where: { organizationId: user.organizationId },
       create: {
@@ -300,12 +306,12 @@ export class EventServicesService {
         supportEmail: this.config.get<string>("DEFAULT_SUPPORT_EMAIL") ?? "support@aviditytechnologies.com",
         eventTurnstileEnabled: input.eventTurnstileEnabled,
         eventTurnstileSiteKey: this.optionalTrim(input.eventTurnstileSiteKey),
-        eventTurnstileSecretReference: this.optionalTrim(input.eventTurnstileSecretReference)
+        eventTurnstileSecretReference
       },
       update: {
         eventTurnstileEnabled: input.eventTurnstileEnabled,
         eventTurnstileSiteKey: this.optionalTrim(input.eventTurnstileSiteKey),
-        eventTurnstileSecretReference: this.optionalTrim(input.eventTurnstileSecretReference)
+        eventTurnstileSecretReference
       },
       select: {
         eventTurnstileEnabled: true,
@@ -486,7 +492,7 @@ export class EventServicesService {
     if (!token) {
       throw new UnauthorizedException("Security verification is required.");
     }
-    const secret = this.resolveSecret(settings.eventTurnstileSecretReference);
+    const secret = this.resolveSecret(settings.eventTurnstileSecretReference ?? DEFAULT_EVENT_TURNSTILE_SECRET_REFERENCE);
     if (!secret) {
       throw new UnauthorizedException("Security verification is not configured.");
     }
@@ -507,6 +513,10 @@ export class EventServicesService {
       return this.config.get<string>(reference.slice(4)) ?? null;
     }
     return null;
+  }
+
+  private eventTurnstileSecretReference(reference?: string | null) {
+    return this.optionalTrim(reference) ?? DEFAULT_EVENT_TURNSTILE_SECRET_REFERENCE;
   }
 
   private validateTimeRange(startTime?: string, endTime?: string) {

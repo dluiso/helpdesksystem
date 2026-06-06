@@ -1484,14 +1484,16 @@ select {
 
 .public-event-hero {
   display: grid;
-  gap: 52px;
-  min-height: 360px;
-  padding: 44px max(24px, 8vw);
+  justify-items: center;
+  gap: 68px;
+  min-height: 400px;
+  padding: 48px max(24px, 8vw) 112px;
   background:
     linear-gradient(135deg, rgba(21, 94, 239, 0.92), rgba(15, 23, 42, 0.94)),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='120' viewBox='0 0 220 120'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='.18'%3E%3Cpath d='M0 80c40-55 87-55 132 0s73 55 88 0'/%3E%3Cpath d='M0 42c40-40 83-40 128 0s77 40 92 0'/%3E%3C/g%3E%3C/svg%3E");
   background-size: cover;
   color: #fff;
+  text-align: center;
 }
 
 .public-event-brand {
@@ -1509,7 +1511,7 @@ select {
 
 .public-event-hero h1 {
   max-width: 760px;
-  margin: 0;
+  margin: 0 auto;
   font-size: clamp(36px, 5vw, 64px);
   line-height: 1;
 }
@@ -1517,6 +1519,7 @@ select {
 .public-event-hero p,
 .public-event-hero span {
   max-width: 780px;
+  margin-inline: auto;
   color: rgba(255, 255, 255, 0.86);
   font-size: 18px;
 }
@@ -1538,6 +1541,17 @@ select {
   place-items: center;
   margin-top: 72px;
   text-align: center;
+}
+
+.public-event-form-card > .section-heading {
+  justify-content: center;
+  padding-bottom: 12px;
+  text-align: center;
+}
+
+.public-event-form-card > .section-heading h2,
+.public-event-form-card > .section-heading p {
+  margin-inline: auto;
 }
 
 .public-event-success strong {
@@ -4993,7 +5007,8 @@ a.dashboard-list-row:hover {
 
   .public-event-hero {
     min-height: 300px;
-    padding: 28px 18px 90px;
+    gap: 44px;
+    padding: 28px 18px 88px;
   }
 
   .public-event-brand img {
