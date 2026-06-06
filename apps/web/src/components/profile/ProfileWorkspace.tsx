@@ -138,6 +138,10 @@ export function ProfileWorkspace() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [mfaPassword, setMfaPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaSetup, setMfaSetup] = useState<{ setupToken: string; secret: string; otpauthUrl: string } | null>(null);
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [notificationDraft, setNotificationDraft] = useState<NotificationPreference | null>(null);
   const [signatureHtml, setSignatureHtml] = useState("");
   const [useSignatureByDefault, setUseSignatureByDefault] = useState(true);
@@ -206,6 +210,73 @@ export function ProfileWorkspace() {
       setMessage("Password changed.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to change password.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function startMfaSetup() {
+    setBusy("mfa");
+    setError(null);
+    setMessage(null);
+    setRecoveryCodes([]);
+    try {
+      const response = await apiFetch<{ setupToken: string; secret: string; otpauthUrl: string }>("/profile/mfa/setup", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword: mfaPassword })
+      });
+      setMfaSetup(response);
+      setMessage("Enter this setup key in your authenticator app, then confirm the 6-digit code.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to start MFA setup.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function confirmMfaSetup() {
+    if (!mfaSetup) return;
+    setBusy("mfa");
+    setError(null);
+    setMessage(null);
+    try {
+      const response = await apiFetch<{ enabled: boolean; recoveryCodes: string[] }>("/profile/mfa/confirm", {
+        method: "POST",
+        body: JSON.stringify({ setupToken: mfaSetup.setupToken, code: mfaCode })
+      });
+      setRecoveryCodes(response.recoveryCodes);
+      setMfaSetup(null);
+      setMfaPassword("");
+      setMfaCode("");
+      setMessage("Two-factor authentication enabled. Store your recovery codes securely.");
+      await loadProfile();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to confirm MFA setup.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function disableMfa() {
+    if (!window.confirm("Disable two-factor authentication for your account?")) {
+      return;
+    }
+    setBusy("mfa");
+    setError(null);
+    setMessage(null);
+    try {
+      await apiFetch("/profile/mfa/disable", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword: mfaPassword, code: mfaCode || undefined })
+      });
+      setMfaPassword("");
+      setMfaCode("");
+      setMfaSetup(null);
+      setRecoveryCodes([]);
+      setMessage("Two-factor authentication disabled.");
+      await loadProfile();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to disable MFA.");
     } finally {
       setBusy(null);
     }
@@ -407,6 +478,57 @@ export function ProfileWorkspace() {
                   <KeyRound size={16} aria-hidden="true" />
                   <span>Change Password</span>
                 </button>
+              </div>
+              <div className="panel subtle-panel settings-section">
+                <div className="section-heading">
+                  <div>
+                    <h3>Two-Factor Authentication</h3>
+                    <p className="muted">Use an authenticator app for an additional sign-in step.</p>
+                  </div>
+                  <span className={`status-pill ${profile?.user.mfaEnabled ? "success" : "muted-pill"}`}>{profile?.user.mfaEnabled ? "Enabled" : "Disabled"}</span>
+                </div>
+                <div className="profile-form-grid">
+                  <label>
+                    Current password
+                    <input className="input" type="password" value={mfaPassword} onChange={(event) => setMfaPassword(event.target.value)} />
+                  </label>
+                  <label>
+                    Authenticator or recovery code
+                    <input className="input" value={mfaCode} onChange={(event) => setMfaCode(event.target.value)} placeholder={profile?.user.mfaEnabled ? "Required to disable" : "6-digit code"} />
+                  </label>
+                </div>
+                {mfaSetup ? (
+                  <div className="settings-section stack">
+                    <div className="security-code-box">
+                      <strong>Setup key</strong>
+                      <code>{mfaSetup.secret}</code>
+                    </div>
+                    <div className="security-code-box">
+                      <strong>Authenticator URL</strong>
+                      <code>{mfaSetup.otpauthUrl}</code>
+                    </div>
+                    <button className="button" type="button" onClick={confirmMfaSetup} disabled={busy === "mfa" || !mfaCode}>
+                      Confirm and Enable 2FA
+                    </button>
+                  </div>
+                ) : null}
+                {recoveryCodes.length > 0 ? (
+                  <div className="settings-section security-code-box">
+                    <strong>Recovery codes</strong>
+                    {recoveryCodes.map((code) => <code key={code}>{code}</code>)}
+                  </div>
+                ) : null}
+                <div className="settings-actions settings-section">
+                  {profile?.user.mfaEnabled ? (
+                    <button className="button danger" type="button" onClick={disableMfa} disabled={busy === "mfa"}>
+                      Disable 2FA
+                    </button>
+                  ) : (
+                    <button className="button secondary" type="button" onClick={startMfaSetup} disabled={busy === "mfa" || !mfaPassword}>
+                      Set Up 2FA
+                    </button>
+                  )}
+                </div>
               </div>
             </section>
           ) : null}

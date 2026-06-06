@@ -5,6 +5,7 @@ import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { LocalFileStorageProvider } from "../file-storage/providers/local-file-storage.provider";
 import { PrismaService } from "../prisma/prisma.service";
 import { UpdateGeneralSettingsDto } from "./dto/update-general-settings.dto";
+import { UpdateSecuritySettingsDto } from "./dto/update-security-settings.dto";
 
 const BRANDING_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon"]);
 const BRANDING_MAX_BYTES = 2 * 1024 * 1024;
@@ -95,6 +96,26 @@ export class SystemSettingsService {
         settings?.loginSubtitle ??
         "Secure service desk operations, client context, attachments, mail flow, reporting, and remote access readiness in one configurable platform.",
       loginFooterText: settings?.loginFooterText ?? settings?.companyName ?? this.config.get<string>("DEFAULT_COMPANY_NAME") ?? "Avidity Technologies"
+    };
+  }
+
+  async getPublicAuthSettings() {
+    const settings = await this.prisma.systemSetting.findFirst({
+      orderBy: { createdAt: "asc" },
+      select: {
+        passwordResetEnabled: true,
+        turnstileEnabled: true,
+        turnstileSiteKey: true,
+        turnstileProtectLogin: true,
+        turnstileProtectPasswordReset: true
+      }
+    });
+
+    return {
+      passwordResetEnabled: settings?.passwordResetEnabled ?? true,
+      turnstileSiteKey: settings?.turnstileEnabled ? settings.turnstileSiteKey : null,
+      turnstileProtectLogin: Boolean(settings?.turnstileEnabled && settings.turnstileProtectLogin && settings.turnstileSiteKey),
+      turnstileProtectPasswordReset: Boolean(settings?.turnstileEnabled && settings.turnstileProtectPasswordReset && settings.turnstileSiteKey)
     };
   }
 
@@ -198,6 +219,48 @@ export class SystemSettingsService {
     });
 
     return this.toGeneralSettings(updated);
+  }
+
+  async getSecuritySettings(user: AuthenticatedUser) {
+    const settings = await this.getOrCreateSettings(user.organizationId);
+    return this.toSecuritySettings(settings);
+  }
+
+  async updateSecuritySettings(user: AuthenticatedUser, input: UpdateSecuritySettingsDto) {
+    const updated = await this.prisma.systemSetting.update({
+      where: { organizationId: user.organizationId },
+      data: {
+        passwordResetEnabled: input.passwordResetEnabled,
+        passwordResetTokenTtlMinutes: input.passwordResetTokenTtlMinutes,
+        mfaUserManagedEnabled: input.mfaUserManagedEnabled,
+        mfaRequiredForAdmins: input.mfaRequiredForAdmins,
+        mfaRequiredForAllUsers: input.mfaRequiredForAllUsers,
+        turnstileEnabled: input.turnstileEnabled,
+        turnstileSiteKey: this.optionalString(input.turnstileSiteKey),
+        turnstileSecretReference: this.optionalString(input.turnstileSecretReference),
+        turnstileProtectLogin: input.turnstileProtectLogin,
+        turnstileProtectPasswordReset: input.turnstileProtectPasswordReset
+      }
+    });
+
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "system_settings",
+      entityId: updated.id,
+      action: "system_settings.security_updated",
+      metadata: {
+        passwordResetEnabled: updated.passwordResetEnabled,
+        mfaUserManagedEnabled: updated.mfaUserManagedEnabled,
+        mfaRequiredForAdmins: updated.mfaRequiredForAdmins,
+        mfaRequiredForAllUsers: updated.mfaRequiredForAllUsers,
+        turnstileEnabled: updated.turnstileEnabled,
+        turnstileProtectLogin: updated.turnstileProtectLogin,
+        turnstileProtectPasswordReset: updated.turnstileProtectPasswordReset,
+        hasTurnstileSecretReference: Boolean(updated.turnstileSecretReference)
+      }
+    });
+
+    return this.toSecuritySettings(updated);
   }
 
   async uploadBrandingAsset(user: AuthenticatedUser, assetType: "logo" | "loginLogo" | "loginFormLogo" | "mobileLogo" | "mobileLoginLogo" | "appIcon", file: { originalname: string; mimetype: string; size: number; buffer: Buffer }) {
@@ -416,6 +479,32 @@ export class SystemSettingsService {
       defaultLandingPage: settings.defaultLandingPage,
       dateFormat: settings.dateFormat,
       timeFormat: settings.timeFormat
+    };
+  }
+
+  private toSecuritySettings(settings: {
+    passwordResetEnabled: boolean;
+    passwordResetTokenTtlMinutes: number;
+    mfaUserManagedEnabled: boolean;
+    mfaRequiredForAdmins: boolean;
+    mfaRequiredForAllUsers: boolean;
+    turnstileEnabled: boolean;
+    turnstileSiteKey: string | null;
+    turnstileSecretReference: string | null;
+    turnstileProtectLogin: boolean;
+    turnstileProtectPasswordReset: boolean;
+  }) {
+    return {
+      passwordResetEnabled: settings.passwordResetEnabled,
+      passwordResetTokenTtlMinutes: settings.passwordResetTokenTtlMinutes,
+      mfaUserManagedEnabled: settings.mfaUserManagedEnabled,
+      mfaRequiredForAdmins: settings.mfaRequiredForAdmins,
+      mfaRequiredForAllUsers: settings.mfaRequiredForAllUsers,
+      turnstileEnabled: settings.turnstileEnabled,
+      turnstileSiteKey: settings.turnstileSiteKey,
+      turnstileSecretReference: settings.turnstileSecretReference,
+      turnstileProtectLogin: settings.turnstileProtectLogin,
+      turnstileProtectPasswordReset: settings.turnstileProtectPasswordReset
     };
   }
 

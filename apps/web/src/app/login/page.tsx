@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { LogIn } from "lucide-react";
+import Script from "next/script";
 import { apiFetch } from "@/lib/api";
 import { useBranding } from "@/components/providers/BrandingProvider";
 
@@ -15,6 +16,11 @@ export default function LoginPage() {
   const branding = useBranding();
   const [email, setEmail] = useState("admin@aviditytechnologies.com");
   const [password, setPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaChallengeToken, setMfaChallengeToken] = useState<string | null>(null);
+  const [mode, setMode] = useState<"login" | "forgot">("login");
+  const [publicAuth, setPublicAuth] = useState<{ passwordResetEnabled: boolean; turnstileSiteKey: string | null; turnstileProtectLogin: boolean; turnstileProtectPasswordReset: boolean } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const logoBackgroundStyle = {
@@ -22,22 +28,83 @@ export default function LoginPage() {
   };
   const showLoginBrandTitle = branding.showLoginBrandTitle !== false;
 
+  useEffect(() => {
+    void apiFetch<{ passwordResetEnabled: boolean; turnstileSiteKey: string | null; turnstileProtectLogin: boolean; turnstileProtectPasswordReset: boolean }>("/system-settings/public-auth")
+      .then((settings) => setPublicAuth(settings))
+      .catch(() => setPublicAuth({ passwordResetEnabled: false, turnstileSiteKey: null, turnstileProtectLogin: false, turnstileProtectPasswordReset: false }));
+  }, []);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const captchaToken = String(new FormData(event.currentTarget).get("cf-turnstile-response") ?? "");
     setError(null);
+    setNotice(null);
     setLoading(true);
 
     try {
-      await apiFetch("/auth/login", {
+      const result = await apiFetch<{ mfaRequired?: boolean; challengeToken?: string; user?: unknown }>("/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password, captchaToken: captchaToken || undefined })
       });
+      if (result.mfaRequired && result.challengeToken) {
+        setMfaChallengeToken(result.challengeToken);
+        setPassword("");
+        setMfaCode("");
+        return;
+      }
       window.location.assign("/dashboard");
     } catch {
       setError("The email or password was not accepted.");
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleMfaSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!mfaChallengeToken) return;
+    setError(null);
+    setLoading(true);
+    try {
+      await apiFetch("/auth/mfa/verify-login", {
+        method: "POST",
+        body: JSON.stringify({ challengeToken: mfaChallengeToken, code: mfaCode })
+      });
+      window.location.assign("/dashboard");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The authentication code was not accepted.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleForgotPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const captchaToken = String(new FormData(event.currentTarget).get("cf-turnstile-response") ?? "");
+    setError(null);
+    setNotice(null);
+    setLoading(true);
+    try {
+      await apiFetch("/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email, captchaToken: captchaToken || undefined })
+      });
+      setNotice("If that email exists, password reset instructions were sent.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to request password reset.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function turnstileMarkup(flow: "login" | "passwordReset") {
+    const enabled = publicAuth?.turnstileSiteKey && (flow === "login" ? publicAuth.turnstileProtectLogin : publicAuth.turnstileProtectPasswordReset);
+    return enabled ? (
+      <>
+        <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer />
+        <div className="cf-turnstile" data-sitekey={publicAuth.turnstileSiteKey} />
+      </>
+    ) : null;
   }
 
   return (
@@ -151,10 +218,38 @@ export default function LoginPage() {
         ) : null}
         <div className="page-header">
           <div>
-            <h1>Sign In</h1>
-            <p className="muted">Use your technician or administrator account.</p>
+            <h1>{mfaChallengeToken ? "Two-Factor Authentication" : mode === "forgot" ? "Reset Password" : "Sign In"}</h1>
+            <p className="muted">{mfaChallengeToken ? "Enter the code from your authenticator app or a recovery code." : mode === "forgot" ? "Enter your account email to receive a reset link." : "Use your technician or administrator account."}</p>
           </div>
         </div>
+        {mfaChallengeToken ? (
+        <form className="form" onSubmit={handleMfaSubmit}>
+          <div className="field">
+            <label htmlFor="mfaCode">Authentication code</label>
+            <input className="input" id="mfaCode" autoComplete="one-time-code" value={mfaCode} onChange={(event) => setMfaCode(event.target.value)} required />
+          </div>
+          {error ? <div className="error">{error}</div> : null}
+          <button className="button" type="submit" disabled={loading}>
+            <LogIn size={16} aria-hidden="true" />
+            <span>{loading ? "Verifying" : "Verify and sign in"}</span>
+          </button>
+          <button className="button ghost" type="button" onClick={() => setMfaChallengeToken(null)}>Back to login</button>
+        </form>
+        ) : mode === "forgot" ? (
+        <form className="form" onSubmit={handleForgotPassword}>
+          <div className="field">
+            <label htmlFor="resetEmail">Email</label>
+            <input className="input" id="resetEmail" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
+          </div>
+          {turnstileMarkup("passwordReset")}
+          {notice ? <div className="success-banner compact-banner">{notice}</div> : null}
+          {error ? <div className="error">{error}</div> : null}
+          <button className="button" type="submit" disabled={loading}>
+            <span>{loading ? "Sending" : "Send reset link"}</span>
+          </button>
+          <button className="button ghost" type="button" onClick={() => setMode("login")}>Back to sign in</button>
+        </form>
+        ) : (
         <form className="form" onSubmit={handleSubmit}>
           <div className="field">
             <label htmlFor="email">Email</label>
@@ -180,12 +275,17 @@ export default function LoginPage() {
               required
             />
           </div>
+          {turnstileMarkup("login")}
           {error ? <div className="error">{error}</div> : null}
           <button className="button" type="submit" disabled={loading}>
             <LogIn size={16} aria-hidden="true" />
             <span>{loading ? "Signing in" : "Sign in"}</span>
           </button>
+          {publicAuth?.passwordResetEnabled ? (
+            <button className="button ghost" type="button" onClick={() => setMode("forgot")}>Forgot password?</button>
+          ) : null}
         </form>
+        )}
       </section>
     </div>
   );

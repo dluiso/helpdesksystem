@@ -36,4 +36,10 @@ export class UsersController {
   delete(@Param("userId") userId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.usersService.softDelete(userId, user);
   }
+
+  @Post(":userId/reset-mfa")
+  @RequirePermissions("users.update")
+  resetMfa(@Param("userId") userId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.resetMfa(userId, user);
+  }
 }

@@ -9,6 +9,7 @@ import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { RequirePermissions } from "../permissions/decorators/require-permissions.decorator";
 import { PermissionsGuard } from "../permissions/guards/permissions.guard";
 import { UpdateGeneralSettingsDto } from "./dto/update-general-settings.dto";
+import { UpdateSecuritySettingsDto } from "./dto/update-security-settings.dto";
 import { SystemSettingsService } from "./system-settings.service";
 
 const brandingUploadLimitBytes = 2 * 1024 * 1024;
@@ -23,6 +24,11 @@ export class SystemSettingsController {
   @Get("public-branding")
   getPublicBranding() {
     return this.systemSettingsService.getPublicBranding();
+  }
+
+  @Get("public-auth")
+  getPublicAuthSettings() {
+    return this.systemSettingsService.getPublicAuthSettings();
   }
 
   @Get("assets")
@@ -47,6 +53,20 @@ export class SystemSettingsController {
   @RequirePermissions("system_settings.update")
   updateGeneralSettings(@CurrentUser() user: AuthenticatedUser, @Body() body: UpdateGeneralSettingsDto) {
     return this.systemSettingsService.updateGeneralSettings(user, body);
+  }
+
+  @Get("security")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("system_settings.view")
+  getSecuritySettings(@CurrentUser() user: AuthenticatedUser) {
+    return this.systemSettingsService.getSecuritySettings(user);
+  }
+
+  @Patch("security")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("system_settings.update")
+  updateSecuritySettings(@CurrentUser() user: AuthenticatedUser, @Body() body: UpdateSecuritySettingsDto) {
+    return this.systemSettingsService.updateSecuritySettings(user, body);
   }
 
   @Post("branding-assets")

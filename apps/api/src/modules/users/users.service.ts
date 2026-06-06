@@ -23,6 +23,7 @@ export class UsersService {
         lastName: true,
         isActive: true,
         forcePasswordChange: true,
+        mfaEnabled: true,
         createdAt: true,
         updatedAt: true,
         groups: {
@@ -159,6 +160,29 @@ export class UsersService {
     return { deleted: true };
   }
 
+  async resetMfa(userId: string, user: AuthenticatedUser) {
+    const existing = await this.ensureUser(userId, user.organizationId);
+    const updated = await this.prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        mfaEnabled: false,
+        totpSecretEncrypted: null,
+        recoveryCodesHash: { set: [] }
+      },
+      select: { id: true, email: true, firstName: true, lastName: true, mfaEnabled: true }
+    });
+
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "User",
+      entityId: updated.id,
+      action: "user.mfa_reset",
+      metadata: { email: updated.email }
+    });
+
+    return { reset: true, user: updated };
+  }
+
   private async ensureEmailAvailable(email: string, excludeUserId?: string) {
     const user = await this.prisma.user.findUnique({ where: { email }, select: { id: true } });
     if (user && user.id !== excludeUserId) {
@@ -199,6 +223,7 @@ export class UsersService {
       lastName: true,
       isActive: true,
       forcePasswordChange: true,
+      mfaEnabled: true,
       createdAt: true,
       updatedAt: true,
       groups: {

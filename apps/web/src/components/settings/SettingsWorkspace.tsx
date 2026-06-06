@@ -273,6 +273,19 @@ interface GeneralSettings {
   timeFormat: "12h" | "24h";
 }
 
+interface SecuritySettings {
+  passwordResetEnabled: boolean;
+  passwordResetTokenTtlMinutes: number;
+  mfaUserManagedEnabled: boolean;
+  mfaRequiredForAdmins: boolean;
+  mfaRequiredForAllUsers: boolean;
+  turnstileEnabled: boolean;
+  turnstileSiteKey: string;
+  turnstileSecretReference: string;
+  turnstileProtectLogin: boolean;
+  turnstileProtectPasswordReset: boolean;
+}
+
 interface AuditLogUserOption {
   id: string;
   name: string;
@@ -415,6 +428,19 @@ const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   timeFormat: "12h"
 };
 
+const DEFAULT_SECURITY_SETTINGS: SecuritySettings = {
+  passwordResetEnabled: true,
+  passwordResetTokenTtlMinutes: 30,
+  mfaUserManagedEnabled: true,
+  mfaRequiredForAdmins: false,
+  mfaRequiredForAllUsers: false,
+  turnstileEnabled: false,
+  turnstileSiteKey: "",
+  turnstileSecretReference: "",
+  turnstileProtectLogin: false,
+  turnstileProtectPasswordReset: false
+};
+
 function normalizeSyncIntervalSeconds(value: string, unit: "seconds" | "minutes") {
   const parsed = Number(value);
   const seconds = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed * (unit === "minutes" ? 60 : 1)) : 300;
@@ -436,6 +462,8 @@ export function SettingsWorkspace() {
   const [maintenanceSummary, setMaintenanceSummary] = useState<MaintenanceSummary | null>(null);
   const [generalSettings, setGeneralSettings] = useState<GeneralSettings | null>(null);
   const [generalDraft, setGeneralDraft] = useState<GeneralSettings>(DEFAULT_GENERAL_SETTINGS);
+  const [securitySettings, setSecuritySettings] = useState<SecuritySettings | null>(null);
+  const [securityDraft, setSecurityDraft] = useState<SecuritySettings>(DEFAULT_SECURITY_SETTINGS);
   const [auditLogs, setAuditLogs] = useState<AuditLogResult | null>(null);
   const [auditFilters, setAuditFilters] = useState({
     startDate: "",
@@ -520,7 +548,7 @@ export function SettingsWorkspace() {
   const [selectedClientByDomain, setSelectedClientByDomain] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<"general" | "mailboxes" | "autoReplies" | "teams" | "routing" | "domains" | "notifications" | "spam" | "maintenance" | "logs" | "ai">("general");
+  const [activeSection, setActiveSection] = useState<"general" | "mailboxes" | "autoReplies" | "teams" | "routing" | "domains" | "notifications" | "spam" | "maintenance" | "logs" | "security" | "ai">("general");
   const [generalTab, setGeneralTab] = useState<GeneralTab>("identity");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -632,6 +660,27 @@ export function SettingsWorkspace() {
     };
   }
 
+  function applySecuritySettings(settings: SecuritySettings) {
+    const merged = { ...DEFAULT_SECURITY_SETTINGS, ...settings };
+    setSecuritySettings(merged);
+    setSecurityDraft(merged);
+  }
+
+  function securitySettingsPayload(settings: SecuritySettings) {
+    return {
+      passwordResetEnabled: settings.passwordResetEnabled,
+      passwordResetTokenTtlMinutes: Number(settings.passwordResetTokenTtlMinutes) || DEFAULT_SECURITY_SETTINGS.passwordResetTokenTtlMinutes,
+      mfaUserManagedEnabled: settings.mfaUserManagedEnabled,
+      mfaRequiredForAdmins: settings.mfaRequiredForAdmins,
+      mfaRequiredForAllUsers: settings.mfaRequiredForAllUsers,
+      turnstileEnabled: settings.turnstileEnabled,
+      turnstileSiteKey: settings.turnstileSiteKey.trim() || null,
+      turnstileSecretReference: settings.turnstileSecretReference.trim() || null,
+      turnstileProtectLogin: settings.turnstileProtectLogin,
+      turnstileProtectPasswordReset: settings.turnstileProtectPasswordReset
+    };
+  }
+
   function auditQueryString(nextFilters = auditFilters) {
     const params = new URLSearchParams();
     Object.entries(nextFilters).forEach(([key, value]) => {
@@ -677,9 +726,16 @@ export function SettingsWorkspace() {
       setSpamEntries(spamResult.status === "fulfilled" ? spamResult.value : []);
       setMaintenanceSummary(maintenanceResult.status === "fulfilled" ? maintenanceResult.value : null);
       setMaintenanceDraft(maintenanceResult.status === "fulfilled" ? String(maintenanceResult.value.recycleBinRetentionDays) : "7");
-      const [generalResult, auditResult] = await Promise.allSettled([apiFetch<GeneralSettings>("/system-settings/general"), loadAuditLogs()]);
+      const [generalResult, securityResult, auditResult] = await Promise.allSettled([
+        apiFetch<GeneralSettings>("/system-settings/general"),
+        apiFetch<SecuritySettings>("/system-settings/security"),
+        loadAuditLogs()
+      ]);
       if (generalResult.status === "fulfilled") {
         applyGeneralSettings(generalResult.value);
+      }
+      if (securityResult.status === "fulfilled") {
+        applySecuritySettings(securityResult.value);
       }
       if (auditResult.status === "rejected") {
         setAuditLogs(null);
@@ -760,6 +816,24 @@ export function SettingsWorkspace() {
       setNotice("General settings saved.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save general settings.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveSecuritySettings() {
+    setBusy("security-settings");
+    setNotice(null);
+    setError(null);
+    try {
+      const saved = await apiFetch<SecuritySettings>("/system-settings/security", {
+        method: "PATCH",
+        body: JSON.stringify(securitySettingsPayload(securityDraft))
+      });
+      applySecuritySettings(saved);
+      setNotice("Security settings saved.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save security settings.");
     } finally {
       setBusy(null);
     }
@@ -1567,6 +1641,9 @@ export function SettingsWorkspace() {
           </button>
           <button className={activeSection === "logs" ? "active" : ""} type="button" onClick={() => setActiveSection("logs")}>
             Event Logs
+          </button>
+          <button className={activeSection === "security" ? "active" : ""} type="button" onClick={() => setActiveSection("security")}>
+            Security
           </button>
           <button className={activeSection === "ai" ? "active" : ""} type="button" onClick={() => setActiveSection("ai")}>
             AI & Security
@@ -3084,6 +3161,144 @@ export function SettingsWorkspace() {
                 >
                   Next
                 </button>
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === "security" ? (
+            <section className="grid">
+              <div className="panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>Login Security</h2>
+                    <p className="muted">Control password reset, per-user MFA, and Cloudflare Turnstile checks without storing raw secrets in the app.</p>
+                  </div>
+                  <span className={`status-pill ${securitySettings ? "success" : "muted-pill"}`}>{securitySettings ? "Loaded" : "Defaults"}</span>
+                </div>
+
+                <div className="grid columns-2 settings-section">
+                  <div className="panel subtle-panel">
+                    <h3>Password Reset</h3>
+                    <p className="muted">Users receive a short-lived email link when reset is enabled.</p>
+                    <div className="client-form-grid settings-section">
+                      <label className="checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={securityDraft.passwordResetEnabled}
+                          onChange={(event) => setSecurityDraft((current) => ({ ...current, passwordResetEnabled: event.target.checked }))}
+                        />
+                        Enable forgot password flow
+                      </label>
+                      <label>
+                        Reset link TTL minutes
+                        <input
+                          className="input"
+                          type="number"
+                          min={5}
+                          max={240}
+                          value={securityDraft.passwordResetTokenTtlMinutes}
+                          onChange={(event) => setSecurityDraft((current) => ({ ...current, passwordResetTokenTtlMinutes: Number(event.target.value) }))}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="panel subtle-panel">
+                    <h3>Two-Factor Authentication</h3>
+                    <p className="muted">Users can enable MFA in Profile. Admins can reset MFA from Users when recovery is needed.</p>
+                    <div className="stack settings-section">
+                      <label className="checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={securityDraft.mfaUserManagedEnabled}
+                          onChange={(event) => setSecurityDraft((current) => ({ ...current, mfaUserManagedEnabled: event.target.checked }))}
+                        />
+                        Allow users to manage their own 2FA
+                      </label>
+                      <label className="checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={securityDraft.mfaRequiredForAdmins}
+                          onChange={(event) => setSecurityDraft((current) => ({ ...current, mfaRequiredForAdmins: event.target.checked }))}
+                        />
+                        Require 2FA for administrator roles
+                      </label>
+                      <label className="checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={securityDraft.mfaRequiredForAllUsers}
+                          onChange={(event) => setSecurityDraft((current) => ({ ...current, mfaRequiredForAllUsers: event.target.checked }))}
+                        />
+                        Require 2FA for all users
+                      </label>
+                      {securityDraft.mfaRequiredForAllUsers ? (
+                        <p className="warning-text">Only enable after users have configured 2FA, otherwise they will be blocked at sign-in until an admin resets or disables the requirement.</p>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="panel subtle-panel settings-section">
+                  <div className="section-heading">
+                    <div>
+                      <h3>Cloudflare Turnstile</h3>
+                      <p className="muted">Protect login and password reset with Turnstile. Store the secret in the server environment and save only its reference here.</p>
+                    </div>
+                    <span className={`status-pill ${securityDraft.turnstileEnabled ? "success" : "muted-pill"}`}>{securityDraft.turnstileEnabled ? "Enabled" : "Disabled"}</span>
+                  </div>
+                  <div className="client-form-grid settings-section">
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={securityDraft.turnstileEnabled}
+                        onChange={(event) => setSecurityDraft((current) => ({ ...current, turnstileEnabled: event.target.checked }))}
+                      />
+                      Enable Cloudflare Turnstile
+                    </label>
+                    <span />
+                    <label>
+                      Site key
+                      <input
+                        className="input"
+                        value={securityDraft.turnstileSiteKey}
+                        onChange={(event) => setSecurityDraft((current) => ({ ...current, turnstileSiteKey: event.target.value }))}
+                        placeholder="0x4AAAA..."
+                      />
+                    </label>
+                    <label>
+                      Secret reference
+                      <input
+                        className="input"
+                        value={securityDraft.turnstileSecretReference}
+                        onChange={(event) => setSecurityDraft((current) => ({ ...current, turnstileSecretReference: event.target.value }))}
+                        placeholder="env:TURNSTILE_SECRET_KEY"
+                      />
+                    </label>
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={securityDraft.turnstileProtectLogin}
+                        onChange={(event) => setSecurityDraft((current) => ({ ...current, turnstileProtectLogin: event.target.checked }))}
+                      />
+                      Protect sign-in
+                    </label>
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={securityDraft.turnstileProtectPasswordReset}
+                        onChange={(event) => setSecurityDraft((current) => ({ ...current, turnstileProtectPasswordReset: event.target.checked }))}
+                      />
+                      Protect forgot password
+                    </label>
+                  </div>
+                  <p className="muted settings-section">Example production environment value: TURNSTILE_SECRET_KEY=your-cloudflare-secret. Save env:TURNSTILE_SECRET_KEY in this form.</p>
+                </div>
+
+                <div className="settings-actions">
+                  <button className="button" type="button" onClick={saveSecuritySettings} disabled={busy === "security-settings"}>
+                    Save Security Settings
+                  </button>
+                </div>
               </div>
             </section>
           ) : null}

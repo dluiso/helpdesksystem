@@ -1,6 +1,6 @@
 "use client";
 
-import { Edit3, RefreshCcw, Trash2, UserPlus, X } from "lucide-react";
+import { Edit3, KeyRound, RefreshCcw, Trash2, UserPlus, X } from "lucide-react";
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
@@ -22,6 +22,7 @@ interface UserRecord {
   lastName: string;
   isActive: boolean;
   forcePasswordChange: boolean;
+  mfaEnabled: boolean;
   groups: Array<{
     group: {
       id: string;
@@ -177,6 +178,26 @@ export function UsersWorkspace() {
     } catch (requestError) {
       const detail = requestError instanceof Error ? requestError.message : "";
       setError(`Unable to delete user.${detail ? ` ${detail}` : ""}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function resetUserMfa(user: UserRecord) {
+    if (!window.confirm(`Reset two-factor authentication for ${user.firstName} ${user.lastName}? The user will need to set it up again.`)) {
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await apiFetch(`/users/${user.id}/reset-mfa`, { method: "POST" });
+      setNotice("Two-factor authentication reset.");
+      await loadAccessData();
+    } catch (requestError) {
+      const detail = requestError instanceof Error ? requestError.message : "";
+      setError(`Unable to reset MFA.${detail ? ` ${detail}` : ""}`);
     } finally {
       setSaving(false);
     }
@@ -422,11 +443,11 @@ export function UsersWorkspace() {
 
               <AccessTable>
                 <thead>
-                  <tr><th>Name</th><th>Email</th><th>Groups</th><th>Roles</th><th>Status</th><th>Actions</th></tr>
+                  <tr><th>Name</th><th>Email</th><th>Groups</th><th>Roles</th><th>Status</th><th>MFA</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
-                  {loading ? <tr><td colSpan={6}>Loading users...</td></tr> : null}
-                  {!loading && users.length === 0 ? <tr><td colSpan={6}>No users created yet.</td></tr> : null}
+                  {loading ? <tr><td colSpan={7}>Loading users...</td></tr> : null}
+                  {!loading && users.length === 0 ? <tr><td colSpan={7}>No users created yet.</td></tr> : null}
                   {users.map((user) => (
                     <tr key={user.id}>
                       <td><strong>{user.firstName} {user.lastName}</strong></td>
@@ -434,8 +455,10 @@ export function UsersWorkspace() {
                       <td>{user.groups.map((item) => item.group.name).join(", ") || "No groups"}</td>
                       <td>{userRoleNames(user)}</td>
                       <td><span className={`status-pill ${user.isActive ? "success" : "muted-pill"}`}>{user.isActive ? "Active" : "Inactive"}</span></td>
+                      <td><span className={`status-pill ${user.mfaEnabled ? "success" : "muted-pill"}`}>{user.mfaEnabled ? "Enabled" : "Off"}</span></td>
                       <td>
                         <div className="form-actions">
+                          <button className="icon-button" type="button" title="Reset MFA" aria-label="Reset MFA" onClick={() => resetUserMfa(user)} disabled={saving || !user.mfaEnabled}><KeyRound size={16} /></button>
                           <button className="icon-button" type="button" title="Edit user" aria-label="Edit user" onClick={() => editUser(user)}><Edit3 size={16} /></button>
                           <button className="icon-button danger-icon" type="button" title="Delete user" aria-label="Delete user" onClick={() => deleteUser(user)} disabled={saving}><Trash2 size={16} /></button>
                         </div>
