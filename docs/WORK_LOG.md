@@ -61,3 +61,10 @@
 - Updated Microsoft Graph inbound attachment retrieval to follow paginated attachment responses.
 - Added Office, ZIP, CSV, and PowerPoint MIME fallback detection when Graph omits attachment content type.
 - Added a provider test covering paginated attachments and attachment detail retrieval for missing content bytes.
+
+## 2026-06-06 - Event & Services module
+
+- Added a separate Event & Services module with EVT tracking numbers, internal request management, assignments, tasks, comments, activity, and service/form administration.
+- Added a public event request form with selectable services, 15-minute time intervals, requester confirmation email, and Cloudflare Turnstile support when enabled.
+- Added `events.*` host routing so the public form can run from `events.aviditytechnologies.com` while sharing the same app services.
+- Added event-service permissions, Prisma schema models, and a migration for production deployment.

@@ -167,6 +167,41 @@ enum RoutingConditionMatch {
   ALL
 }
 
+enum EventServiceRequestStatus {
+  NEW
+  UNDER_REVIEW
+  SCHEDULED
+  ASSIGNED
+  IN_PROGRESS
+  WAITING_ON_CLIENT
+  WAITING_ON_INTERNAL_TEAM
+  COMPLETED
+  CANCELLED
+  CONVERTED_TO_TICKET
+}
+
+enum EventServiceTaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  DONE
+  CANCELLED
+}
+
+enum EventServiceFieldType {
+  TEXT
+  TEXTAREA
+  EMAIL
+  PHONE
+  DATE
+  TIME
+  SELECT
+  MULTI_SELECT
+  CHECKBOX
+  RADIO
+  NUMBER
+}
+
 model Organization {
   id             String             @id @default(uuid()) @db.Uuid
   name           String
@@ -198,6 +233,10 @@ model Organization {
   mfaLoginChallenges   MfaLoginChallenge[]
   mfaSetupChallenges   MfaSetupChallenge[]
   mfaTrustedDevices    MfaTrustedDevice[]
+  eventServiceRequests EventServiceRequest[]
+  eventServiceServices EventServiceService[]
+  eventServiceForms    EventServiceForm[]
+  eventServiceSequences EventServiceSequence[]
 
   @@map("organizations")
 }
@@ -349,6 +388,10 @@ model User {
   reportSchedules     ReportSchedule[]
   performedTicketMerges TicketMerge[]
   createdSpamBlockEntries SpamBlockEntry[] @relation("SpamBlockEntryCreatedBy")
+  assignedEventServiceRequests EventServiceAssignee[]
+  assignedEventServiceTasks EventServiceTask[] @relation("EventServiceTaskAssignedUser")
+  createdEventServiceComments EventServiceComment[]
+  eventServiceActivity EventServiceActivity[]
 
   @@index([organizationId])
   @@index([deletedAt])
@@ -480,6 +523,7 @@ model TicketTeam {
   members        TicketTeamMember[]
   assignedTickets Ticket[] @relation("AssignedTeamTickets")
   routingRuleAssignments TicketRoutingRule[] @relation("RoutingRuleAssignTeam")
+  assignedEventServiceRequests EventServiceRequest[] @relation("EventServiceAssignedTeam")
 
   @@unique([organizationId, name])
   @@index([organizationId, isActive])
@@ -583,6 +627,7 @@ model Client {
   devices             Device[]
   ticketRoutingRules  TicketRoutingRule[]
   resolvedUnmappedDomains UnmappedEmailDomain[] @relation("ResolvedUnmappedDomainClient")
+  eventServiceRequests EventServiceRequest[]
 
   @@index([organizationId, status])
   @@index([deletedAt])
@@ -642,6 +687,7 @@ model Contact {
   client                Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
   ticketMessages        TicketMessage[] @relation("ContactAuthoredMessages")
   tickets               Ticket[]
+  eventServiceRequests  EventServiceRequest[]
 
   @@unique([clientId, email])
   @@index([email])
@@ -748,6 +794,7 @@ model Ticket {
   watchers                   TicketWatcher[]
   notifications              Notification[]
   aiRequestLogs              AiRequestLog[]
+  eventServiceRequests       EventServiceRequest[]
 
   @@index([organizationId, updatedAt])
   @@index([clientId])
@@ -1407,4 +1454,197 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([action, createdAt])
   @@map("audit_logs")
+}
+
+model EventServiceSequence {
+  key              String       @id
+  organizationId   String       @db.Uuid
+  prefix           String       @default("EVT")
+  currentValue     Int          @default(100000)
+  updatedAt        DateTime     @updatedAt
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, prefix])
+  @@map("event_service_sequences")
+}
+
+model EventServiceService {
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String       @db.Uuid
+  name            String
+  description     String?
+  icon            String?
+  isActive        Boolean      @default(true)
+  defaultTeamId   String?      @db.Uuid
+  defaultUserIds  String[]     @default([]) @db.Uuid
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requests        EventServiceRequestService[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive])
+  @@map("event_service_services")
+}
+
+model EventServiceForm {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  name           String
+  slug           String
+  isPublished    Boolean      @default(true)
+  introText      String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fields         EventServiceFormField[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, isPublished])
+  @@map("event_service_forms")
+}
+
+model EventServiceFormField {
+  id          String                @id @default(uuid()) @db.Uuid
+  formId      String                @db.Uuid
+  type        EventServiceFieldType
+  label       String
+  fieldKey    String
+  placeholder String?
+  helpText    String?
+  isRequired  Boolean               @default(false)
+  options     String[]              @default([])
+  sortOrder   Int                   @default(0)
+  isActive    Boolean               @default(true)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  form        EventServiceForm      @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@unique([formId, fieldKey])
+  @@index([formId, sortOrder])
+  @@map("event_service_form_fields")
+}
+
+model EventServiceRequest {
+  id                 String                    @id @default(uuid()) @db.Uuid
+  organizationId     String                    @db.Uuid
+  trackingNumber     String                    @unique
+  clientId           String?                   @db.Uuid
+  contactId          String?                   @db.Uuid
+  linkedTicketId     String?                   @db.Uuid
+  assignedTeamId     String?                   @db.Uuid
+  eventName          String
+  organizer          String?
+  venue              String?
+  eventDate          DateTime?
+  startTime          String?
+  endTime            String?
+  requesterFirstName String
+  requesterLastName  String
+  requesterEmail     String
+  requesterPhone     String?
+  status             EventServiceRequestStatus @default(NEW)
+  priority           TicketPriority            @default(NORMAL)
+  progressPercent    Int                       @default(0)
+  additionalInfo     String?
+  formData           Json?
+  submittedFromIp    String?
+  submittedUserAgent String?
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  organization       Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client             Client?                   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  contact            Contact?                  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  linkedTicket       Ticket?                   @relation(fields: [linkedTicketId], references: [id], onDelete: SetNull)
+  assignedTeam       TicketTeam?               @relation("EventServiceAssignedTeam", fields: [assignedTeamId], references: [id], onDelete: SetNull)
+  services           EventServiceRequestService[]
+  assignees          EventServiceAssignee[]
+  tasks              EventServiceTask[]
+  comments           EventServiceComment[]
+  activity           EventServiceActivity[]
+
+  @@index([organizationId, status, updatedAt])
+  @@index([clientId])
+  @@index([contactId])
+  @@index([linkedTicketId])
+  @@index([assignedTeamId])
+  @@index([eventDate])
+  @@map("event_service_requests")
+}
+
+model EventServiceRequestService {
+  id        String              @id @default(uuid()) @db.Uuid
+  requestId String              @db.Uuid
+  serviceId String              @db.Uuid
+  request   EventServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  service   EventServiceService @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  @@unique([requestId, serviceId])
+  @@index([serviceId])
+  @@map("event_service_request_services")
+}
+
+model EventServiceAssignee {
+  id        String              @id @default(uuid()) @db.Uuid
+  requestId String              @db.Uuid
+  userId    String              @db.Uuid
+  role      String?
+  createdAt DateTime            @default(now())
+  request   EventServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, userId])
+  @@index([userId])
+  @@map("event_service_assignees")
+}
+
+model EventServiceTask {
+  id              String                 @id @default(uuid()) @db.Uuid
+  requestId       String                 @db.Uuid
+  assignedUserId  String?                @db.Uuid
+  title           String
+  description     String?
+  status          EventServiceTaskStatus @default(TODO)
+  progressPercent Int                    @default(0)
+  dueAt           DateTime?
+  sortOrder       Int                    @default(0)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  request         EventServiceRequest    @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  assignedUser    User?                  @relation("EventServiceTaskAssignedUser", fields: [assignedUserId], references: [id], onDelete: SetNull)
+
+  @@index([requestId, sortOrder])
+  @@index([assignedUserId])
+  @@map("event_service_tasks")
+}
+
+model EventServiceComment {
+  id        String              @id @default(uuid()) @db.Uuid
+  requestId String              @db.Uuid
+  userId    String?             @db.Uuid
+  body      String
+  createdAt DateTime            @default(now())
+  request   EventServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user      User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([requestId, createdAt])
+  @@index([userId])
+  @@map("event_service_comments")
+}
+
+model EventServiceActivity {
+  id        String              @id @default(uuid()) @db.Uuid
+  requestId String              @db.Uuid
+  userId    String?             @db.Uuid
+  action    String
+  metadata  Json?
+  createdAt DateTime            @default(now())
+  request   EventServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user      User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([requestId, createdAt])
+  @@index([userId])
+  @@map("event_service_activity")
 }

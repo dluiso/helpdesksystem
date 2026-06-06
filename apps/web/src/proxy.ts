@@ -1,8 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const publicPaths = ["/login", "/reset-password"];
+const publicPaths = ["/login", "/reset-password", "/public/event-services"];
 
 export function proxy(request: NextRequest) {
+  const host = request.headers.get("host")?.toLowerCase() ?? "";
+  if (host.startsWith("events.") && request.nextUrl.pathname === "/") {
+    return NextResponse.rewrite(new URL("/public/event-services/request", request.url));
+  }
+
   const isPublic = publicPaths.some((path) => request.nextUrl.pathname.startsWith(path));
   const hasSession = request.cookies.has("avidity_session");
 

@@ -80,6 +80,8 @@ const BrandingContext = createContext<PublicBrandingSettings>(fallbackBranding);
 
 const pageTitleByPath: Array<[RegExp, string]> = [
   [/^\/tickets(\/|$)/, "Tickets"],
+  [/^\/event-services(\/|$)/, "Event & Services"],
+  [/^\/public\/event-services(\/|$)/, "Event & Services"],
   [/^\/dashboard(\/|$)/, "Dashboard"],
   [/^\/clients(\/|$)/, "Clients"],
   [/^\/devices(\/|$)/, "Devices"],

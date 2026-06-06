@@ -10,6 +10,7 @@ import { ClientDomainsModule } from "./modules/client-domains/client-domains.mod
 import { ClientsModule } from "./modules/clients/clients.module";
 import { ContactsModule } from "./modules/contacts/contacts.module";
 import { DevicesModule } from "./modules/devices/devices.module";
+import { EventServicesModule } from "./modules/event-services/event-services.module";
 import { FileStorageModule } from "./modules/file-storage/file-storage.module";
 import { GroupsModule } from "./modules/groups/groups.module";
 import { HealthModule } from "./modules/health/health.module";
@@ -83,6 +84,7 @@ import { UsersModule } from "./modules/users/users.module";
     KnowledgeBaseModule,
     ReportsModule,
     DevicesModule,
+    EventServicesModule,
     RemoteAccessModule,
     NotificationsModule
   ]

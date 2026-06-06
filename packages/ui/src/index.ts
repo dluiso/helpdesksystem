@@ -7,6 +7,7 @@ export interface NavigationItem {
 export const dashboardNavigation: NavigationItem[] = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Tickets", href: "/tickets", permission: "tickets.view" },
+  { label: "Event & Services", href: "/event-services", permission: "event_services.view" },
   { label: "Clients", href: "/clients", permission: "clients.view" },
   { label: "Devices", href: "/devices", permission: "devices.view" },
   { label: "Reports", href: "/reports", permission: "reports.view" },
