@@ -31,6 +31,16 @@ export class UpdateGeneralSettingsDto {
   @IsOptional()
   @IsString()
   @MaxLength(500)
+  mobileLogoUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  mobileLoginLogoUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
   appIconUrl?: string | null;
 
   @IsOptional()
@@ -47,6 +57,11 @@ export class UpdateGeneralSettingsDto {
   @IsString()
   @MaxLength(160)
   loginFooterText?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  appSubtitle?: string | null;
 
   @IsString()
   @MaxLength(24)
@@ -89,6 +104,154 @@ export class UpdateGeneralSettingsDto {
   @IsString()
   @MaxLength(24)
   brandTextColor!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(12)
+  @Max(32)
+  appBrandTextSize!: number;
+
+  @IsString()
+  @MaxLength(24)
+  appBrandTextColor!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(20)
+  @Max(160)
+  mobileLogoWidth!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(20)
+  @Max(120)
+  mobileLogoHeight!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(12)
+  @Max(28)
+  mobileBrandTextSize!: number;
+
+  @IsString()
+  @MaxLength(24)
+  mobileBrandTextColor!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(24)
+  @Max(320)
+  mobileLoginLogoWidth!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(24)
+  @Max(140)
+  mobileLoginLogoHeight!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(12)
+  @Max(28)
+  mobileLoginBrandTextSize!: number;
+
+  @IsString()
+  @MaxLength(24)
+  mobileLoginBrandTextColor!: string;
+
+  @IsIn(["system", "serif", "mono"])
+  brandFontFamily!: string;
+
+  @IsBoolean()
+  showSubtitleOnLogin!: boolean;
+
+  @IsBoolean()
+  showSubtitleInApp!: boolean;
+
+  @IsIn(["RIGHT", "BELOW"])
+  subtitlePlacement!: string;
+
+  @IsIn(["RIGHT", "BELOW"])
+  mobileSubtitlePlacement!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(10)
+  @Max(28)
+  subtitleSize!: number;
+
+  @IsString()
+  @MaxLength(24)
+  subtitleColor!: string;
+
+  @IsIn(["300", "400", "500", "600", "700", "800"])
+  subtitleWeight!: string;
+
+  @IsIn(["normal", "italic"])
+  subtitleStyle!: string;
+
+  @IsIn(["system", "serif", "mono"])
+  subtitleFontFamily!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(24)
+  @Max(72)
+  loginHeadlineSize!: number;
+
+  @IsString()
+  @MaxLength(24)
+  loginHeadlineColor!: string;
+
+  @IsIn(["400", "500", "600", "700", "800", "900"])
+  loginHeadlineWeight!: string;
+
+  @IsIn(["normal", "italic"])
+  loginHeadlineStyle!: string;
+
+  @IsIn(["system", "serif", "mono"])
+  loginHeadlineFontFamily!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(12)
+  @Max(32)
+  loginSubtitleSize!: number;
+
+  @IsString()
+  @MaxLength(24)
+  loginSubtitleColor!: string;
+
+  @IsIn(["300", "400", "500", "600", "700"])
+  loginSubtitleWeight!: string;
+
+  @IsIn(["normal", "italic"])
+  loginSubtitleStyle!: string;
+
+  @IsIn(["left", "center", "right"])
+  loginSubtitleAlign!: string;
+
+  @IsIn(["system", "serif", "mono"])
+  loginSubtitleFontFamily!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(10)
+  @Max(28)
+  loginFooterSize!: number;
+
+  @IsString()
+  @MaxLength(24)
+  loginFooterColor!: string;
+
+  @IsIn(["300", "400", "500", "600", "700"])
+  loginFooterWeight!: string;
+
+  @IsIn(["normal", "italic"])
+  loginFooterStyle!: string;
+
+  @IsIn(["system", "serif", "mono"])
+  loginFooterFontFamily!: string;
 
   @IsBoolean()
   supportButtonEnabled!: boolean;

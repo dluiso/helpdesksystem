@@ -5,6 +5,12 @@ import { LogIn } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useBranding } from "@/components/providers/BrandingProvider";
 
+function brandingFontFamily(value?: string) {
+  if (value === "serif") return "Georgia, 'Times New Roman', serif";
+  if (value === "mono") return "'SFMono-Regular', Consolas, monospace";
+  return "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+}
+
 export default function LoginPage() {
   const branding = useBranding();
   const [email, setEmail] = useState("admin@aviditytechnologies.com");
@@ -36,23 +42,97 @@ export default function LoginPage() {
         <div className="brand">
           {branding.loginLogoUrl || branding.logoUrl ? (
             <img
-              className="brand-logo login-brand-logo"
+              className="brand-logo login-brand-logo desktop-brand-logo"
               src={branding.loginLogoUrl ?? branding.logoUrl ?? ""}
               alt=""
               style={{ width: branding.loginLogoWidth ?? 160, height: branding.loginLogoHeight ?? 48 }}
             />
+          ) : null}
+          {branding.mobileLoginLogoUrl || branding.loginLogoUrl || branding.logoUrl ? (
+            <img
+              className="brand-logo login-brand-logo mobile-brand-logo"
+              src={branding.mobileLoginLogoUrl ?? branding.loginLogoUrl ?? branding.logoUrl ?? ""}
+              alt=""
+              style={{ width: branding.mobileLoginLogoWidth ?? 140, height: branding.mobileLoginLogoHeight ?? 44 }}
+            />
           ) : (
             <span className="brand-mark">{branding.applicationName.slice(0, 1)}</span>
           )}
-          <span className="brand-name" style={{ color: branding.brandTextColor ?? "#ffffff", fontSize: branding.brandTextSize ?? 16 }}>
-            {branding.applicationName}
+          <span className={`brand-title-wrap subtitle-${branding.subtitlePlacement === "RIGHT" ? "right" : "below"} mobile-subtitle-${branding.mobileSubtitlePlacement === "RIGHT" ? "right" : "below"}`}>
+            <span
+              className="brand-name login-brand-name desktop-brand-title"
+              style={{
+                color: branding.brandTextColor ?? "#ffffff",
+                fontSize: branding.brandTextSize ?? 16,
+                fontFamily: brandingFontFamily(branding.brandFontFamily)
+              }}
+            >
+              {branding.applicationName}
+            </span>
+            <span
+              className="brand-name login-brand-name mobile-brand-title"
+              style={{
+                color: branding.mobileLoginBrandTextColor ?? "#ffffff",
+                fontSize: branding.mobileLoginBrandTextSize ?? 16,
+                fontFamily: brandingFontFamily(branding.brandFontFamily)
+              }}
+            >
+              {branding.applicationName}
+            </span>
+            {branding.showSubtitleOnLogin && branding.appSubtitle ? (
+              <span
+                className="brand-subtitle"
+                style={{
+                  color: branding.subtitleColor ?? "#cbd5e1",
+                  fontSize: branding.subtitleSize ?? 14,
+                  fontWeight: branding.subtitleWeight ?? "400",
+                  fontStyle: branding.subtitleStyle ?? "normal",
+                  fontFamily: brandingFontFamily(branding.subtitleFontFamily)
+                }}
+              >
+                {branding.appSubtitle}
+              </span>
+            ) : null}
           </span>
         </div>
         <div>
-          <h1>{branding.loginHeadline ?? branding.applicationName}</h1>
-          <p>{branding.loginSubtitle}</p>
+          <h1
+            style={{
+              color: branding.loginHeadlineColor ?? "#ffffff",
+              fontSize: branding.loginHeadlineSize ?? 48,
+              fontWeight: branding.loginHeadlineWeight ?? "800",
+              fontStyle: branding.loginHeadlineStyle ?? "normal",
+              fontFamily: brandingFontFamily(branding.loginHeadlineFontFamily)
+            }}
+          >
+            {branding.loginHeadline ?? branding.applicationName}
+          </h1>
+          <p
+            className="login-subtitle"
+            style={{
+              color: branding.loginSubtitleColor ?? "#ffffff",
+              fontSize: branding.loginSubtitleSize ?? 18,
+              fontWeight: branding.loginSubtitleWeight ?? "400",
+              fontStyle: branding.loginSubtitleStyle ?? "normal",
+              textAlign: (branding.loginSubtitleAlign ?? "left") as "left" | "center" | "right",
+              fontFamily: brandingFontFamily(branding.loginSubtitleFontFamily)
+            }}
+          >
+            {branding.loginSubtitle}
+          </p>
         </div>
-        <p>{branding.loginFooterText ?? branding.companyName}</p>
+        <p
+          className="login-footer-text"
+          style={{
+            color: branding.loginFooterColor ?? "#ffffff",
+            fontSize: branding.loginFooterSize ?? 18,
+            fontWeight: branding.loginFooterWeight ?? "400",
+            fontStyle: branding.loginFooterStyle ?? "normal",
+            fontFamily: brandingFontFamily(branding.loginFooterFontFamily)
+          }}
+        >
+          {branding.loginFooterText ?? branding.companyName}
+        </p>
       </section>
       <section className="login-panel">
         {branding.loginFormLogoUrl ? (

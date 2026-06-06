@@ -209,16 +209,55 @@ interface GeneralSettings {
   logoUrl: string | null;
   loginLogoUrl: string | null;
   loginFormLogoUrl: string | null;
+  mobileLogoUrl: string | null;
+  mobileLoginLogoUrl: string | null;
   appIconUrl: string | null;
   loginHeadline: string | null;
   loginSubtitle: string | null;
   loginFooterText: string | null;
+  appSubtitle: string | null;
+  showSubtitleOnLogin: boolean;
+  showSubtitleInApp: boolean;
+  subtitlePlacement: "RIGHT" | "BELOW";
+  mobileSubtitlePlacement: "RIGHT" | "BELOW";
+  subtitleSize: number;
+  subtitleColor: string;
+  subtitleWeight: string;
+  subtitleStyle: "normal" | "italic";
+  subtitleFontFamily: string;
   loginLogoWidth: number;
   loginLogoHeight: number;
   loginFormLogoWidth: number;
   loginFormLogoHeight: number;
   brandTextSize: number;
   brandTextColor: string;
+  appBrandTextSize: number;
+  appBrandTextColor: string;
+  mobileLogoWidth: number;
+  mobileLogoHeight: number;
+  mobileBrandTextSize: number;
+  mobileBrandTextColor: string;
+  mobileLoginLogoWidth: number;
+  mobileLoginLogoHeight: number;
+  mobileLoginBrandTextSize: number;
+  mobileLoginBrandTextColor: string;
+  brandFontFamily: string;
+  loginHeadlineSize: number;
+  loginHeadlineColor: string;
+  loginHeadlineWeight: string;
+  loginHeadlineStyle: "normal" | "italic";
+  loginHeadlineFontFamily: string;
+  loginSubtitleSize: number;
+  loginSubtitleColor: string;
+  loginSubtitleWeight: string;
+  loginSubtitleStyle: "normal" | "italic";
+  loginSubtitleAlign: "left" | "center" | "right";
+  loginSubtitleFontFamily: string;
+  loginFooterSize: number;
+  loginFooterColor: string;
+  loginFooterWeight: string;
+  loginFooterStyle: "normal" | "italic";
+  loginFooterFontFamily: string;
   primaryColor: string;
   secondaryColor: string;
   supportButtonEnabled: boolean;
@@ -299,16 +338,55 @@ const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   logoUrl: null,
   loginLogoUrl: null,
   loginFormLogoUrl: null,
+  mobileLogoUrl: null,
+  mobileLoginLogoUrl: null,
   appIconUrl: null,
   loginHeadline: "Avidity IT Management Tool",
   loginSubtitle: "Secure service desk operations, client context, attachments, mail flow, reporting, and remote access readiness in one configurable platform.",
   loginFooterText: "Avidity Technologies",
+  appSubtitle: null,
+  showSubtitleOnLogin: false,
+  showSubtitleInApp: false,
+  subtitlePlacement: "BELOW",
+  mobileSubtitlePlacement: "BELOW",
+  subtitleSize: 14,
+  subtitleColor: "#cbd5e1",
+  subtitleWeight: "400",
+  subtitleStyle: "normal",
+  subtitleFontFamily: "system",
   loginLogoWidth: 160,
   loginLogoHeight: 48,
   loginFormLogoWidth: 220,
   loginFormLogoHeight: 72,
   brandTextSize: 16,
   brandTextColor: "#ffffff",
+  appBrandTextSize: 16,
+  appBrandTextColor: "#ffffff",
+  mobileLogoWidth: 34,
+  mobileLogoHeight: 34,
+  mobileBrandTextSize: 16,
+  mobileBrandTextColor: "#ffffff",
+  mobileLoginLogoWidth: 140,
+  mobileLoginLogoHeight: 44,
+  mobileLoginBrandTextSize: 16,
+  mobileLoginBrandTextColor: "#ffffff",
+  brandFontFamily: "system",
+  loginHeadlineSize: 48,
+  loginHeadlineColor: "#ffffff",
+  loginHeadlineWeight: "800",
+  loginHeadlineStyle: "normal",
+  loginHeadlineFontFamily: "system",
+  loginSubtitleSize: 18,
+  loginSubtitleColor: "#ffffff",
+  loginSubtitleWeight: "400",
+  loginSubtitleStyle: "normal",
+  loginSubtitleAlign: "left",
+  loginSubtitleFontFamily: "system",
+  loginFooterSize: 18,
+  loginFooterColor: "#ffffff",
+  loginFooterWeight: "400",
+  loginFooterStyle: "normal",
+  loginFooterFontFamily: "system",
   primaryColor: "#155eef",
   secondaryColor: "#0f172a",
   supportButtonEnabled: true,
@@ -472,16 +550,55 @@ export function SettingsWorkspace() {
       logoUrl: settings.logoUrl,
       loginLogoUrl: settings.loginLogoUrl,
       loginFormLogoUrl: settings.loginFormLogoUrl,
+      mobileLogoUrl: settings.mobileLogoUrl,
+      mobileLoginLogoUrl: settings.mobileLoginLogoUrl,
       appIconUrl: settings.appIconUrl,
       loginHeadline: settings.loginHeadline,
       loginSubtitle: settings.loginSubtitle,
       loginFooterText: settings.loginFooterText,
+      appSubtitle: settings.appSubtitle,
+      showSubtitleOnLogin: settings.showSubtitleOnLogin,
+      showSubtitleInApp: settings.showSubtitleInApp,
+      subtitlePlacement: settings.subtitlePlacement,
+      mobileSubtitlePlacement: settings.mobileSubtitlePlacement,
+      subtitleSize: settings.subtitleSize,
+      subtitleColor: settings.subtitleColor,
+      subtitleWeight: settings.subtitleWeight,
+      subtitleStyle: settings.subtitleStyle,
+      subtitleFontFamily: settings.subtitleFontFamily,
       loginLogoWidth: settings.loginLogoWidth,
       loginLogoHeight: settings.loginLogoHeight,
       loginFormLogoWidth: settings.loginFormLogoWidth,
       loginFormLogoHeight: settings.loginFormLogoHeight,
       brandTextSize: settings.brandTextSize,
       brandTextColor: settings.brandTextColor,
+      appBrandTextSize: settings.appBrandTextSize,
+      appBrandTextColor: settings.appBrandTextColor,
+      mobileLogoWidth: settings.mobileLogoWidth,
+      mobileLogoHeight: settings.mobileLogoHeight,
+      mobileBrandTextSize: settings.mobileBrandTextSize,
+      mobileBrandTextColor: settings.mobileBrandTextColor,
+      mobileLoginLogoWidth: settings.mobileLoginLogoWidth,
+      mobileLoginLogoHeight: settings.mobileLoginLogoHeight,
+      mobileLoginBrandTextSize: settings.mobileLoginBrandTextSize,
+      mobileLoginBrandTextColor: settings.mobileLoginBrandTextColor,
+      brandFontFamily: settings.brandFontFamily,
+      loginHeadlineSize: settings.loginHeadlineSize,
+      loginHeadlineColor: settings.loginHeadlineColor,
+      loginHeadlineWeight: settings.loginHeadlineWeight,
+      loginHeadlineStyle: settings.loginHeadlineStyle,
+      loginHeadlineFontFamily: settings.loginHeadlineFontFamily,
+      loginSubtitleSize: settings.loginSubtitleSize,
+      loginSubtitleColor: settings.loginSubtitleColor,
+      loginSubtitleWeight: settings.loginSubtitleWeight,
+      loginSubtitleStyle: settings.loginSubtitleStyle,
+      loginSubtitleAlign: settings.loginSubtitleAlign,
+      loginSubtitleFontFamily: settings.loginSubtitleFontFamily,
+      loginFooterSize: settings.loginFooterSize,
+      loginFooterColor: settings.loginFooterColor,
+      loginFooterWeight: settings.loginFooterWeight,
+      loginFooterStyle: settings.loginFooterStyle,
+      loginFooterFontFamily: settings.loginFooterFontFamily,
       primaryColor: settings.primaryColor,
       secondaryColor: settings.secondaryColor,
       supportButtonEnabled: settings.supportButtonEnabled,
@@ -628,7 +745,7 @@ export function SettingsWorkspace() {
     }
   }
 
-  async function uploadBrandingAsset(assetType: "logo" | "loginLogo" | "loginFormLogo" | "appIcon", file: File | null) {
+  async function uploadBrandingAsset(assetType: "logo" | "loginLogo" | "loginFormLogo" | "mobileLogo" | "mobileLoginLogo" | "appIcon", file: File | null) {
     if (!file) {
       return;
     }
@@ -637,6 +754,8 @@ export function SettingsWorkspace() {
       logo: "logoUrl",
       loginLogo: "loginLogoUrl",
       loginFormLogo: "loginFormLogoUrl",
+      mobileLogo: "mobileLogoUrl",
+      mobileLoginLogo: "mobileLoginLogoUrl",
       appIcon: "appIconUrl"
     } as const;
     const formData = new FormData();
@@ -1474,6 +1593,93 @@ export function SettingsWorkspace() {
                     <span>Secondary color</span>
                     <input className="input" type="color" value={generalDraft.secondaryColor} onChange={(event) => setGeneralDraft((current) => ({ ...current, secondaryColor: event.target.value }))} />
                   </label>
+                  <label className="field full-span">
+                    <span>Application subtitle</span>
+                    <input className="input" value={generalDraft.appSubtitle ?? ""} onChange={(event) => setGeneralDraft((current) => ({ ...current, appSubtitle: event.target.value }))} />
+                  </label>
+                  <label className="checkbox-row">
+                    <input type="checkbox" checked={generalDraft.showSubtitleOnLogin} onChange={(event) => setGeneralDraft((current) => ({ ...current, showSubtitleOnLogin: event.target.checked }))} />
+                    Show subtitle on login
+                  </label>
+                  <label className="checkbox-row">
+                    <input type="checkbox" checked={generalDraft.showSubtitleInApp} onChange={(event) => setGeneralDraft((current) => ({ ...current, showSubtitleInApp: event.target.checked }))} />
+                    Show subtitle in app
+                  </label>
+                  <label className="field">
+                    <span>Desktop subtitle placement</span>
+                    <select className="input" value={generalDraft.subtitlePlacement} onChange={(event) => setGeneralDraft((current) => ({ ...current, subtitlePlacement: event.target.value as "RIGHT" | "BELOW" }))}>
+                      <option value="BELOW">Below title</option>
+                      <option value="RIGHT">Right of title</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Mobile subtitle placement</span>
+                    <select className="input" value={generalDraft.mobileSubtitlePlacement} onChange={(event) => setGeneralDraft((current) => ({ ...current, mobileSubtitlePlacement: event.target.value as "RIGHT" | "BELOW" }))}>
+                      <option value="BELOW">Below title</option>
+                      <option value="RIGHT">Right of title</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>App title size</span>
+                    <input className="input" type="number" min={12} max={32} value={generalDraft.appBrandTextSize} onChange={(event) => setGeneralDraft((current) => ({ ...current, appBrandTextSize: Number(event.target.value) }))} />
+                  </label>
+                  <label className="field">
+                    <span>App title color</span>
+                    <input className="input" type="color" value={generalDraft.appBrandTextColor} onChange={(event) => setGeneralDraft((current) => ({ ...current, appBrandTextColor: event.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Mobile app title size</span>
+                    <input className="input" type="number" min={12} max={28} value={generalDraft.mobileBrandTextSize} onChange={(event) => setGeneralDraft((current) => ({ ...current, mobileBrandTextSize: Number(event.target.value) }))} />
+                  </label>
+                  <label className="field">
+                    <span>Mobile app title color</span>
+                    <input className="input" type="color" value={generalDraft.mobileBrandTextColor} onChange={(event) => setGeneralDraft((current) => ({ ...current, mobileBrandTextColor: event.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Mobile app logo width</span>
+                    <input className="input" type="number" min={20} max={160} value={generalDraft.mobileLogoWidth} onChange={(event) => setGeneralDraft((current) => ({ ...current, mobileLogoWidth: Number(event.target.value) }))} />
+                  </label>
+                  <label className="field">
+                    <span>Mobile app logo height</span>
+                    <input className="input" type="number" min={20} max={120} value={generalDraft.mobileLogoHeight} onChange={(event) => setGeneralDraft((current) => ({ ...current, mobileLogoHeight: Number(event.target.value) }))} />
+                  </label>
+                  <label className="field">
+                    <span>Brand font</span>
+                    <select className="input" value={generalDraft.brandFontFamily} onChange={(event) => setGeneralDraft((current) => ({ ...current, brandFontFamily: event.target.value }))}>
+                      <option value="system">System</option>
+                      <option value="serif">Serif</option>
+                      <option value="mono">Mono</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Subtitle font</span>
+                    <select className="input" value={generalDraft.subtitleFontFamily} onChange={(event) => setGeneralDraft((current) => ({ ...current, subtitleFontFamily: event.target.value }))}>
+                      <option value="system">System</option>
+                      <option value="serif">Serif</option>
+                      <option value="mono">Mono</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Subtitle size</span>
+                    <input className="input" type="number" min={10} max={28} value={generalDraft.subtitleSize} onChange={(event) => setGeneralDraft((current) => ({ ...current, subtitleSize: Number(event.target.value) }))} />
+                  </label>
+                  <label className="field">
+                    <span>Subtitle color</span>
+                    <input className="input" type="color" value={generalDraft.subtitleColor} onChange={(event) => setGeneralDraft((current) => ({ ...current, subtitleColor: event.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Subtitle weight</span>
+                    <select className="input" value={generalDraft.subtitleWeight} onChange={(event) => setGeneralDraft((current) => ({ ...current, subtitleWeight: event.target.value }))}>
+                      {["300", "400", "500", "600", "700", "800"].map((weight) => <option key={weight} value={weight}>{weight}</option>)}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Subtitle style</span>
+                    <select className="input" value={generalDraft.subtitleStyle} onChange={(event) => setGeneralDraft((current) => ({ ...current, subtitleStyle: event.target.value as "normal" | "italic" }))}>
+                      <option value="normal">Normal</option>
+                      <option value="italic">Italic</option>
+                    </select>
+                  </label>
                 </div>
               </div>
 
@@ -1489,6 +1695,8 @@ export function SettingsWorkspace() {
                     { type: "logo" as const, label: "App logo", value: generalDraft.logoUrl },
                     { type: "loginLogo" as const, label: "Login logo", value: generalDraft.loginLogoUrl },
                     { type: "loginFormLogo" as const, label: "Login form logo", value: generalDraft.loginFormLogoUrl },
+                    { type: "mobileLogo" as const, label: "Mobile app logo", value: generalDraft.mobileLogoUrl },
+                    { type: "mobileLoginLogo" as const, label: "Mobile login logo", value: generalDraft.mobileLoginLogoUrl },
                     { type: "appIcon" as const, label: "Browser icon", value: generalDraft.appIconUrl }
                   ].map((asset) => (
                     <div className="branding-asset-row" key={asset.type}>
@@ -1540,7 +1748,7 @@ export function SettingsWorkspace() {
                     />
                   </label>
                   <label className="field">
-                    <span>Header text size</span>
+                    <span>Login title size</span>
                     <input
                       className="input"
                       type="number"
@@ -1551,8 +1759,24 @@ export function SettingsWorkspace() {
                     />
                   </label>
                   <label className="field">
-                    <span>Header text color</span>
+                    <span>Login title color</span>
                     <input className="input" type="color" value={generalDraft.brandTextColor} onChange={(event) => setGeneralDraft((current) => ({ ...current, brandTextColor: event.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Mobile login logo width</span>
+                    <input className="input" type="number" min={24} max={320} value={generalDraft.mobileLoginLogoWidth} onChange={(event) => setGeneralDraft((current) => ({ ...current, mobileLoginLogoWidth: Number(event.target.value) }))} />
+                  </label>
+                  <label className="field">
+                    <span>Mobile login logo height</span>
+                    <input className="input" type="number" min={24} max={140} value={generalDraft.mobileLoginLogoHeight} onChange={(event) => setGeneralDraft((current) => ({ ...current, mobileLoginLogoHeight: Number(event.target.value) }))} />
+                  </label>
+                  <label className="field">
+                    <span>Mobile login title size</span>
+                    <input className="input" type="number" min={12} max={28} value={generalDraft.mobileLoginBrandTextSize} onChange={(event) => setGeneralDraft((current) => ({ ...current, mobileLoginBrandTextSize: Number(event.target.value) }))} />
+                  </label>
+                  <label className="field">
+                    <span>Mobile login title color</span>
+                    <input className="input" type="color" value={generalDraft.mobileLoginBrandTextColor} onChange={(event) => setGeneralDraft((current) => ({ ...current, mobileLoginBrandTextColor: event.target.value }))} />
                   </label>
                   <label className="field full-span">
                     <span>Headline</span>
@@ -1562,9 +1786,104 @@ export function SettingsWorkspace() {
                     <span>Subtitle</span>
                     <textarea className="textarea compact-textarea" value={generalDraft.loginSubtitle ?? ""} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginSubtitle: event.target.value }))} />
                   </label>
+                  <label className="field">
+                    <span>Headline size</span>
+                    <input className="input" type="number" min={24} max={72} value={generalDraft.loginHeadlineSize} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginHeadlineSize: Number(event.target.value) }))} />
+                  </label>
+                  <label className="field">
+                    <span>Headline color</span>
+                    <input className="input" type="color" value={generalDraft.loginHeadlineColor} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginHeadlineColor: event.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Headline weight</span>
+                    <select className="input" value={generalDraft.loginHeadlineWeight} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginHeadlineWeight: event.target.value }))}>
+                      {["400", "500", "600", "700", "800", "900"].map((weight) => <option key={weight} value={weight}>{weight}</option>)}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Headline style</span>
+                    <select className="input" value={generalDraft.loginHeadlineStyle} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginHeadlineStyle: event.target.value as "normal" | "italic" }))}>
+                      <option value="normal">Normal</option>
+                      <option value="italic">Italic</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Headline font</span>
+                    <select className="input" value={generalDraft.loginHeadlineFontFamily} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginHeadlineFontFamily: event.target.value }))}>
+                      <option value="system">System</option>
+                      <option value="serif">Serif</option>
+                      <option value="mono">Mono</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Subtitle weight</span>
+                    <select className="input" value={generalDraft.loginSubtitleWeight} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginSubtitleWeight: event.target.value }))}>
+                      {["300", "400", "500", "600", "700"].map((weight) => <option key={weight} value={weight}>{weight}</option>)}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Subtitle size</span>
+                    <input className="input" type="number" min={12} max={32} value={generalDraft.loginSubtitleSize} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginSubtitleSize: Number(event.target.value) }))} />
+                  </label>
+                  <label className="field">
+                    <span>Subtitle color</span>
+                    <input className="input" type="color" value={generalDraft.loginSubtitleColor} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginSubtitleColor: event.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Subtitle alignment</span>
+                    <select className="input" value={generalDraft.loginSubtitleAlign} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginSubtitleAlign: event.target.value as "left" | "center" | "right" }))}>
+                      <option value="left">Left</option>
+                      <option value="center">Center</option>
+                      <option value="right">Right</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Subtitle style</span>
+                    <select className="input" value={generalDraft.loginSubtitleStyle} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginSubtitleStyle: event.target.value as "normal" | "italic" }))}>
+                      <option value="normal">Normal</option>
+                      <option value="italic">Italic</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Subtitle font</span>
+                    <select className="input" value={generalDraft.loginSubtitleFontFamily} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginSubtitleFontFamily: event.target.value }))}>
+                      <option value="system">System</option>
+                      <option value="serif">Serif</option>
+                      <option value="mono">Mono</option>
+                    </select>
+                  </label>
                   <label className="field full-span">
                     <span>Footer text</span>
                     <input className="input" value={generalDraft.loginFooterText ?? ""} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginFooterText: event.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Footer size</span>
+                    <input className="input" type="number" min={10} max={28} value={generalDraft.loginFooterSize} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginFooterSize: Number(event.target.value) }))} />
+                  </label>
+                  <label className="field">
+                    <span>Footer color</span>
+                    <input className="input" type="color" value={generalDraft.loginFooterColor} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginFooterColor: event.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Footer weight</span>
+                    <select className="input" value={generalDraft.loginFooterWeight} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginFooterWeight: event.target.value }))}>
+                      {["300", "400", "500", "600", "700"].map((weight) => <option key={weight} value={weight}>{weight}</option>)}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Footer style</span>
+                    <select className="input" value={generalDraft.loginFooterStyle} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginFooterStyle: event.target.value as "normal" | "italic" }))}>
+                      <option value="normal">Normal</option>
+                      <option value="italic">Italic</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Footer font</span>
+                    <select className="input" value={generalDraft.loginFooterFontFamily} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginFooterFontFamily: event.target.value }))}>
+                      <option value="system">System</option>
+                      <option value="serif">Serif</option>
+                      <option value="mono">Mono</option>
+                    </select>
                   </label>
                   <label className="field">
                     <span>Form logo width</span>

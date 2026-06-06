@@ -206,16 +206,55 @@ model SystemSetting {
   logoUrl                    String?
   loginLogoUrl               String?
   loginFormLogoUrl           String?
+  mobileLogoUrl              String?
+  mobileLoginLogoUrl         String?
   appIconUrl                 String?
   loginHeadline              String?
   loginSubtitle              String?
   loginFooterText            String?
+  appSubtitle                String?
+  showSubtitleOnLogin        Boolean  @default(false)
+  showSubtitleInApp          Boolean  @default(false)
+  subtitlePlacement          String   @default("BELOW")
+  mobileSubtitlePlacement    String   @default("BELOW")
+  subtitleSize               Int      @default(14)
+  subtitleColor              String   @default("#cbd5e1")
+  subtitleWeight             String   @default("400")
+  subtitleStyle              String   @default("normal")
+  subtitleFontFamily         String   @default("system")
   loginLogoWidth             Int      @default(160)
   loginLogoHeight            Int      @default(48)
   loginFormLogoWidth         Int      @default(220)
   loginFormLogoHeight        Int      @default(72)
   brandTextSize              Int      @default(16)
   brandTextColor             String   @default("#ffffff")
+  appBrandTextSize           Int      @default(16)
+  appBrandTextColor          String   @default("#ffffff")
+  mobileLogoWidth            Int      @default(34)
+  mobileLogoHeight           Int      @default(34)
+  mobileBrandTextSize        Int      @default(16)
+  mobileBrandTextColor       String   @default("#ffffff")
+  mobileLoginLogoWidth       Int      @default(140)
+  mobileLoginLogoHeight      Int      @default(44)
+  mobileLoginBrandTextSize   Int      @default(16)
+  mobileLoginBrandTextColor  String   @default("#ffffff")
+  brandFontFamily            String   @default("system")
+  loginHeadlineSize          Int      @default(48)
+  loginHeadlineColor         String   @default("#ffffff")
+  loginHeadlineWeight        String   @default("800")
+  loginHeadlineStyle         String   @default("normal")
+  loginHeadlineFontFamily    String   @default("system")
+  loginSubtitleSize          Int      @default(18)
+  loginSubtitleColor         String   @default("#ffffff")
+  loginSubtitleWeight        String   @default("400")
+  loginSubtitleStyle         String   @default("normal")
+  loginSubtitleAlign         String   @default("left")
+  loginSubtitleFontFamily    String   @default("system")
+  loginFooterSize            Int      @default(18)
+  loginFooterColor           String   @default("#ffffff")
+  loginFooterWeight          String   @default("400")
+  loginFooterStyle           String   @default("normal")
+  loginFooterFontFamily      String   @default("system")
   primaryColor               String   @default("#155eef")
   secondaryColor             String   @default("#0f172a")
   supportEmail               String

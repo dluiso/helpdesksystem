@@ -35,6 +35,12 @@ const iconMap = {
   Settings
 };
 
+function brandingFontFamily(value?: string) {
+  if (value === "serif") return "Georgia, 'Times New Roman', serif";
+  if (value === "mono") return "'SFMono-Regular', Consolas, monospace";
+  return "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+}
+
 interface CurrentUser {
   id: string;
   email: string;
@@ -85,9 +91,32 @@ export function AppShell({ children }: { children: ReactNode }) {
       {mobileNavOpen ? <button className="mobile-nav-backdrop" type="button" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} /> : null}
       <aside className={`sidebar${mobileNavOpen ? " mobile-open" : ""}`}>
         <Link className="brand" href="/dashboard">
-          {branding.logoUrl ? <img className="brand-logo" src={branding.logoUrl} alt="" /> : <span className="brand-mark">{branding.applicationName.slice(0, 1)}</span>}
-          <span className="brand-name" style={{ color: branding.brandTextColor ?? "#ffffff", fontSize: branding.brandTextSize ?? 16 }}>
-            {branding.applicationName}
+          {branding.logoUrl ? <img className="brand-logo desktop-brand-logo" src={branding.logoUrl} alt="" /> : null}
+          {branding.mobileLogoUrl || branding.logoUrl ? (
+            <img className="brand-logo mobile-brand-logo" src={branding.mobileLogoUrl ?? branding.logoUrl ?? ""} alt="" style={{ width: branding.mobileLogoWidth ?? 34, height: branding.mobileLogoHeight ?? 34 }} />
+          ) : null}
+          {!branding.logoUrl && !branding.mobileLogoUrl ? <span className="brand-mark">{branding.applicationName.slice(0, 1)}</span> : null}
+          <span className={`brand-title-wrap subtitle-${branding.subtitlePlacement === "RIGHT" ? "right" : "below"} mobile-subtitle-${branding.mobileSubtitlePlacement === "RIGHT" ? "right" : "below"}`}>
+            <span className="brand-name desktop-brand-title" style={{ color: branding.appBrandTextColor ?? "#ffffff", fontSize: branding.appBrandTextSize ?? 16, fontFamily: brandingFontFamily(branding.brandFontFamily) }}>
+              {branding.applicationName}
+            </span>
+            <span className="brand-name mobile-brand-title" style={{ color: branding.mobileBrandTextColor ?? "#ffffff", fontSize: branding.mobileBrandTextSize ?? 16, fontFamily: brandingFontFamily(branding.brandFontFamily) }}>
+              {branding.applicationName}
+            </span>
+            {branding.showSubtitleInApp && branding.appSubtitle ? (
+              <span
+                className="brand-subtitle"
+                style={{
+                  color: branding.subtitleColor ?? "#cbd5e1",
+                  fontSize: branding.subtitleSize ?? 14,
+                  fontWeight: branding.subtitleWeight ?? "400",
+                  fontStyle: branding.subtitleStyle ?? "normal",
+                  fontFamily: brandingFontFamily(branding.subtitleFontFamily)
+                }}
+              >
+                {branding.appSubtitle}
+              </span>
+            ) : null}
           </span>
         </Link>
         <nav className="nav" aria-label="Main navigation">

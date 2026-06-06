@@ -358,6 +358,14 @@ select {
   background: #ffffff;
 }
 
+.mobile-brand-logo {
+  display: none;
+}
+
+.mobile-brand-title {
+  display: none;
+}
+
 .login-brand-logo {
   max-width: min(420px, 42vw);
   object-fit: contain;
@@ -366,6 +374,34 @@ select {
 .brand-name {
   font-weight: 800;
   line-height: 1.2;
+}
+
+.brand-title-wrap {
+  min-width: 0;
+  display: flex;
+  gap: 4px 10px;
+}
+
+.brand-title-wrap.subtitle-right {
+  align-items: baseline;
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.brand-title-wrap.subtitle-below {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.brand-subtitle {
+  display: block;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.login-subtitle,
+.login-footer-text {
+  white-space: pre-line;
 }
 
 .nav {
@@ -4226,6 +4262,33 @@ a.dashboard-list-row:hover {
   .branding-preview {
     width: 40px;
     height: 40px;
+  }
+
+  .desktop-brand-logo {
+    display: none;
+  }
+
+  .mobile-brand-logo {
+    display: block;
+  }
+
+  .desktop-brand-title {
+    display: none;
+  }
+
+  .mobile-brand-title {
+    display: inline;
+  }
+
+  .brand-title-wrap.mobile-subtitle-right {
+    align-items: baseline;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .brand-title-wrap.mobile-subtitle-below {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .tickets-filter-grid {

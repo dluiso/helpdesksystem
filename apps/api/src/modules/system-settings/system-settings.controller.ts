@@ -55,13 +55,13 @@ export class SystemSettingsController {
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: brandingUploadLimitBytes } }))
   uploadBrandingAsset(
     @CurrentUser() user: AuthenticatedUser,
-    @Query("type") type: "logo" | "loginLogo" | "loginFormLogo" | "appIcon",
+    @Query("type") type: "logo" | "loginLogo" | "loginFormLogo" | "mobileLogo" | "mobileLoginLogo" | "appIcon",
     @UploadedFile() file?: { originalname: string; mimetype: string; size: number; buffer: Buffer }
   ) {
     if (!file) {
       throw new BadRequestException("Branding asset file is required.");
     }
-    if (!["logo", "loginLogo", "loginFormLogo", "appIcon"].includes(type)) {
+    if (!["logo", "loginLogo", "loginFormLogo", "mobileLogo", "mobileLoginLogo", "appIcon"].includes(type)) {
       throw new BadRequestException("Invalid branding asset type.");
     }
     return this.systemSettingsService.uploadBrandingAsset(user, type, file);
