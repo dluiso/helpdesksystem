@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { ConfigService } from "@nestjs/config";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
-import { FileStorageService } from "../file-storage/file-storage.service";
+import { LocalFileStorageProvider } from "../file-storage/providers/local-file-storage.provider";
 import { PrismaService } from "../prisma/prisma.service";
 import { UpdateGeneralSettingsDto } from "./dto/update-general-settings.dto";
 
@@ -15,7 +15,7 @@ export class SystemSettingsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly auditLogs: AuditLogsService,
-    private readonly fileStorage: FileStorageService
+    private readonly brandingStorage: LocalFileStorageProvider
   ) {}
 
   async getPublicBranding() {
@@ -101,7 +101,7 @@ export class SystemSettingsService {
       throw new BadRequestException("Branding asset must be 2 MB or smaller.");
     }
 
-    const stored = await this.fileStorage.saveSystemFile({
+    const stored = await this.brandingStorage.saveFile({
       originalFilename: file.originalname,
       mimeType: file.mimetype,
       buffer: file.buffer,
@@ -130,7 +130,7 @@ export class SystemSettingsService {
     if (!storageKey || !storageKey.startsWith("branding/")) {
       throw new NotFoundException("Branding asset was not found.");
     }
-    return this.fileStorage.getFileStream(storageKey);
+    return this.brandingStorage.getFileStream(storageKey);
   }
 
   async getAttachmentPolicy() {
