@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Clock3, Inbox, Ticket, UserX, Zap } from "lucide-react";
+import { AlertTriangle, CalendarDays, CheckCircle2, Clock3, ClipboardList, Inbox, Ticket, UsersRound, UserX, Zap } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -42,7 +42,15 @@ interface DashboardStats {
   };
 }
 
+type EventStatus = "NEW" | "UNDER_REVIEW" | "SCHEDULED" | "ASSIGNED" | "IN_PROGRESS" | "WAITING_ON_CLIENT" | "WAITING_ON_INTERNAL_TEAM" | "COMPLETED" | "CANCELLED" | "CONVERTED_TO_TICKET";
+
+interface DashboardEventRequest {
+  id: string;
+  status: EventStatus;
+}
+
 const activeStatuses = ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_TECHNICIAN", "WAITING_ON_THIRD_PARTY", "REOPENED"];
+const activeEventStatuses: EventStatus[] = ["ASSIGNED", "IN_PROGRESS", "WAITING_ON_CLIENT", "WAITING_ON_INTERNAL_TEAM"];
 const chartColors = ["#155eef", "#16a34a", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#64748b", "#ec4899"];
 
 function label(value: string) {
@@ -64,6 +72,15 @@ function ticketHref(filter: Record<string, string | string[] | undefined>) {
   }
   const query = params.toString();
   return query ? `/tickets?${query}` : "/tickets";
+}
+
+function eventHref(filter: Record<string, string | undefined>) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filter)) {
+    if (value) params.set(key, value);
+  }
+  const query = params.toString();
+  return query ? `/event-services?${query}` : "/event-services";
 }
 
 function formatDate(value: string) {
@@ -277,16 +294,21 @@ function InsightTable({ title, subtitle, tickets }: { title: string; subtitle: s
 
 export function DashboardWorkspace() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [eventRequests, setEventRequests] = useState<DashboardEventRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    apiFetch<DashboardStats>("/tickets/statistics")
-      .then((data) => {
+    Promise.all([
+      apiFetch<DashboardStats>("/tickets/statistics"),
+      apiFetch<DashboardEventRequest[]>("/event-services").catch(() => [])
+    ])
+      .then(([data, events]) => {
         if (mounted) {
           setStats(data);
+          setEventRequests(events);
           setError("");
         }
       })
@@ -305,6 +327,20 @@ export function DashboardWorkspace() {
       mounted = false;
     };
   }, []);
+
+  const eventSummaryCards = useMemo(() => {
+    const total = eventRequests.length;
+    const newRequests = eventRequests.filter((item) => item.status === "NEW").length;
+    const active = eventRequests.filter((item) => activeEventStatuses.includes(item.status)).length;
+    const completed = eventRequests.filter((item) => item.status === "COMPLETED").length;
+
+    return [
+      { title: "Event Requests", value: total, href: eventHref({}), tone: "primary", icon: ClipboardList, note: "All event intake" },
+      { title: "New Events", value: newRequests, href: eventHref({ status: "NEW" }), tone: "info", icon: CalendarDays, note: "Needs review" },
+      { title: "Active Events", value: active, href: eventHref({ status: "IN_PROGRESS" }), tone: "warning", icon: UsersRound, note: "Team workload" },
+      { title: "Completed Events", value: completed, href: eventHref({ status: "COMPLETED" }), tone: "success", icon: CheckCircle2, note: "Finished requests" }
+    ];
+  }, [eventRequests]);
 
   const summaryCards = useMemo(() => {
     if (!stats) {
@@ -343,8 +379,22 @@ export function DashboardWorkspace() {
 
   return (
     <div className="dashboard-page">
+      <div className="dashboard-section-heading">
+        <h2>Tickets</h2>
+        <p className="muted">Helpdesk workload and ticket response health.</p>
+      </div>
       <section className="dashboard-kpi-grid">
         {summaryCards.map((card) => (
+          <KpiCard key={card.title} {...card} />
+        ))}
+      </section>
+
+      <div className="dashboard-section-heading">
+        <h2>Event & Services</h2>
+        <p className="muted">Public event requests and service scheduling workload.</p>
+      </div>
+      <section className="dashboard-kpi-grid dashboard-event-kpi-grid">
+        {eventSummaryCards.map((card) => (
           <KpiCard key={card.title} {...card} />
         ))}
       </section>

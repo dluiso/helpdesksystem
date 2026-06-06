@@ -1339,6 +1339,26 @@ select {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.event-compact-kpi-grid .dashboard-kpi-card {
+  min-height: 86px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: center;
+  gap: 4px 10px;
+  padding: 10px;
+}
+
+.event-compact-kpi-grid .dashboard-kpi-card svg {
+  grid-row: span 3;
+}
+
+.event-compact-kpi-grid .dashboard-kpi-card strong {
+  font-size: 22px;
+}
+
+.event-compact-kpi-grid .dashboard-kpi-card small {
+  font-size: 12px;
+}
+
 .event-filter-panel,
 .event-management-grid,
 .event-admin-grid {
@@ -1350,15 +1370,31 @@ select {
 
 .event-services-layout {
   display: grid;
-  grid-template-columns: minmax(320px, 0.35fr) minmax(0, 1fr);
   gap: 14px;
   align-items: start;
 }
 
-.event-request-list,
+.event-request-table-panel,
 .event-detail-panel {
   display: grid;
   gap: 12px;
+}
+
+.event-request-table tbody tr {
+  cursor: pointer;
+}
+
+.event-request-table tbody tr.selected-row td {
+  background: var(--surface-selected);
+}
+
+.event-request-table td {
+  vertical-align: middle;
+}
+
+.event-request-table td strong,
+.event-request-table td span {
+  display: block;
 }
 
 .event-request-row {
@@ -2538,6 +2574,16 @@ a.dashboard-list-row:hover {
   gap: 16px;
 }
 
+.dashboard-section-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.dashboard-section-heading h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
 .dashboard-loading {
   min-height: 140px;
   display: grid;
@@ -2548,6 +2594,10 @@ a.dashboard-list-row:hover {
   display: grid;
   grid-template-columns: repeat(8, minmax(126px, 1fr));
   gap: 10px;
+}
+
+.dashboard-event-kpi-grid {
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
 }
 
 .dashboard-kpi-card {

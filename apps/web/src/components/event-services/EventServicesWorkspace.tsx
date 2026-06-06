@@ -73,6 +73,10 @@ function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString() : "No date";
 }
 
+function formatDateTime(value: string | null) {
+  return value ? new Date(value).toLocaleString(undefined, { month: "short", day: "2-digit", hour: "numeric", minute: "2-digit" }) : "No date";
+}
+
 export function EventServicesWorkspace() {
   const [requests, setRequests] = useState<EventServiceRequest[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -146,7 +150,13 @@ export function EventServicesWorkspace() {
   }
 
   useEffect(() => {
-    void loadData();
+    const urlFilters = { ...filters };
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      urlFilters.status = params.get("status") ?? "";
+      setFilters(urlFilters);
+    }
+    void loadData(urlFilters);
   }, []);
 
   useEffect(() => {
@@ -231,7 +241,7 @@ export function EventServicesWorkspace() {
       {error ? <div className="alert error">{error}</div> : null}
       {notice ? <div className="alert success">{notice}</div> : null}
 
-      <section className="dashboard-kpi-grid event-kpi-grid">
+      <section className="dashboard-kpi-grid event-kpi-grid event-compact-kpi-grid">
         <div className="dashboard-kpi-card"><ClipboardList size={18} /><span>Total Requests</span><strong>{summary.total}</strong><small>Current filtered view</small></div>
         <div className="dashboard-kpi-card"><CalendarDays size={18} /><span>New</span><strong>{summary.newRequests}</strong><small>Needs review</small></div>
         <div className="dashboard-kpi-card"><UsersRound size={18} /><span>Assigned / Active</span><strong>{summary.assigned}</strong><small>Team workload</small></div>
@@ -256,19 +266,72 @@ export function EventServicesWorkspace() {
       </section>
 
       <div className="event-services-layout">
-        <section className="panel event-request-list">
-          <h2>Requests</h2>
-          {requests.length === 0 ? <p className="muted">{loading ? "Loading requests..." : "No event requests match the filters."}</p> : null}
-          {requests.map((request) => (
-            <button className={`event-request-row${selectedId === request.id ? " active" : ""}`} type="button" key={request.id} onClick={() => setSelectedId(request.id)}>
-              <span>
-                <strong>{request.trackingNumber}</strong>
-                <span>{request.eventName}</span>
-                <small>{request.requesterFirstName} {request.requesterLastName} - {formatDate(request.eventDate)}</small>
-              </span>
-              <span className={`status-pill status-${request.status.toLowerCase().replaceAll("_", "-")}`}>{label(request.status)}</span>
-            </button>
-          ))}
+        <section className="panel event-request-table-panel">
+          <div className="section-heading compact-heading">
+            <div>
+              <h2>Requests</h2>
+              <p className="muted">{requests.length} event request{requests.length === 1 ? "" : "s"} in this view.</p>
+            </div>
+          </div>
+          <div className="table-scroll">
+            <table className="tickets-table event-request-table">
+              <thead>
+                <tr>
+                  <th>Tracking</th>
+                  <th>Event</th>
+                  <th>Requester</th>
+                  <th>Date / Time</th>
+                  <th>Services</th>
+                  <th>Status</th>
+                  <th>Priority</th>
+                  <th>Assigned</th>
+                  <th>Progress</th>
+                  <th>Updated</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {requests.length === 0 ? (
+                  <tr>
+                    <td colSpan={11}>
+                      <span className="muted">{loading ? "Loading requests..." : "No event requests match the filters."}</span>
+                    </td>
+                  </tr>
+                ) : null}
+                {requests.map((request) => (
+                  <tr className={selectedId === request.id ? "selected-row" : ""} key={request.id} onClick={() => setSelectedId(request.id)}>
+                    <td><strong>{request.trackingNumber}</strong></td>
+                    <td>
+                      <strong>{request.eventName}</strong>
+                      <span className="muted">{request.venue ?? "No venue"}</span>
+                    </td>
+                    <td>
+                      <strong>{request.requesterFirstName} {request.requesterLastName}</strong>
+                      <span className="muted">{request.requesterEmail}</span>
+                    </td>
+                    <td>
+                      <strong>{formatDate(request.eventDate)}</strong>
+                      <span className="muted">{request.startTime ?? "--"} - {request.endTime ?? "--"}</span>
+                    </td>
+                    <td>{request.services.map((item) => item.service.name).join(", ") || "None"}</td>
+                    <td><span className={`status-pill status-${request.status.toLowerCase().replaceAll("_", "-")}`}>{label(request.status)}</span></td>
+                    <td>{label(request.priority)}</td>
+                    <td>
+                      <strong>{request.assignedTeam?.name ?? "No team"}</strong>
+                      <span className="muted">{request.assignees.map((assignee) => userName(assignee.user)).join(", ") || "Unassigned"}</span>
+                    </td>
+                    <td><span className="count-pill">{request.progressPercent}%</span></td>
+                    <td>{formatDateTime(request.updatedAt)}</td>
+                    <td>
+                      <button className="icon-button" type="button" onClick={(event) => { event.stopPropagation(); setSelectedId(request.id); }}>
+                        Open
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <section className="panel event-detail-panel">
