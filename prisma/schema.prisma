@@ -192,6 +192,8 @@ model Organization {
   spamBlockEntries    SpamBlockEntry[]
   blockedInboundEmails BlockedInboundEmail[]
   reportDefinitions   ReportDefinition[]
+  reportSchedules     ReportSchedule[]
+  reportExports       ReportExport[]
 
   @@map("organizations")
 }
@@ -265,6 +267,7 @@ model User {
   uploadedKnowledgeArticleAttachments KnowledgeArticleAttachment[] @relation("KnowledgeArticleAttachmentUploadedBy")
   reportExports       ReportExport[]
   reportDefinitions   ReportDefinition[]
+  reportSchedules     ReportSchedule[]
   performedTicketMerges TicketMerge[]
   createdSpamBlockEntries SpamBlockEntry[] @relation("SpamBlockEntryCreatedBy")
 
@@ -1118,14 +1121,23 @@ model KnowledgeArticleAttachment {
 
 model ReportExport {
   id             String   @id @default(uuid()) @db.Uuid
+  organizationId String?  @db.Uuid
   requestedById  String?  @db.Uuid
+  definitionId   String?  @db.Uuid
   reportType     String
   filters        Json?
   format         String   @default("csv")
   storageKey     String?
+  recipientEmail String?
+  deliveryStatus String   @default("downloaded")
+  errorMessage    String?
   createdAt      DateTime @default(now())
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   requestedBy    User?    @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+  definition     ReportDefinition? @relation(fields: [definitionId], references: [id], onDelete: SetNull)
 
+  @@index([organizationId, createdAt])
+  @@index([definitionId])
   @@index([requestedById, createdAt])
   @@map("report_exports")
 }
@@ -1138,15 +1150,44 @@ model ReportDefinition {
   description    String?
   reportType     String   @default("ticket-report")
   filters        Json
+  isShared       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdBy      User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  schedules      ReportSchedule[]
+  exports        ReportExport[]
 
   @@unique([organizationId, name])
   @@index([organizationId, reportType])
   @@index([createdById])
   @@map("report_definitions")
+}
+
+model ReportSchedule {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @db.Uuid
+  definitionId    String   @db.Uuid
+  createdById     String?  @db.Uuid
+  name            String
+  frequency       String   @default("weekly")
+  format          String   @default("pdf")
+  recipientEmails String[] @default([])
+  isActive        Boolean  @default(true)
+  nextRunAt       DateTime?
+  lastRunAt       DateTime?
+  lastStatus      String?
+  lastError       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  definition      ReportDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  createdBy       User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, isActive, nextRunAt])
+  @@index([definitionId])
+  @@index([createdById])
+  @@map("report_schedules")
 }
 
 model Device {

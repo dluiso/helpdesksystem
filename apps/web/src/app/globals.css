@@ -2310,13 +2310,73 @@ a.dashboard-list-row:hover {
 
 .reports-saved-row {
   display: grid;
-  grid-template-columns: minmax(170px, 1fr) minmax(160px, 1fr) minmax(220px, 1.4fr) auto auto auto;
+  grid-template-columns: minmax(150px, 1fr) minmax(170px, 1fr) minmax(160px, 1fr) minmax(220px, 1.4fr) auto auto auto;
   gap: 10px;
   align-items: center;
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface-subtle);
+}
+
+.reports-delivery-grid,
+.reports-admin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.reports-delivery-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.reports-delivery-card h3,
+.reports-admin-grid h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reports-inline-controls {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.reports-delivery-card:nth-child(2) .reports-inline-controls {
+  grid-template-columns: minmax(140px, 1fr) auto auto minmax(160px, 1fr) auto;
+}
+
+.report-list-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.report-admin-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+}
+
+.report-admin-row.compact {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.small-button {
+  min-height: 34px;
+  padding: 7px 10px;
+  font-size: 13px;
 }
 
 .reports-status-filter {
@@ -3686,6 +3746,12 @@ a.dashboard-list-row:hover {
   .dashboard-insight-row,
   .reports-filter-grid,
   .reports-saved-row,
+  .reports-delivery-grid,
+  .reports-admin-grid,
+  .reports-inline-controls,
+  .reports-delivery-card:nth-child(2) .reports-inline-controls,
+  .report-admin-row,
+  .report-admin-row.compact,
   .knowledge-toolbar,
   .knowledge-layout,
   .knowledge-editor-grid {

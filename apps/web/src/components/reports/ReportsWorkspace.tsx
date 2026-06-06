@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, FileSpreadsheet, Filter, RefreshCw, Save, Trash2 } from "lucide-react";
+import { CalendarClock, Download, FileSpreadsheet, FileText, Filter, History, Mail, RefreshCw, Save, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
 
@@ -84,6 +84,39 @@ interface SavedReport {
   }>;
   updatedAt: string;
   createdBy: string | null;
+}
+
+interface ReportTemplate {
+  id: string;
+  name: string;
+  description: string;
+  filters: SavedReport["filters"];
+}
+
+interface ReportSchedule {
+  id: string;
+  name: string;
+  frequency: "daily" | "weekly" | "monthly";
+  format: "csv" | "xlsx" | "pdf";
+  recipientEmails: string[];
+  isActive: boolean;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  lastStatus: string | null;
+  lastError: string | null;
+  definition: { name: string };
+}
+
+interface ReportExportHistory {
+  id: string;
+  reportType: string;
+  format: string;
+  recipientEmail: string | null;
+  deliveryStatus: string;
+  errorMessage: string | null;
+  createdAt: string;
+  definitionName: string | null;
+  requestedBy: string | null;
 }
 
 const chartColors = ["#4f7cff", "#16a34a", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#64748b", "#ec4899"];
@@ -191,10 +224,20 @@ export function ReportsWorkspace() {
   const [valuePerTicket, setValuePerTicket] = useState("0");
   const [data, setData] = useState<ReportSummary | null>(null);
   const [savedReports, setSavedReports] = useState<SavedReport[]>([]);
+  const [templates, setTemplates] = useState<ReportTemplate[]>([]);
+  const [schedules, setSchedules] = useState<ReportSchedule[]>([]);
+  const [exportHistory, setExportHistory] = useState<ReportExportHistory[]>([]);
   const [selectedSavedReportId, setSelectedSavedReportId] = useState("");
   const [saveName, setSaveName] = useState("");
   const [saveDescription, setSaveDescription] = useState("");
+  const [emailRecipients, setEmailRecipients] = useState("");
+  const [emailFormat, setEmailFormat] = useState<"csv" | "xlsx" | "pdf">("pdf");
+  const [scheduleName, setScheduleName] = useState("");
+  const [scheduleFrequency, setScheduleFrequency] = useState<"daily" | "weekly" | "monthly">("weekly");
+  const [scheduleFormat, setScheduleFormat] = useState<"csv" | "xlsx" | "pdf">("pdf");
+  const [scheduleRecipients, setScheduleRecipients] = useState("");
   const [savedBusy, setSavedBusy] = useState(false);
+  const [deliveryBusy, setDeliveryBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -239,6 +282,21 @@ export function ReportsWorkspace() {
     }
   }
 
+  async function loadReportMeta() {
+    try {
+      const [templateResult, scheduleResult, exportResult] = await Promise.all([
+        apiFetch<ReportTemplate[]>("/reports/templates"),
+        apiFetch<ReportSchedule[]>("/reports/schedules"),
+        apiFetch<ReportExportHistory[]>("/reports/exports")
+      ]);
+      setTemplates(templateResult);
+      setSchedules(scheduleResult);
+      setExportHistory(exportResult);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load report metadata.");
+    }
+  }
+
   useEffect(() => {
     void loadReport();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -246,6 +304,7 @@ export function ReportsWorkspace() {
 
   useEffect(() => {
     void loadSavedReports();
+    void loadReportMeta();
   }, []);
 
   function currentFilters(): SavedReport["filters"] {
@@ -265,11 +324,7 @@ export function ReportsWorkspace() {
     };
   }
 
-  function applySavedReport(reportId: string) {
-    setSelectedSavedReportId(reportId);
-    const report = savedReports.find((item) => item.id === reportId);
-    if (!report) return;
-    const filters = report.filters;
+  function applyFilters(filters: SavedReport["filters"]) {
     setStartDate(filters.startDate ?? defaultStartDate());
     setEndDate(filters.endDate ?? today());
     setGroupBy(filters.groupBy ?? "day");
@@ -282,8 +337,23 @@ export function ReportsWorkspace() {
     setAttachments(filters.attachments ?? "all");
     setEstimateMode(filters.estimateMode ?? "none");
     setValuePerTicket(filters.valuePerTicket ?? "0");
+  }
+
+  function applySavedReport(reportId: string) {
+    setSelectedSavedReportId(reportId);
+    const report = savedReports.find((item) => item.id === reportId);
+    if (!report) return;
+    applyFilters(report.filters);
     setSaveName(report.name);
     setSaveDescription(report.description ?? "");
+  }
+
+  function applyTemplate(templateId: string) {
+    const template = templates.find((item) => item.id === templateId);
+    if (!template) return;
+    applyFilters({ ...currentFilters(), ...template.filters });
+    setSaveName(template.name);
+    setSaveDescription(template.description);
   }
 
   async function saveReport() {
@@ -342,12 +412,103 @@ export function ReportsWorkspace() {
     }
   }
 
+  function splitEmails(value: string) {
+    return value.split(/[,\n;]/).map((item) => item.trim()).filter(Boolean);
+  }
+
+  async function sendReport() {
+    const recipients = splitEmails(emailRecipients);
+    if (!recipients.length) {
+      setError("Enter at least one email recipient.");
+      return;
+    }
+    setDeliveryBusy(true);
+    setError("");
+    try {
+      await apiFetch(`/reports/tickets/send?${query.toString()}&format=${emailFormat}`, {
+        method: "POST",
+        body: JSON.stringify({ recipientEmails: recipients, format: emailFormat })
+      });
+      setEmailRecipients("");
+      await loadReportMeta();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to send report.");
+    } finally {
+      setDeliveryBusy(false);
+    }
+  }
+
+  async function createSchedule() {
+    if (!selectedSavedReportId) {
+      setError("Select a saved report before scheduling.");
+      return;
+    }
+    const recipients = splitEmails(scheduleRecipients);
+    if (!recipients.length) {
+      setError("Enter at least one schedule recipient.");
+      return;
+    }
+    setDeliveryBusy(true);
+    setError("");
+    try {
+      await apiFetch("/reports/schedules", {
+        method: "POST",
+        body: JSON.stringify({
+          definitionId: selectedSavedReportId,
+          name: scheduleName.trim() || saveName.trim() || "Scheduled Ticket Report",
+          frequency: scheduleFrequency,
+          format: scheduleFormat,
+          recipientEmails: recipients,
+          isActive: true
+        })
+      });
+      setScheduleName("");
+      setScheduleRecipients("");
+      await loadReportMeta();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create report schedule.");
+    } finally {
+      setDeliveryBusy(false);
+    }
+  }
+
+  async function toggleSchedule(schedule: ReportSchedule) {
+    setDeliveryBusy(true);
+    setError("");
+    try {
+      await apiFetch(`/reports/schedules/${schedule.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isActive: !schedule.isActive })
+      });
+      await loadReportMeta();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update report schedule.");
+    } finally {
+      setDeliveryBusy(false);
+    }
+  }
+
+  async function deleteSchedule(scheduleId: string) {
+    if (!window.confirm("Delete this report schedule?")) return;
+    setDeliveryBusy(true);
+    setError("");
+    try {
+      await apiFetch(`/reports/schedules/${scheduleId}`, { method: "DELETE" });
+      await loadReportMeta();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete report schedule.");
+    } finally {
+      setDeliveryBusy(false);
+    }
+  }
+
   function toggleStatus(status: string) {
     setStatuses((current) => current.includes(status) ? current.filter((item) => item !== status) : [...current, status]);
   }
 
-  function exportReport(format: "csv" | "xlsx") {
+  function exportReport(format: "csv" | "xlsx" | "pdf") {
     window.location.href = `${apiBaseUrl}/reports/tickets/export?${query.toString()}&format=${format}`;
+    setTimeout(() => void loadReportMeta(), 1000);
   }
 
   const options = data?.options;
@@ -374,9 +535,17 @@ export function ReportsWorkspace() {
               <FileSpreadsheet size={16} aria-hidden="true" />
               <span>Excel</span>
             </button>
+            <button className="button secondary" type="button" onClick={() => exportReport("pdf")} disabled={!data}>
+              <FileText size={16} aria-hidden="true" />
+              <span>PDF</span>
+            </button>
           </div>
         </div>
         <div className="reports-saved-row">
+          <select className="input" defaultValue="" onChange={(event) => applyTemplate(event.target.value)}>
+            <option value="">Report templates</option>
+            {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+          </select>
           <select className="input" value={selectedSavedReportId} onChange={(event) => applySavedReport(event.target.value)}>
             <option value="">Saved reports</option>
             {savedReports.map((report) => <option key={report.id} value={report.id}>{report.name}</option>)}
@@ -394,6 +563,42 @@ export function ReportsWorkspace() {
             <Trash2 size={16} aria-hidden="true" />
             <span>Delete</span>
           </button>
+        </div>
+        <div className="reports-delivery-grid">
+          <div className="reports-delivery-card">
+            <h3><Mail size={16} aria-hidden="true" /> Send Report</h3>
+            <div className="reports-inline-controls">
+              <input className="input" value={emailRecipients} onChange={(event) => setEmailRecipients(event.target.value)} placeholder="email@domain.com, manager@domain.com" />
+              <select className="input" value={emailFormat} onChange={(event) => setEmailFormat(event.target.value as typeof emailFormat)}>
+                <option value="pdf">PDF</option>
+                <option value="xlsx">Excel</option>
+                <option value="csv">CSV</option>
+              </select>
+              <button className="button" type="button" onClick={sendReport} disabled={deliveryBusy || !data}>
+                Send
+              </button>
+            </div>
+          </div>
+          <div className="reports-delivery-card">
+            <h3><CalendarClock size={16} aria-hidden="true" /> Schedule Saved Report</h3>
+            <div className="reports-inline-controls">
+              <input className="input" value={scheduleName} onChange={(event) => setScheduleName(event.target.value)} placeholder="Schedule name" />
+              <select className="input" value={scheduleFrequency} onChange={(event) => setScheduleFrequency(event.target.value as typeof scheduleFrequency)}>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+              <select className="input" value={scheduleFormat} onChange={(event) => setScheduleFormat(event.target.value as typeof scheduleFormat)}>
+                <option value="pdf">PDF</option>
+                <option value="xlsx">Excel</option>
+                <option value="csv">CSV</option>
+              </select>
+              <input className="input" value={scheduleRecipients} onChange={(event) => setScheduleRecipients(event.target.value)} placeholder="Recipients" />
+              <button className="button secondary" type="button" onClick={createSchedule} disabled={deliveryBusy || !selectedSavedReportId}>
+                Create
+              </button>
+            </div>
+          </div>
         </div>
         <div className="reports-filter-grid">
           <input className="input" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
@@ -521,6 +726,54 @@ export function ReportsWorkspace() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </section>
+
+          <section className="reports-admin-grid">
+            <div className="panel">
+              <div className="section-heading compact-heading">
+                <div>
+                  <h2><CalendarClock size={18} aria-hidden="true" /> Scheduled Reports</h2>
+                  <p className="muted">Automatic report deliveries based on saved reports.</p>
+                </div>
+              </div>
+              <div className="report-list-stack">
+                {schedules.length ? schedules.map((schedule) => (
+                  <div className="report-admin-row" key={schedule.id}>
+                    <span className="report-cell-stack">
+                      <strong>{schedule.name}</strong>
+                      <span className="muted">{schedule.definition.name} | {label(schedule.frequency)} | {schedule.format.toUpperCase()}</span>
+                    </span>
+                    <span className="muted">{schedule.nextRunAt ? `Next: ${formatDate(schedule.nextRunAt)}` : "Paused"}</span>
+                    <span className={`status-pill ${schedule.isActive ? "read-pill" : "ticket-status-cancelled"}`}>{schedule.isActive ? "Active" : "Paused"}</span>
+                    <button className="button secondary small-button" type="button" onClick={() => toggleSchedule(schedule)} disabled={deliveryBusy}>
+                      {schedule.isActive ? "Pause" : "Resume"}
+                    </button>
+                    <button className="button secondary danger-soft small-button" type="button" onClick={() => deleteSchedule(schedule.id)} disabled={deliveryBusy}>
+                      Delete
+                    </button>
+                  </div>
+                )) : <p className="muted">No scheduled reports yet.</p>}
+              </div>
+            </div>
+            <div className="panel">
+              <div className="section-heading compact-heading">
+                <div>
+                  <h2><History size={18} aria-hidden="true" /> Export History</h2>
+                  <p className="muted">Recent report downloads and email deliveries.</p>
+                </div>
+              </div>
+              <div className="report-list-stack">
+                {exportHistory.length ? exportHistory.slice(0, 10).map((item) => (
+                  <div className="report-admin-row compact" key={item.id}>
+                    <span className="report-cell-stack">
+                      <strong>{item.definitionName ?? "Ticket report"}</strong>
+                      <span className="muted">{item.format.toUpperCase()} | {item.deliveryStatus}{item.recipientEmail ? ` to ${item.recipientEmail}` : ""}</span>
+                    </span>
+                    <span className="muted">{formatDate(item.createdAt)}</span>
+                  </div>
+                )) : <p className="muted">No report exports yet.</p>}
+              </div>
             </div>
           </section>
         </>

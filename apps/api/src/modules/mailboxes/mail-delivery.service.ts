@@ -3,7 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { Mailbox } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { FileStorageService } from "../file-storage/file-storage.service";
-import { MailProvider, SendMessageResult } from "./providers/mail-provider.interface";
+import { MailProvider, OutboundMailAttachment, SendMessageResult } from "./providers/mail-provider.interface";
 import { MicrosoftGraphMailProvider } from "./providers/microsoft-graph-mail.provider";
 import { MockMailProvider } from "./providers/mock-mail.provider";
 
@@ -19,6 +19,7 @@ export interface SendTicketReplyInput {
   references?: string | null;
   replyToProviderMessageId?: string | null;
   attachmentIds?: string[];
+  rawAttachments?: OutboundMailAttachment[];
 }
 
 @Injectable()
@@ -39,7 +40,10 @@ export class MailDeliveryService {
       return null;
     }
 
-    const attachments = input.attachmentIds?.length ? await this.loadOutboundAttachments(input.attachmentIds) : [];
+    const attachments = [
+      ...(input.attachmentIds?.length ? await this.loadOutboundAttachments(input.attachmentIds) : []),
+      ...(input.rawAttachments ?? [])
+    ];
 
     return provider.sendMessage({
       mailboxId: mailbox.id,

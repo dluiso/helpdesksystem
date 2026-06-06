@@ -1,9 +1,11 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Workbook } from "exceljs";
+import PDFDocument from "pdfkit";
 import { Prisma, TicketPriority, TicketSource, TicketStatus } from "@prisma/client";
 import { AuthenticatedUser } from "../auth/auth.types";
+import { MailDeliveryService } from "../mailboxes/mail-delivery.service";
 import { PrismaService } from "../prisma/prisma.service";
-import { CreateReportDefinitionDto, UpdateReportDefinitionDto } from "./dto/report-definition.dto";
+import { CreateReportDefinitionDto, CreateReportScheduleDto, SendReportDto, UpdateReportDefinitionDto, UpdateReportScheduleDto } from "./dto/report-definition.dto";
 import { TicketReportExportQueryDto, TicketReportQueryDto } from "./dto/ticket-report-query.dto";
 
 const ACTIVE_STATUSES: TicketStatus[] = [
@@ -20,9 +22,37 @@ type ReportTicket = Prisma.TicketGetPayload<{
   select: ReturnType<ReportsService["ticketSelect"]>;
 }>;
 
+type ReportFormat = "csv" | "xlsx" | "pdf";
+type ReportFilters = Partial<TicketReportQueryDto> & { statuses?: string | string[] };
+type GeneratedReport = {
+  filename: string;
+  contentType: string;
+  body: string | Buffer;
+  format: ReportFormat;
+  result: Awaited<ReturnType<ReportsService["ticketSummary"]>>;
+};
+
 @Injectable()
-export class ReportsService {
-  constructor(private readonly prisma: PrismaService) {}
+export class ReportsService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(ReportsService.name);
+  private scheduleTimer?: NodeJS.Timeout;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mailDelivery: MailDeliveryService
+  ) {}
+
+  onModuleInit() {
+    this.scheduleTimer = setInterval(() => {
+      void this.runDueSchedules();
+    }, 60_000);
+  }
+
+  onModuleDestroy() {
+    if (this.scheduleTimer) {
+      clearInterval(this.scheduleTimer);
+    }
+  }
 
   async listDefinitions(user: AuthenticatedUser) {
     const definitions = await this.prisma.reportDefinition.findMany({
@@ -46,6 +76,81 @@ export class ReportsService {
     }));
   }
 
+  listTemplates() {
+    return [
+      {
+        id: "executive-summary",
+        name: "Executive Summary",
+        description: "High-level operational summary for management.",
+        filters: { groupBy: "week", estimateMode: "none" }
+      },
+      {
+        id: "client-report",
+        name: "Client Report",
+        description: "Client-focused activity, status, workload, and estimate view.",
+        filters: { groupBy: "month", estimateMode: "perTicket", valuePerTicket: "0" }
+      },
+      {
+        id: "technician-productivity",
+        name: "Technician Productivity",
+        description: "Workload by assigned technician and operational team.",
+        filters: { groupBy: "week", estimateMode: "none" }
+      },
+      {
+        id: "aging-tickets",
+        name: "Aging Tickets",
+        description: "Active tickets and tickets without recent closure.",
+        filters: {
+          groupBy: "day",
+          statuses: ACTIVE_STATUSES,
+          estimateMode: "none"
+        }
+      },
+      {
+        id: "billing-estimate",
+        name: "Closed Tickets Billing Estimate",
+        description: "Closed/resolved tickets with optional per-ticket value.",
+        filters: {
+          groupBy: "month",
+          statuses: [TicketStatus.CLOSED, TicketStatus.RESOLVED],
+          estimateMode: "perTicket",
+          valuePerTicket: "0"
+        }
+      }
+    ];
+  }
+
+  async listExportHistory(user: AuthenticatedUser) {
+    const exports = await this.prisma.reportExport.findMany({
+      where: {
+        OR: [
+          { organizationId: user.organizationId },
+          { requestedBy: { organizationId: user.organizationId } }
+        ]
+      },
+      select: {
+        id: true,
+        reportType: true,
+        format: true,
+        recipientEmail: true,
+        deliveryStatus: true,
+        errorMessage: true,
+        createdAt: true,
+        definition: { select: { name: true } },
+        requestedBy: { select: { firstName: true, lastName: true } }
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50
+    });
+
+    return exports.map((item) => ({
+      ...item,
+      definitionName: item.definition?.name ?? null,
+      requestedBy: item.requestedBy ? `${item.requestedBy.firstName} ${item.requestedBy.lastName}` : null,
+      definition: undefined
+    }));
+  }
+
   async createDefinition(user: AuthenticatedUser, input: CreateReportDefinitionDto) {
     try {
       return await this.prisma.reportDefinition.create({
@@ -55,7 +160,8 @@ export class ReportsService {
           name: input.name.trim(),
           description: input.description?.trim() || null,
           reportType: input.reportType?.trim() || "ticket-report",
-          filters: input.filters as Prisma.InputJsonValue
+          filters: input.filters as Prisma.InputJsonValue,
+          isShared: input.isShared ?? true
         }
       });
     } catch (error) {
@@ -74,7 +180,8 @@ export class ReportsService {
         data: {
           ...(input.name !== undefined ? { name: input.name.trim() } : {}),
           ...(input.description !== undefined ? { description: input.description.trim() || null } : {}),
-          ...(input.filters !== undefined ? { filters: input.filters as Prisma.InputJsonValue } : {})
+          ...(input.filters !== undefined ? { filters: input.filters as Prisma.InputJsonValue } : {}),
+          ...(input.isShared !== undefined ? { isShared: input.isShared } : {})
         }
       });
     } catch (error) {
@@ -88,6 +195,58 @@ export class ReportsService {
   async deleteDefinition(user: AuthenticatedUser, definitionId: string) {
     await this.ensureDefinitionAccess(user, definitionId);
     await this.prisma.reportDefinition.delete({ where: { id: definitionId } });
+    return { deleted: true };
+  }
+
+  async listSchedules(user: AuthenticatedUser) {
+    return this.prisma.reportSchedule.findMany({
+      where: { organizationId: user.organizationId },
+      include: {
+        definition: { select: { name: true } },
+        createdBy: { select: { firstName: true, lastName: true } }
+      },
+      orderBy: [{ isActive: "desc" }, { nextRunAt: "asc" }, { name: "asc" }]
+    });
+  }
+
+  async createSchedule(user: AuthenticatedUser, input: CreateReportScheduleDto) {
+    const definition = await this.ensureDefinitionAccess(user, input.definitionId);
+    const frequency = input.frequency ?? "weekly";
+    return this.prisma.reportSchedule.create({
+      data: {
+        organizationId: user.organizationId,
+        definitionId: definition.id,
+        createdById: user.id,
+        name: input.name.trim(),
+        frequency,
+        format: input.format ?? "pdf",
+        recipientEmails: this.normalizeEmails(input.recipientEmails),
+        isActive: input.isActive ?? true,
+        nextRunAt: input.isActive === false ? null : this.nextScheduleRun(frequency)
+      }
+    });
+  }
+
+  async updateSchedule(user: AuthenticatedUser, scheduleId: string, input: UpdateReportScheduleDto) {
+    const schedule = await this.ensureScheduleAccess(user, scheduleId);
+    const frequency = input.frequency ?? schedule.frequency;
+    const isActive = input.isActive ?? schedule.isActive;
+    return this.prisma.reportSchedule.update({
+      where: { id: schedule.id },
+      data: {
+        ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+        ...(input.frequency !== undefined ? { frequency } : {}),
+        ...(input.format !== undefined ? { format: input.format } : {}),
+        ...(input.recipientEmails !== undefined ? { recipientEmails: this.normalizeEmails(input.recipientEmails) } : {}),
+        ...(input.isActive !== undefined ? { isActive } : {}),
+        nextRunAt: isActive ? this.nextScheduleRun(frequency) : null
+      }
+    });
+  }
+
+  async deleteSchedule(user: AuthenticatedUser, scheduleId: string) {
+    const schedule = await this.ensureScheduleAccess(user, scheduleId);
+    await this.prisma.reportSchedule.delete({ where: { id: schedule.id } });
     return { deleted: true };
   }
 
@@ -168,10 +327,48 @@ export class ReportsService {
   }
 
   async exportTickets(user: AuthenticatedUser, query: TicketReportExportQueryDto) {
-    return query.format === "xlsx" ? this.exportTicketsXlsx(user, query) : this.exportTicketsCsv(user, query);
+    const format = query.format ?? "csv";
+    const report = await this.generateTicketsReport(user, query, format);
+    await this.logReportExport(user, query, format, "downloaded");
+    return report;
   }
 
-  private async exportTicketsCsv(user: AuthenticatedUser, query: TicketReportExportQueryDto) {
+  async sendTicketsReport(user: AuthenticatedUser, query: TicketReportExportQueryDto, input: SendReportDto) {
+    const format = input.format ?? query.format ?? "pdf";
+    const report = await this.generateTicketsReport(user, query, format);
+    const subject = input.subject?.trim() || `Ticket report - ${new Date().toLocaleDateString()}`;
+    const message = input.message?.trim() || "Attached is the requested ticket report.";
+    const recipients = this.normalizeEmails(input.recipientEmails);
+    if (!recipients.length) {
+      throw new BadRequestException("At least one recipient email is required.");
+    }
+
+    await this.mailDelivery.sendTicketReply({
+      organizationId: user.organizationId,
+      to: recipients,
+      subject,
+      bodyText: message,
+      bodyHtml: `<p>${this.escapeHtml(message).replace(/\n/g, "<br />")}</p>`,
+      rawAttachments: [{
+        originalFilename: report.filename,
+        mimeType: report.contentType,
+        sizeBytes: Buffer.byteLength(report.body),
+        contentBytes: Buffer.isBuffer(report.body) ? report.body : Buffer.from(report.body),
+        isInline: false
+      }]
+    });
+
+    await Promise.all(recipients.map((recipient) => this.logReportExport(user, query, format, "emailed", recipient)));
+    return { sent: true, recipients, filename: report.filename };
+  }
+
+  private async generateTicketsReport(user: AuthenticatedUser, query: TicketReportQueryDto, format: ReportFormat): Promise<GeneratedReport> {
+    if (format === "xlsx") return this.exportTicketsXlsx(user, query);
+    if (format === "pdf") return this.exportTicketsPdf(user, query);
+    return this.exportTicketsCsv(user, query);
+  }
+
+  private async exportTicketsCsv(user: AuthenticatedUser, query: TicketReportQueryDto): Promise<GeneratedReport> {
     const result = await this.ticketSummary(user, query);
     const rows = result.detail.map((ticket) => [
       ticket.ticketNumber,
@@ -194,23 +391,16 @@ export class ReportsService {
       ...rows
     ]);
 
-    await this.prisma.reportExport.create({
-      data: {
-        requestedById: user.id,
-        reportType: "ticket-report",
-        filters: query as Prisma.InputJsonValue,
-        format: "csv"
-      }
-    });
-
     return {
       filename: `ticket-report-${new Date().toISOString().slice(0, 10)}.csv`,
       contentType: "text/csv; charset=utf-8",
-      body: csv
+      body: csv,
+      format: "csv",
+      result
     };
   }
 
-  private async exportTicketsXlsx(user: AuthenticatedUser, query: TicketReportExportQueryDto) {
+  private async exportTicketsXlsx(user: AuthenticatedUser, query: TicketReportQueryDto): Promise<GeneratedReport> {
     const result = await this.ticketSummary(user, query);
     const workbook = new Workbook();
     workbook.creator = "Avidity IT Management Tool";
@@ -257,20 +447,69 @@ export class ReportsService {
       sheet.autoFilter = { from: "A1", to: `${sheet.getColumn(sheet.columnCount).letter}1` };
     }
 
-    await this.prisma.reportExport.create({
-      data: {
-        requestedById: user.id,
-        reportType: "ticket-report",
-        filters: query as Prisma.InputJsonValue,
-        format: "xlsx"
-      }
-    });
-
     const body = Buffer.from(await workbook.xlsx.writeBuffer());
     return {
       filename: `ticket-report-${new Date().toISOString().slice(0, 10)}.xlsx`,
       contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      body
+      body,
+      format: "xlsx",
+      result
+    };
+  }
+
+  private async exportTicketsPdf(user: AuthenticatedUser, query: TicketReportQueryDto): Promise<GeneratedReport> {
+    const result = await this.ticketSummary(user, query);
+    const doc = new PDFDocument({ margin: 42, size: "LETTER", bufferPages: true });
+    const chunks: Buffer[] = [];
+    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+    const done = new Promise<void>((resolve) => doc.on("end", resolve));
+
+    doc.fontSize(18).text("Ticket Report", { continued: false });
+    doc.moveDown(0.2);
+    doc.fontSize(9).fillColor("#64748b").text(`Generated ${new Date().toLocaleString()}`);
+    doc.moveDown();
+
+    const summaryRows = [
+      ["Total tickets", result.summary.totalTickets],
+      ["Active", result.summary.activeTickets],
+      ["Closed", result.summary.closedTickets],
+      ["Resolved", result.summary.resolvedTickets],
+      ["Unassigned", result.summary.unassignedTickets],
+      ["High priority", result.summary.highPriorityTickets],
+      ["With attachments", result.summary.withAttachments],
+      ["Estimated total", result.summary.estimatedTotal === null ? "-" : `$${result.summary.estimatedTotal.toFixed(2)}`]
+    ];
+    this.drawPdfSection(doc, "Summary");
+    summaryRows.forEach(([key, value]) => this.drawPdfKeyValue(doc, String(key), String(value)));
+
+    this.drawPdfSection(doc, "Tickets by Status");
+    result.byStatus.slice(0, 10).forEach((item) => this.drawPdfKeyValue(doc, this.label(item.label), String(item.count)));
+
+    this.drawPdfSection(doc, "Top Clients");
+    result.byClient.slice(0, 10).forEach((item) => this.drawPdfKeyValue(doc, item.label, String(item.count)));
+
+    this.drawPdfSection(doc, "Report Detail");
+    result.detail.slice(0, 35).forEach((ticket) => {
+      doc.fillColor("#0f172a").fontSize(9).font("Helvetica-Bold").text(`${ticket.ticketNumber}  ${ticket.subject}`, { width: 520 });
+      doc.fillColor("#64748b").font("Helvetica").text(`${ticket.clientName} | ${this.label(ticket.status)} | ${ticket.assignedTo} | ${this.formatShortDate(ticket.createdAt)}`);
+      doc.moveDown(0.35);
+      if (doc.y > 710) doc.addPage();
+    });
+
+    const pages = doc.bufferedPageRange();
+    for (let i = 0; i < pages.count; i += 1) {
+      doc.switchToPage(i);
+      doc.fontSize(8).fillColor("#94a3b8").text(`Page ${i + 1} of ${pages.count}`, 42, 748, { align: "right", width: 528 });
+    }
+
+    doc.end();
+    await done;
+    return {
+      filename: `ticket-report-${new Date().toISOString().slice(0, 10)}.pdf`,
+      contentType: "application/pdf",
+      body: Buffer.concat(chunks),
+      format: "pdf",
+      result
     };
   }
 
@@ -301,11 +540,158 @@ export class ReportsService {
   private async ensureDefinitionAccess(user: AuthenticatedUser, definitionId: string) {
     const definition = await this.prisma.reportDefinition.findFirst({
       where: { id: definitionId, organizationId: user.organizationId },
-      select: { id: true }
+      select: { id: true, filters: true, name: true, organizationId: true }
     });
     if (!definition) {
       throw new NotFoundException("Saved report was not found.");
     }
+    return definition;
+  }
+
+  private async ensureScheduleAccess(user: AuthenticatedUser, scheduleId: string) {
+    const schedule = await this.prisma.reportSchedule.findFirst({
+      where: { id: scheduleId, organizationId: user.organizationId }
+    });
+    if (!schedule) {
+      throw new NotFoundException("Report schedule was not found.");
+    }
+    return schedule;
+  }
+
+  private async logReportExport(user: AuthenticatedUser, query: TicketReportQueryDto, format: ReportFormat, deliveryStatus: string, recipientEmail?: string, definitionId?: string | null, errorMessage?: string) {
+    await this.prisma.reportExport.create({
+      data: {
+        organizationId: user.organizationId,
+        requestedById: user.id,
+        definitionId: definitionId ?? null,
+        reportType: "ticket-report",
+        filters: query as Prisma.InputJsonValue,
+        format,
+        recipientEmail,
+        deliveryStatus,
+        errorMessage
+      }
+    });
+  }
+
+  private async runDueSchedules() {
+    const schedules = await this.prisma.reportSchedule.findMany({
+      where: {
+        isActive: true,
+        nextRunAt: { lte: new Date() }
+      },
+      include: {
+        definition: true,
+        createdBy: true
+      },
+      take: 10,
+      orderBy: { nextRunAt: "asc" }
+    });
+
+    for (const schedule of schedules) {
+      const user = schedule.createdBy;
+      if (!user) continue;
+      const authUser: AuthenticatedUser = {
+        id: user.id,
+        organizationId: schedule.organizationId,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        forcePasswordChange: user.forcePasswordChange,
+        permissions: ["reports.view"]
+      };
+      const query = this.filtersToQuery(schedule.definition.filters as ReportFilters);
+      try {
+        await this.sendTicketsReport(authUser, { ...query, format: schedule.format as ReportFormat }, {
+          recipientEmails: schedule.recipientEmails,
+          format: schedule.format as ReportFormat,
+          subject: `${schedule.name} - Ticket report`,
+          message: `Attached is the scheduled report "${schedule.name}".`
+        });
+        await this.prisma.reportSchedule.update({
+          where: { id: schedule.id },
+          data: {
+            lastRunAt: new Date(),
+            lastStatus: "sent",
+            lastError: null,
+            nextRunAt: this.nextScheduleRun(schedule.frequency)
+          }
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown scheduled report error.";
+        this.logger.warn(`Scheduled report ${schedule.id} failed: ${message}`);
+        await this.prisma.reportSchedule.update({
+          where: { id: schedule.id },
+          data: {
+            lastRunAt: new Date(),
+            lastStatus: "failed",
+            lastError: message.slice(0, 1000),
+            nextRunAt: this.nextScheduleRun(schedule.frequency)
+          }
+        });
+        await this.prisma.reportExport.create({
+          data: {
+            organizationId: schedule.organizationId,
+            requestedById: user.id,
+            definitionId: schedule.definitionId,
+            reportType: "ticket-report",
+            filters: query as Prisma.InputJsonValue,
+            format: schedule.format,
+            deliveryStatus: "failed",
+            errorMessage: message.slice(0, 1000)
+          }
+        });
+      }
+    }
+  }
+
+  private normalizeEmails(emails: string[]) {
+    return [...new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean))];
+  }
+
+  private filtersToQuery(filters: ReportFilters): TicketReportQueryDto {
+    return {
+      ...filters,
+      statuses: Array.isArray(filters.statuses) ? filters.statuses.join(",") : filters.statuses
+    } as TicketReportQueryDto;
+  }
+
+  private nextScheduleRun(frequency: string) {
+    const next = new Date();
+    next.setSeconds(0, 0);
+    if (frequency === "daily") {
+      next.setDate(next.getDate() + 1);
+    } else if (frequency === "monthly") {
+      next.setMonth(next.getMonth() + 1);
+    } else {
+      next.setDate(next.getDate() + 7);
+    }
+    return next;
+  }
+
+  private drawPdfSection(doc: PDFKit.PDFDocument, title: string) {
+    doc.moveDown(0.8);
+    doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(12).text(title);
+    doc.moveDown(0.3);
+  }
+
+  private drawPdfKeyValue(doc: PDFKit.PDFDocument, key: string, value: string) {
+    const y = doc.y;
+    doc.fillColor("#475569").font("Helvetica").fontSize(9).text(key, 42, y, { width: 260 });
+    doc.fillColor("#0f172a").font("Helvetica-Bold").text(value, 330, y, { width: 220, align: "right" });
+    doc.moveDown(0.45);
+  }
+
+  private escapeHtml(value: string) {
+    return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  private label(value: string) {
+    return value.toLowerCase().split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+  }
+
+  private formatShortDate(value: string) {
+    return new Date(value).toLocaleDateString();
   }
 
   private buildTicketWhere(user: AuthenticatedUser, query: TicketReportQueryDto, range: { start: Date; end: Date }) {

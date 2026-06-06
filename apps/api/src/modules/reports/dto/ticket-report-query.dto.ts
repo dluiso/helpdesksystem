@@ -55,6 +55,6 @@ export class TicketReportQueryDto {
 
 export class TicketReportExportQueryDto extends TicketReportQueryDto {
   @IsOptional()
-  @IsIn(["csv", "xlsx"])
-  format?: "csv" | "xlsx";
+  @IsIn(["csv", "xlsx", "pdf"])
+  format?: "csv" | "xlsx" | "pdf";
 }
