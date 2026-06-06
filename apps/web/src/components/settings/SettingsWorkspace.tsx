@@ -667,6 +667,7 @@ export function SettingsWorkspace() {
   }
 
   function securitySettingsPayload(settings: SecuritySettings) {
+    const turnstileSecretReference = settings.turnstileSecretReference.trim();
     return {
       passwordResetEnabled: settings.passwordResetEnabled,
       passwordResetTokenTtlMinutes: Number(settings.passwordResetTokenTtlMinutes) || DEFAULT_SECURITY_SETTINGS.passwordResetTokenTtlMinutes,
@@ -675,7 +676,7 @@ export function SettingsWorkspace() {
       mfaRequiredForAllUsers: settings.mfaRequiredForAllUsers,
       turnstileEnabled: settings.turnstileEnabled,
       turnstileSiteKey: settings.turnstileSiteKey.trim() || null,
-      turnstileSecretReference: settings.turnstileSecretReference.trim() || null,
+      turnstileSecretReference: turnstileSecretReference || null,
       turnstileProtectLogin: settings.turnstileProtectLogin,
       turnstileProtectPasswordReset: settings.turnstileProtectPasswordReset
     };

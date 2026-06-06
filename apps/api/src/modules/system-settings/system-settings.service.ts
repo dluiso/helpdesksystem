@@ -227,6 +227,11 @@ export class SystemSettingsService {
   }
 
   async updateSecuritySettings(user: AuthenticatedUser, input: UpdateSecuritySettingsDto) {
+    const turnstileSecretReference = this.optionalString(input.turnstileSecretReference);
+    if (input.turnstileEnabled && !turnstileSecretReference?.startsWith("env:")) {
+      throw new BadRequestException("Cloudflare Turnstile secret reference must use an environment reference such as env:TURNSTILE_SECRET_KEY.");
+    }
+
     const updated = await this.prisma.systemSetting.update({
       where: { organizationId: user.organizationId },
       data: {
@@ -237,7 +242,7 @@ export class SystemSettingsService {
         mfaRequiredForAllUsers: input.mfaRequiredForAllUsers,
         turnstileEnabled: input.turnstileEnabled,
         turnstileSiteKey: this.optionalString(input.turnstileSiteKey),
-        turnstileSecretReference: this.optionalString(input.turnstileSecretReference),
+        turnstileSecretReference,
         turnstileProtectLogin: input.turnstileProtectLogin,
         turnstileProtectPasswordReset: input.turnstileProtectPasswordReset
       }
