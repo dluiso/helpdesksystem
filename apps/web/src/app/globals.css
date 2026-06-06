@@ -1271,6 +1271,53 @@ select {
   min-width: 0;
 }
 
+.general-settings-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.general-settings-grid {
+  align-items: start;
+}
+
+.general-settings-grid .nested-panel {
+  grid-column: 1 / -1;
+  box-shadow: none;
+}
+
+.settings-subtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.settings-subtabs button {
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.settings-subtabs button.active,
+.settings-subtabs button:hover {
+  background: var(--surface-selected);
+  color: var(--brand-primary);
+}
+
+.settings-save-bar {
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
 .settings-page {
   display: grid;
   gap: 14px;

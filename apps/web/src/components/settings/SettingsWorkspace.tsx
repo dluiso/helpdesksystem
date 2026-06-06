@@ -216,6 +216,7 @@ interface GeneralSettings {
   loginSubtitle: string | null;
   loginFooterText: string | null;
   appSubtitle: string | null;
+  showLoginBrandTitle: boolean;
   showSubtitleOnLogin: boolean;
   showSubtitleInApp: boolean;
   subtitlePlacement: "RIGHT" | "BELOW";
@@ -333,6 +334,16 @@ const NOTIFICATION_FIELDS: Array<{ label: string; inAppKey: keyof NotificationPr
   { label: "Ticket reopened", inAppKey: "inAppTicketReopened", emailKey: "emailTicketReopened" }
 ];
 
+const GENERAL_TABS = [
+  { key: "identity", label: "Identity" },
+  { key: "assets", label: "Assets" },
+  { key: "app", label: "App Branding" },
+  { key: "login", label: "Login Branding" },
+  { key: "defaults", label: "Defaults" }
+] as const;
+
+type GeneralTab = (typeof GENERAL_TABS)[number]["key"];
+
 const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   applicationName: "Avidity IT Management Tool",
   companyName: "Avidity Technologies",
@@ -347,6 +358,7 @@ const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   loginSubtitle: "Secure service desk operations, client context, attachments, mail flow, reporting, and remote access readiness in one configurable platform.",
   loginFooterText: "Avidity Technologies",
   appSubtitle: null,
+  showLoginBrandTitle: true,
   showSubtitleOnLogin: false,
   showSubtitleInApp: false,
   subtitlePlacement: "BELOW",
@@ -509,6 +521,7 @@ export function SettingsWorkspace() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<"general" | "mailboxes" | "autoReplies" | "teams" | "routing" | "domains" | "notifications" | "spam" | "maintenance" | "logs" | "ai">("general");
+  const [generalTab, setGeneralTab] = useState<GeneralTab>("identity");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [aiConfigError, setAiConfigError] = useState<string | null>(null);
@@ -561,6 +574,7 @@ export function SettingsWorkspace() {
       loginSubtitle: settings.loginSubtitle,
       loginFooterText: settings.loginFooterText,
       appSubtitle: settings.appSubtitle,
+      showLoginBrandTitle: settings.showLoginBrandTitle,
       showSubtitleOnLogin: settings.showSubtitleOnLogin,
       showSubtitleInApp: settings.showSubtitleInApp,
       subtitlePlacement: settings.subtitlePlacement,
@@ -1561,8 +1575,30 @@ export function SettingsWorkspace() {
 
         <div className="settings-content">
           {activeSection === "general" ? (
-            <section className="grid columns-2">
-              <div className="panel">
+            <section className="panel general-settings-panel">
+              <div className="section-heading">
+                <div>
+                  <h2>General Settings</h2>
+                  <p className="muted">Manage identity, branding assets, login presentation, and default application behavior.</p>
+                </div>
+              </div>
+              <div className="settings-subtabs" role="tablist" aria-label="General settings sections">
+                {GENERAL_TABS.map((tab) => (
+                  <button
+                    className={generalTab === tab.key ? "active" : ""}
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setGeneralTab(tab.key)}
+                    role="tab"
+                    aria-selected={generalTab === tab.key}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              <div className="grid columns-2 general-settings-grid">
+              {generalTab === "identity" ? (
+              <div className="panel nested-panel">
                 <div className="section-heading">
                   <div>
                     <h2>Application Identity</h2>
@@ -1599,6 +1635,19 @@ export function SettingsWorkspace() {
                     <span>Secondary color</span>
                     <input className="input" type="color" value={generalDraft.secondaryColor} onChange={(event) => setGeneralDraft((current) => ({ ...current, secondaryColor: event.target.value }))} />
                   </label>
+                </div>
+              </div>
+              ) : null}
+
+              {generalTab === "app" ? (
+              <div className="panel nested-panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>App & Header Branding</h2>
+                    <p className="muted">Control in-app sidebar/header logo behavior and subtitle presentation.</p>
+                  </div>
+                </div>
+                <div className="client-form-grid settings-section">
                   <label className="field">
                     <span>Logo background color</span>
                     <input
@@ -1706,8 +1755,10 @@ export function SettingsWorkspace() {
                   </label>
                 </div>
               </div>
+              ) : null}
 
-              <div className="panel">
+              {generalTab === "assets" ? (
+              <div className="panel nested-panel">
                 <div className="section-heading">
                   <div>
                     <h2>Branding Assets</h2>
@@ -1743,8 +1794,10 @@ export function SettingsWorkspace() {
                   ))}
                 </div>
               </div>
+              ) : null}
 
-              <div className="panel">
+              {generalTab === "login" ? (
+              <div className="panel nested-panel">
                 <div className="section-heading">
                   <div>
                     <h2>Login Page</h2>
@@ -1773,6 +1826,10 @@ export function SettingsWorkspace() {
                       value={generalDraft.loginLogoHeight}
                       onChange={(event) => setGeneralDraft((current) => ({ ...current, loginLogoHeight: Number(event.target.value) }))}
                     />
+                  </label>
+                  <label className="checkbox-row full-span">
+                    <input type="checkbox" checked={generalDraft.showLoginBrandTitle} onChange={(event) => setGeneralDraft((current) => ({ ...current, showLoginBrandTitle: event.target.checked }))} />
+                    Show application title next to the login logo
                   </label>
                   <label className="field">
                     <span>Login title size</span>
@@ -1936,8 +1993,10 @@ export function SettingsWorkspace() {
                   </label>
                 </div>
               </div>
+              ) : null}
 
-              <div className="panel">
+              {generalTab === "defaults" ? (
+              <div className="panel nested-panel">
                 <div className="section-heading">
                   <div>
                     <h2>Defaults & Support</h2>
@@ -1977,12 +2036,14 @@ export function SettingsWorkspace() {
                     <input className="input" placeholder="https://..." value={generalDraft.supportButtonUrl ?? ""} onChange={(event) => setGeneralDraft((current) => ({ ...current, supportButtonUrl: event.target.value }))} />
                   </label>
                 </div>
-                <div className="settings-actions settings-section">
-                  <button className="button" type="button" onClick={saveGeneralSettings} disabled={busy === "general-settings"}>
-                    Save General Settings
-                  </button>
-                  {generalSettings ? <span className="muted">Current application title: {generalSettings.applicationName}</span> : null}
-                </div>
+              </div>
+              ) : null}
+              </div>
+              <div className="settings-actions settings-section settings-save-bar">
+                <button className="button" type="button" onClick={saveGeneralSettings} disabled={busy === "general-settings"}>
+                  Save General Settings
+                </button>
+                {generalSettings ? <span className="muted">Current application title: {generalSettings.applicationName}</span> : null}
               </div>
             </section>
           ) : null}

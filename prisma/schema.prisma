@@ -213,6 +213,7 @@ model SystemSetting {
   loginSubtitle              String?
   loginFooterText            String?
   appSubtitle                String?
+  showLoginBrandTitle        Boolean  @default(true)
   showSubtitleOnLogin        Boolean  @default(false)
   showSubtitleInApp          Boolean  @default(false)
   subtitlePlacement          String   @default("BELOW")

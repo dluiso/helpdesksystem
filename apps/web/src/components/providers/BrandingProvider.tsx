@@ -1,6 +1,7 @@
 "use client";
 
 import { PublicBrandingSettings } from "@avidity/shared";
+import { usePathname } from "next/navigation";
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { apiBaseUrl } from "@/lib/api";
 
@@ -33,6 +34,7 @@ const fallbackBranding: PublicBrandingSettings = {
   mobileLoginBrandTextColor: "#ffffff",
   brandFontFamily: "system",
   appSubtitle: null,
+  showLoginBrandTitle: true,
   showSubtitleOnLogin: false,
   showSubtitleInApp: false,
   subtitlePlacement: "BELOW",
@@ -76,8 +78,26 @@ const fallbackBranding: PublicBrandingSettings = {
 
 const BrandingContext = createContext<PublicBrandingSettings>(fallbackBranding);
 
+const pageTitleByPath: Array<[RegExp, string]> = [
+  [/^\/tickets(\/|$)/, "Tickets"],
+  [/^\/dashboard(\/|$)/, "Dashboard"],
+  [/^\/clients(\/|$)/, "Clients"],
+  [/^\/devices(\/|$)/, "Devices"],
+  [/^\/reports(\/|$)/, "Reports"],
+  [/^\/knowledge-base(\/|$)/, "Knowledge Base"],
+  [/^\/users(\/|$)/, "Users"],
+  [/^\/profile(\/|$)/, "Profile"],
+  [/^\/settings(\/|$)/, "Settings"],
+  [/^\/login(\/|$)/, "Sign In"]
+];
+
+function pageTitle(pathname: string) {
+  return pageTitleByPath.find(([pattern]) => pattern.test(pathname))?.[1] ?? null;
+}
+
 export function BrandingProvider({ children }: { children: ReactNode }) {
   const [branding, setBranding] = useState<PublicBrandingSettings>(fallbackBranding);
+  const pathname = usePathname();
 
   useEffect(() => {
     let mounted = true;
@@ -106,6 +126,11 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    const sectionTitle = pageTitle(pathname);
+    document.title = sectionTitle ? `${sectionTitle} - ${branding.applicationName}` : branding.applicationName;
+  }, [branding.applicationName, pathname]);
 
   const value = useMemo(() => branding, [branding]);
 

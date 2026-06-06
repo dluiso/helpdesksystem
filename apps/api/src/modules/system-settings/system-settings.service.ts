@@ -52,6 +52,7 @@ export class SystemSettingsService {
       mobileLoginBrandTextColor: settings?.mobileLoginBrandTextColor ?? "#ffffff",
       brandFontFamily: settings?.brandFontFamily ?? "system",
       appSubtitle: settings?.appSubtitle ?? null,
+      showLoginBrandTitle: settings?.showLoginBrandTitle ?? true,
       showSubtitleOnLogin: settings?.showSubtitleOnLogin ?? false,
       showSubtitleInApp: settings?.showSubtitleInApp ?? false,
       subtitlePlacement: settings?.subtitlePlacement ?? "BELOW",
@@ -130,6 +131,7 @@ export class SystemSettingsService {
         loginSubtitle: this.optionalString(input.loginSubtitle),
         loginFooterText: this.optionalString(input.loginFooterText),
         appSubtitle: this.optionalString(input.appSubtitle),
+        showLoginBrandTitle: input.showLoginBrandTitle,
         showSubtitleOnLogin: input.showSubtitleOnLogin,
         showSubtitleInApp: input.showSubtitleInApp,
         subtitlePlacement: input.subtitlePlacement,
@@ -289,6 +291,7 @@ export class SystemSettingsService {
     loginSubtitle: string | null;
     loginFooterText: string | null;
     appSubtitle: string | null;
+    showLoginBrandTitle: boolean;
     showSubtitleOnLogin: boolean;
     showSubtitleInApp: boolean;
     subtitlePlacement: string;
@@ -358,6 +361,7 @@ export class SystemSettingsService {
       loginSubtitle: settings.loginSubtitle,
       loginFooterText: settings.loginFooterText,
       appSubtitle: settings.appSubtitle,
+      showLoginBrandTitle: settings.showLoginBrandTitle,
       showSubtitleOnLogin: settings.showSubtitleOnLogin,
       showSubtitleInApp: settings.showSubtitleInApp,
       subtitlePlacement: settings.subtitlePlacement,

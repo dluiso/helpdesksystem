@@ -63,6 +63,9 @@ export class UpdateGeneralSettingsDto {
   @MaxLength(160)
   appSubtitle?: string | null;
 
+  @IsBoolean()
+  showLoginBrandTitle!: boolean;
+
   @IsString()
   @MaxLength(24)
   primaryColor!: string;

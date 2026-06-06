@@ -20,6 +20,7 @@ export default function LoginPage() {
   const logoBackgroundStyle = {
     background: branding.brandLogoTransparentBackground ? "transparent" : (branding.brandLogoBackgroundColor ?? "#ffffff")
   };
+  const showLoginBrandTitle = branding.showLoginBrandTitle !== false;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -61,42 +62,44 @@ export default function LoginPage() {
           ) : (
             <span className="brand-mark">{branding.applicationName.slice(0, 1)}</span>
           )}
-          <span className={`brand-title-wrap subtitle-${branding.subtitlePlacement === "RIGHT" ? "right" : "below"} mobile-subtitle-${branding.mobileSubtitlePlacement === "RIGHT" ? "right" : "below"}`}>
-            <span
-              className="brand-name login-brand-name desktop-brand-title"
-              style={{
-                color: branding.brandTextColor ?? "#ffffff",
-                fontSize: branding.brandTextSize ?? 16,
-                fontFamily: brandingFontFamily(branding.brandFontFamily)
-              }}
-            >
-              {branding.applicationName}
-            </span>
-            <span
-              className="brand-name login-brand-name mobile-brand-title"
-              style={{
-                color: branding.mobileLoginBrandTextColor ?? "#ffffff",
-                fontSize: branding.mobileLoginBrandTextSize ?? 16,
-                fontFamily: brandingFontFamily(branding.brandFontFamily)
-              }}
-            >
-              {branding.applicationName}
-            </span>
-            {branding.showSubtitleOnLogin && branding.appSubtitle ? (
+          {showLoginBrandTitle ? (
+            <span className={`brand-title-wrap subtitle-${branding.subtitlePlacement === "RIGHT" ? "right" : "below"} mobile-subtitle-${branding.mobileSubtitlePlacement === "RIGHT" ? "right" : "below"}`}>
               <span
-                className="brand-subtitle"
+                className="brand-name login-brand-name desktop-brand-title"
                 style={{
-                  color: branding.subtitleColor ?? "#cbd5e1",
-                  fontSize: branding.subtitleSize ?? 14,
-                  fontWeight: branding.subtitleWeight ?? "400",
-                  fontStyle: branding.subtitleStyle ?? "normal",
-                  fontFamily: brandingFontFamily(branding.subtitleFontFamily)
+                  color: branding.brandTextColor ?? "#ffffff",
+                  fontSize: branding.brandTextSize ?? 16,
+                  fontFamily: brandingFontFamily(branding.brandFontFamily)
                 }}
               >
-                {branding.appSubtitle}
+                {branding.applicationName}
               </span>
-            ) : null}
-          </span>
+              <span
+                className="brand-name login-brand-name mobile-brand-title"
+                style={{
+                  color: branding.mobileLoginBrandTextColor ?? "#ffffff",
+                  fontSize: branding.mobileLoginBrandTextSize ?? 16,
+                  fontFamily: brandingFontFamily(branding.brandFontFamily)
+                }}
+              >
+                {branding.applicationName}
+              </span>
+              {branding.showSubtitleOnLogin && branding.appSubtitle ? (
+                <span
+                  className="brand-subtitle"
+                  style={{
+                    color: branding.subtitleColor ?? "#cbd5e1",
+                    fontSize: branding.subtitleSize ?? 14,
+                    fontWeight: branding.subtitleWeight ?? "400",
+                    fontStyle: branding.subtitleStyle ?? "normal",
+                    fontFamily: brandingFontFamily(branding.subtitleFontFamily)
+                  }}
+                >
+                  {branding.appSubtitle}
+                </span>
+              ) : null}
+            </span>
+          ) : null}
         </div>
         <div>
           <h1

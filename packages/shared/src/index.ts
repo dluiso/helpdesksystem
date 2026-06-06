@@ -178,6 +178,7 @@ export interface PublicBrandingSettings {
   mobileLoginBrandTextColor?: string;
   brandFontFamily?: string;
   appSubtitle?: string | null;
+  showLoginBrandTitle?: boolean;
   showSubtitleOnLogin?: boolean;
   showSubtitleInApp?: boolean;
   subtitlePlacement?: string;
