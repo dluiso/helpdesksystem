@@ -1,1 +1,1 @@
-ALTER TABLE "SystemSetting" ADD COLUMN "showLoginBrandTitle" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "system_settings" ADD COLUMN "showLoginBrandTitle" BOOLEAN NOT NULL DEFAULT true;
