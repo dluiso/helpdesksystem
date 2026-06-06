@@ -8,9 +8,22 @@ const fallbackBranding: PublicBrandingSettings = {
   applicationName: "Avidity IT Management Tool",
   companyName: "Avidity Technologies",
   logoUrl: null,
+  loginLogoUrl: null,
+  appIconUrl: null,
   primaryColor: "#155eef",
   secondaryColor: "#0f172a",
-  supportEmail: "support@aviditytechnologies.com"
+  supportEmail: "support@aviditytechnologies.com",
+  supportButtonEnabled: true,
+  supportButtonLabel: "Support",
+  supportButtonUrl: null,
+  defaultLandingPage: "/dashboard",
+  defaultTimezone: "America/Chicago",
+  defaultLanguage: "en",
+  dateFormat: "MMM dd, yyyy",
+  timeFormat: "12h",
+  loginHeadline: "Avidity IT Management Tool",
+  loginSubtitle: "Secure service desk operations, client context, attachments, mail flow, reporting, and remote access readiness in one configurable platform.",
+  loginFooterText: "Avidity Technologies"
 };
 
 const BrandingContext = createContext<PublicBrandingSettings>(fallbackBranding);
@@ -28,6 +41,15 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
           setBranding(settings);
           document.documentElement.style.setProperty("--brand-primary", settings.primaryColor);
           document.documentElement.style.setProperty("--brand-secondary", settings.secondaryColor);
+          if (settings.appIconUrl) {
+            let icon = document.querySelector<HTMLLinkElement>("link[rel='icon']");
+            if (!icon) {
+              icon = document.createElement("link");
+              icon.rel = "icon";
+              document.head.appendChild(icon);
+            }
+            icon.href = settings.appIconUrl;
+          }
         }
       })
       .catch(() => undefined);

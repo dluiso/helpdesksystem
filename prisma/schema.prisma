@@ -204,11 +204,22 @@ model SystemSetting {
   applicationName            String
   companyName                String
   logoUrl                    String?
+  loginLogoUrl               String?
+  appIconUrl                 String?
+  loginHeadline              String?
+  loginSubtitle              String?
+  loginFooterText            String?
   primaryColor               String   @default("#155eef")
   secondaryColor             String   @default("#0f172a")
   supportEmail               String
+  supportButtonEnabled       Boolean  @default(true)
+  supportButtonLabel         String   @default("Support")
+  supportButtonUrl           String?
+  defaultLandingPage         String   @default("/dashboard")
   defaultTimezone            String   @default("America/Chicago")
   defaultLanguage            String   @default("en")
+  dateFormat                 String   @default("MMM dd, yyyy")
+  timeFormat                 String   @default("12h")
   defaultTicketAutoReplyTemplate String?
   aiAssistantEnabled         Boolean  @default(true)
   remoteAccessProviderEnabled Boolean @default(false)

@@ -34,14 +34,18 @@ export default function LoginPage() {
     <div className="login-page">
       <section className="login-copy">
         <div className="brand">
-          <span className="brand-mark">{branding.applicationName.slice(0, 1)}</span>
+          {branding.loginLogoUrl || branding.logoUrl ? (
+            <img className="brand-logo" src={branding.loginLogoUrl ?? branding.logoUrl ?? ""} alt="" />
+          ) : (
+            <span className="brand-mark">{branding.applicationName.slice(0, 1)}</span>
+          )}
           <span className="brand-name">{branding.applicationName}</span>
         </div>
         <div>
-          <h1>{branding.applicationName}</h1>
-          <p>Secure service desk operations, client context, attachments, mail flow, reporting, and remote access readiness in one configurable platform.</p>
+          <h1>{branding.loginHeadline ?? branding.applicationName}</h1>
+          <p>{branding.loginSubtitle}</p>
         </div>
-        <p>{branding.companyName}</p>
+        <p>{branding.loginFooterText ?? branding.companyName}</p>
       </section>
       <section className="login-panel">
         <div className="page-header">

@@ -231,6 +231,11 @@ select {
   line-height: 1.6;
 }
 
+.login-copy .brand-logo {
+  width: 34px;
+  height: 34px;
+}
+
 .form {
   display: grid;
   gap: 16px;
@@ -341,6 +346,14 @@ select {
   color: #ffffff;
   background: var(--brand-primary);
   font-weight: 800;
+}
+
+.brand-logo {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #ffffff;
 }
 
 .brand-name {
@@ -1264,6 +1277,98 @@ select {
   min-width: 0;
   min-height: 52px;
   align-items: flex-start;
+}
+
+.branding-asset-list {
+  display: grid;
+  gap: 10px;
+}
+
+.branding-asset-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.branding-asset-row strong,
+.branding-asset-row span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branding-preview {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--brand-primary);
+  font-weight: 800;
+}
+
+.branding-preview img {
+  max-width: 36px;
+  max-height: 36px;
+  object-fit: contain;
+}
+
+.file-button {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.file-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.audit-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.audit-search-field {
+  grid-column: span 2;
+}
+
+.audit-metadata summary {
+  cursor: pointer;
+  color: var(--brand-primary);
+  font-weight: 750;
+}
+
+.audit-metadata pre {
+  max-width: 520px;
+  max-height: 220px;
+  margin-top: 8px;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.audit-pagination {
+  justify-content: flex-end;
 }
 
 .settings-page .stack-row > div,
@@ -4100,6 +4205,20 @@ a.dashboard-list-row:hover {
 
   .client-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .audit-filter-grid,
+  .branding-asset-row {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-search-field {
+    grid-column: auto;
+  }
+
+  .branding-preview {
+    width: 40px;
+    height: 40px;
   }
 
   .tickets-filter-grid {

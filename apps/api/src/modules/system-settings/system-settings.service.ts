@@ -1,12 +1,21 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { AuthenticatedUser } from "../auth/auth.types";
+import { AuditLogsService } from "../audit-logs/audit-logs.service";
+import { FileStorageService } from "../file-storage/file-storage.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { UpdateGeneralSettingsDto } from "./dto/update-general-settings.dto";
+
+const BRANDING_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon"]);
+const BRANDING_MAX_BYTES = 2 * 1024 * 1024;
 
 @Injectable()
 export class SystemSettingsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService
+    private readonly config: ConfigService,
+    private readonly auditLogs: AuditLogsService,
+    private readonly fileStorage: FileStorageService
   ) {}
 
   async getPublicBranding() {
@@ -18,11 +27,110 @@ export class SystemSettingsService {
       applicationName: settings?.applicationName ?? this.config.get<string>("APP_NAME") ?? "Avidity IT Management Tool",
       companyName: settings?.companyName ?? this.config.get<string>("DEFAULT_COMPANY_NAME") ?? "Avidity Technologies",
       logoUrl: settings?.logoUrl ?? null,
+      loginLogoUrl: settings?.loginLogoUrl ?? settings?.logoUrl ?? null,
+      appIconUrl: settings?.appIconUrl ?? null,
       primaryColor: settings?.primaryColor ?? "#155eef",
       secondaryColor: settings?.secondaryColor ?? "#0f172a",
       supportEmail:
-        settings?.supportEmail ?? this.config.get<string>("DEFAULT_SUPPORT_EMAIL") ?? "support@aviditytechnologies.com"
+        settings?.supportEmail ?? this.config.get<string>("DEFAULT_SUPPORT_EMAIL") ?? "support@aviditytechnologies.com",
+      supportButtonEnabled: settings?.supportButtonEnabled ?? true,
+      supportButtonLabel: settings?.supportButtonLabel ?? "Support",
+      supportButtonUrl: settings?.supportButtonUrl ?? null,
+      defaultLandingPage: settings?.defaultLandingPage ?? "/dashboard",
+      defaultTimezone: settings?.defaultTimezone ?? "America/Chicago",
+      defaultLanguage: settings?.defaultLanguage ?? "en",
+      dateFormat: settings?.dateFormat ?? "MMM dd, yyyy",
+      timeFormat: settings?.timeFormat ?? "12h",
+      loginHeadline: settings?.loginHeadline ?? settings?.applicationName ?? this.config.get<string>("APP_NAME") ?? "Avidity IT Management Tool",
+      loginSubtitle:
+        settings?.loginSubtitle ??
+        "Secure service desk operations, client context, attachments, mail flow, reporting, and remote access readiness in one configurable platform.",
+      loginFooterText: settings?.loginFooterText ?? settings?.companyName ?? this.config.get<string>("DEFAULT_COMPANY_NAME") ?? "Avidity Technologies"
     };
+  }
+
+  async getGeneralSettings(user: AuthenticatedUser) {
+    const settings = await this.getOrCreateSettings(user.organizationId);
+    return settings;
+  }
+
+  async updateGeneralSettings(user: AuthenticatedUser, input: UpdateGeneralSettingsDto) {
+    this.validateHexColor(input.primaryColor, "Primary color");
+    this.validateHexColor(input.secondaryColor, "Secondary color");
+    const updated = await this.prisma.systemSetting.update({
+      where: { organizationId: user.organizationId },
+      data: {
+        applicationName: input.applicationName.trim(),
+        companyName: input.companyName.trim(),
+        supportEmail: input.supportEmail.trim().toLowerCase(),
+        logoUrl: this.optionalString(input.logoUrl),
+        loginLogoUrl: this.optionalString(input.loginLogoUrl),
+        appIconUrl: this.optionalString(input.appIconUrl),
+        loginHeadline: this.optionalString(input.loginHeadline),
+        loginSubtitle: this.optionalString(input.loginSubtitle),
+        loginFooterText: this.optionalString(input.loginFooterText),
+        primaryColor: input.primaryColor.trim(),
+        secondaryColor: input.secondaryColor.trim(),
+        supportButtonEnabled: input.supportButtonEnabled,
+        supportButtonLabel: input.supportButtonLabel.trim() || "Support",
+        supportButtonUrl: this.optionalString(input.supportButtonUrl),
+        defaultTimezone: input.defaultTimezone.trim() || "America/Chicago",
+        defaultLanguage: input.defaultLanguage.trim() || "en",
+        defaultLandingPage: input.defaultLandingPage,
+        dateFormat: input.dateFormat,
+        timeFormat: input.timeFormat
+      }
+    });
+
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "system_settings",
+      entityId: updated.id,
+      action: "system_settings.updated",
+      metadata: { applicationName: updated.applicationName, companyName: updated.companyName }
+    });
+
+    return updated;
+  }
+
+  async uploadBrandingAsset(user: AuthenticatedUser, assetType: "logo" | "loginLogo" | "appIcon", file: { originalname: string; mimetype: string; size: number; buffer: Buffer }) {
+    if (!BRANDING_MIME_TYPES.has(file.mimetype)) {
+      throw new BadRequestException("Branding asset must be a PNG, JPG, WEBP, SVG, or ICO image.");
+    }
+    if (file.size > BRANDING_MAX_BYTES) {
+      throw new BadRequestException("Branding asset must be 2 MB or smaller.");
+    }
+
+    const stored = await this.fileStorage.saveSystemFile({
+      originalFilename: file.originalname,
+      mimeType: file.mimetype,
+      buffer: file.buffer,
+      folder: "branding"
+    });
+    const assetUrl = `/api/system-settings/assets?key=${encodeURIComponent(stored.storageKey)}`;
+    const field = assetType === "loginLogo" ? "loginLogoUrl" : assetType === "appIcon" ? "appIconUrl" : "logoUrl";
+    const settings = await this.getOrCreateSettings(user.organizationId);
+    const updated = await this.prisma.systemSetting.update({
+      where: { id: settings.id },
+      data: { [field]: assetUrl }
+    });
+
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "system_settings",
+      entityId: updated.id,
+      action: `system_settings.${assetType}_uploaded`,
+      metadata: { filename: stored.originalFilename, mimeType: stored.mimeType, size: stored.fileSize }
+    });
+
+    return { url: assetUrl };
+  }
+
+  async getBrandingAsset(storageKey: string) {
+    if (!storageKey || !storageKey.startsWith("branding/")) {
+      throw new NotFoundException("Branding asset was not found.");
+    }
+    return this.fileStorage.getFileStream(storageKey);
   }
 
   async getAttachmentPolicy() {
@@ -35,5 +143,30 @@ export class SystemSettingsService {
       allowedAttachmentFileTypes: settings?.allowedAttachmentFileTypes ?? [],
       blockedAttachmentFileTypes: settings?.blockedAttachmentFileTypes ?? []
     };
+  }
+
+  private async getOrCreateSettings(organizationId: string) {
+    const existing = await this.prisma.systemSetting.findUnique({ where: { organizationId } });
+    if (existing) return existing;
+
+    return this.prisma.systemSetting.create({
+      data: {
+        organizationId,
+        applicationName: this.config.get<string>("APP_NAME") ?? "Avidity IT Management Tool",
+        companyName: this.config.get<string>("DEFAULT_COMPANY_NAME") ?? "Avidity Technologies",
+        supportEmail: this.config.get<string>("DEFAULT_SUPPORT_EMAIL") ?? "support@aviditytechnologies.com"
+      }
+    });
+  }
+
+  private optionalString(value: string | null | undefined) {
+    const trimmed = value?.trim();
+    return trimmed || null;
+  }
+
+  private validateHexColor(value: string, label: string) {
+    if (!/^#[0-9a-fA-F]{6}$/.test(value.trim())) {
+      throw new BadRequestException(`${label} must be a valid hex color.`);
+    }
   }
 }

@@ -85,7 +85,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {mobileNavOpen ? <button className="mobile-nav-backdrop" type="button" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} /> : null}
       <aside className={`sidebar${mobileNavOpen ? " mobile-open" : ""}`}>
         <Link className="brand" href="/dashboard">
-          <span className="brand-mark">{branding.applicationName.slice(0, 1)}</span>
+          {branding.logoUrl ? <img className="brand-logo" src={branding.logoUrl} alt="" /> : <span className="brand-mark">{branding.applicationName.slice(0, 1)}</span>}
           <span className="brand-name">{branding.applicationName}</span>
         </Link>
         <nav className="nav" aria-label="Main navigation">
@@ -113,10 +113,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </div>
           <div className="topbar-actions">
-            <button className="button secondary" type="button">
+            {branding.supportButtonEnabled !== false ? <button className="button secondary" type="button" onClick={() => branding.supportButtonUrl ? window.open(branding.supportButtonUrl, "_blank", "noopener,noreferrer") : undefined}>
               <LifeBuoy size={16} aria-hidden="true" />
-              <span>Support</span>
-            </button>
+              <span>{branding.supportButtonLabel ?? "Support"}</span>
+            </button> : null}
             <ThemeToggle />
             <NotificationBell />
             <UserMenu user={user} />

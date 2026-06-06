@@ -153,7 +153,20 @@ export interface PublicBrandingSettings {
   applicationName: string;
   companyName: string;
   logoUrl: string | null;
+  loginLogoUrl?: string | null;
+  appIconUrl?: string | null;
   primaryColor: string;
   secondaryColor: string;
   supportEmail: string;
+  supportButtonEnabled?: boolean;
+  supportButtonLabel?: string;
+  supportButtonUrl?: string | null;
+  defaultLandingPage?: string;
+  defaultTimezone?: string;
+  defaultLanguage?: string;
+  dateFormat?: string;
+  timeFormat?: string;
+  loginHeadline?: string;
+  loginSubtitle?: string;
+  loginFooterText?: string;
 }

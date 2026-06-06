@@ -1,8 +1,8 @@
 "use client";
 
-import { Plus, RefreshCcw, RotateCw, TestTube2, X } from "lucide-react";
+import { Download, Plus, RefreshCcw, RotateCw, TestTube2, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiBaseUrl, apiFetch } from "@/lib/api";
 
 interface Mailbox {
   id: string;
@@ -202,6 +202,57 @@ interface MaintenanceSummary {
   cutoff: string;
 }
 
+interface GeneralSettings {
+  applicationName: string;
+  companyName: string;
+  supportEmail: string;
+  logoUrl: string | null;
+  loginLogoUrl: string | null;
+  appIconUrl: string | null;
+  loginHeadline: string | null;
+  loginSubtitle: string | null;
+  loginFooterText: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  supportButtonEnabled: boolean;
+  supportButtonLabel: string;
+  supportButtonUrl: string | null;
+  defaultTimezone: string;
+  defaultLanguage: string;
+  defaultLandingPage: string;
+  dateFormat: string;
+  timeFormat: "12h" | "24h";
+}
+
+interface AuditLogUserOption {
+  id: string;
+  name: string;
+  email: string;
+}
+
+interface AuditLogItem {
+  id: string;
+  userId: string | null;
+  entityType: string;
+  entityId: string | null;
+  action: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  metadata: unknown;
+  createdAt: string;
+  user: { id: string; firstName: string; lastName: string; email: string } | null;
+}
+
+interface AuditLogResult {
+  items: AuditLogItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  users: AuditLogUserOption[];
+  actions: string[];
+  entityTypes: string[];
+}
+
 const AI_ACTIONS = [
   { type: "paraphrase", label: "Paraphrase" },
   { type: "improve_reply", label: "Improve reply" },
@@ -234,6 +285,28 @@ const NOTIFICATION_FIELDS: Array<{ label: string; inAppKey: keyof NotificationPr
   { label: "Ticket reopened", inAppKey: "inAppTicketReopened", emailKey: "emailTicketReopened" }
 ];
 
+const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
+  applicationName: "Avidity IT Management Tool",
+  companyName: "Avidity Technologies",
+  supportEmail: "support@aviditytechnologies.com",
+  logoUrl: null,
+  loginLogoUrl: null,
+  appIconUrl: null,
+  loginHeadline: "Avidity IT Management Tool",
+  loginSubtitle: "Secure service desk operations, client context, attachments, mail flow, reporting, and remote access readiness in one configurable platform.",
+  loginFooterText: "Avidity Technologies",
+  primaryColor: "#155eef",
+  secondaryColor: "#0f172a",
+  supportButtonEnabled: true,
+  supportButtonLabel: "Support",
+  supportButtonUrl: null,
+  defaultTimezone: "America/Chicago",
+  defaultLanguage: "en",
+  defaultLandingPage: "/dashboard",
+  dateFormat: "MMM dd, yyyy",
+  timeFormat: "12h"
+};
+
 function normalizeSyncIntervalSeconds(value: string, unit: "seconds" | "minutes") {
   const parsed = Number(value);
   const seconds = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed * (unit === "minutes" ? 60 : 1)) : 300;
@@ -253,6 +326,19 @@ export function SettingsWorkspace() {
   const [notificationPreferenceRows, setNotificationPreferenceRows] = useState<UserNotificationPreferenceRow[]>([]);
   const [spamEntries, setSpamEntries] = useState<SpamBlockEntry[]>([]);
   const [maintenanceSummary, setMaintenanceSummary] = useState<MaintenanceSummary | null>(null);
+  const [generalSettings, setGeneralSettings] = useState<GeneralSettings | null>(null);
+  const [generalDraft, setGeneralDraft] = useState<GeneralSettings>(DEFAULT_GENERAL_SETTINGS);
+  const [auditLogs, setAuditLogs] = useState<AuditLogResult | null>(null);
+  const [auditFilters, setAuditFilters] = useState({
+    startDate: "",
+    endDate: "",
+    userId: "",
+    action: "",
+    entityType: "",
+    search: "",
+    page: "1",
+    pageSize: "50"
+  });
   const [spamSearch, setSpamSearch] = useState("");
   const [spamTypeFilter, setSpamTypeFilter] = useState("");
   const [spamActiveFilter, setSpamActiveFilter] = useState("");
@@ -326,7 +412,7 @@ export function SettingsWorkspace() {
   const [selectedClientByDomain, setSelectedClientByDomain] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<"mailboxes" | "autoReplies" | "teams" | "routing" | "domains" | "notifications" | "spam" | "maintenance" | "ai">("mailboxes");
+  const [activeSection, setActiveSection] = useState<"general" | "mailboxes" | "autoReplies" | "teams" | "routing" | "domains" | "notifications" | "spam" | "maintenance" | "logs" | "ai">("general");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [aiConfigError, setAiConfigError] = useState<string | null>(null);
@@ -358,6 +444,28 @@ export function SettingsWorkspace() {
     }
   }
 
+  function applyGeneralSettings(settings: GeneralSettings) {
+    const merged = { ...DEFAULT_GENERAL_SETTINGS, ...settings };
+    setGeneralSettings(merged);
+    setGeneralDraft(merged);
+  }
+
+  function auditQueryString(nextFilters = auditFilters) {
+    const params = new URLSearchParams();
+    Object.entries(nextFilters).forEach(([key, value]) => {
+      if (value) {
+        params.set(key, value);
+      }
+    });
+    return params.toString();
+  }
+
+  async function loadAuditLogs(nextFilters = auditFilters) {
+    const query = auditQueryString(nextFilters);
+    const result = await apiFetch<AuditLogResult>(`/system-settings/audit-logs${query ? `?${query}` : ""}`);
+    setAuditLogs(result);
+  }
+
   async function loadSettingsData() {
     setLoading(true);
     setError(null);
@@ -387,6 +495,13 @@ export function SettingsWorkspace() {
       setSpamEntries(spamResult.status === "fulfilled" ? spamResult.value : []);
       setMaintenanceSummary(maintenanceResult.status === "fulfilled" ? maintenanceResult.value : null);
       setMaintenanceDraft(maintenanceResult.status === "fulfilled" ? String(maintenanceResult.value.recycleBinRetentionDays) : "7");
+      const [generalResult, auditResult] = await Promise.allSettled([apiFetch<GeneralSettings>("/system-settings/general"), loadAuditLogs()]);
+      if (generalResult.status === "fulfilled") {
+        applyGeneralSettings(generalResult.value);
+      }
+      if (auditResult.status === "rejected") {
+        setAuditLogs(null);
+      }
       setMailboxDrafts(
         Object.fromEntries(
           mailboxData.map((mailbox) => [
@@ -447,6 +562,83 @@ export function SettingsWorkspace() {
       setError("Unable to load settings data.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function saveGeneralSettings() {
+    setBusy("general-settings");
+    setNotice(null);
+    setError(null);
+    try {
+      const saved = await apiFetch<GeneralSettings>("/system-settings/general", {
+        method: "PATCH",
+        body: JSON.stringify(generalDraft)
+      });
+      applyGeneralSettings(saved);
+      setNotice("General settings saved.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save general settings.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function uploadBrandingAsset(assetType: "logo" | "loginLogo" | "appIcon", file: File | null) {
+    if (!file) {
+      return;
+    }
+
+    const fieldByType = {
+      logo: "logoUrl",
+      loginLogo: "loginLogoUrl",
+      appIcon: "appIconUrl"
+    } as const;
+    const formData = new FormData();
+    formData.set("file", file);
+    setBusy(`branding-${assetType}`);
+    setNotice(null);
+    setError(null);
+    try {
+      const result = await apiFetch<{ url: string }>(`/system-settings/branding-assets?type=${assetType}`, {
+        method: "POST",
+        body: formData
+      });
+      setGeneralDraft((current) => ({ ...current, [fieldByType[assetType]]: result.url }));
+      setGeneralSettings((current) => (current ? { ...current, [fieldByType[assetType]]: result.url } : current));
+      setNotice("Branding asset uploaded.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to upload branding asset.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function applyAuditFilters(nextFilters: typeof auditFilters) {
+    setAuditFilters(nextFilters);
+    setBusy("audit-logs");
+    setError(null);
+    try {
+      await loadAuditLogs(nextFilters);
+    } catch {
+      setError("Unable to load event logs.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function exportAuditLogs() {
+    const query = auditQueryString(auditFilters);
+    window.location.href = `${apiBaseUrl}/system-settings/audit-logs/export${query ? `?${query}` : ""}`;
+  }
+
+  function formatAuditMetadata(metadata: unknown) {
+    if (!metadata || typeof metadata !== "object") {
+      return "";
+    }
+    try {
+      return JSON.stringify(metadata, null, 2);
+    } catch {
+      return "";
     }
   }
 
@@ -1161,6 +1353,9 @@ export function SettingsWorkspace() {
 
       <section className="settings-layout">
         <nav className="settings-nav" aria-label="Settings sections">
+          <button className={activeSection === "general" ? "active" : ""} type="button" onClick={() => setActiveSection("general")}>
+            General
+          </button>
           <button className={activeSection === "mailboxes" ? "active" : ""} type="button" onClick={() => setActiveSection("mailboxes")}>
             Mailboxes
           </button>
@@ -1185,12 +1380,161 @@ export function SettingsWorkspace() {
           <button className={activeSection === "maintenance" ? "active" : ""} type="button" onClick={() => setActiveSection("maintenance")}>
             Maintenance
           </button>
+          <button className={activeSection === "logs" ? "active" : ""} type="button" onClick={() => setActiveSection("logs")}>
+            Event Logs
+          </button>
           <button className={activeSection === "ai" ? "active" : ""} type="button" onClick={() => setActiveSection("ai")}>
             AI & Security
           </button>
         </nav>
 
         <div className="settings-content">
+          {activeSection === "general" ? (
+            <section className="grid columns-2">
+              <div className="panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>Application Identity</h2>
+                    <p className="muted">Customize the visible product name, company name, support identity, and default colors.</p>
+                  </div>
+                </div>
+                <div className="client-form-grid settings-section">
+                  <label className="field">
+                    <span>Application title</span>
+                    <input className="input" value={generalDraft.applicationName} onChange={(event) => setGeneralDraft((current) => ({ ...current, applicationName: event.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Company name</span>
+                    <input className="input" value={generalDraft.companyName} onChange={(event) => setGeneralDraft((current) => ({ ...current, companyName: event.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Support email</span>
+                    <input className="input" type="email" value={generalDraft.supportEmail} onChange={(event) => setGeneralDraft((current) => ({ ...current, supportEmail: event.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Default landing page</span>
+                    <select className="input" value={generalDraft.defaultLandingPage} onChange={(event) => setGeneralDraft((current) => ({ ...current, defaultLandingPage: event.target.value }))}>
+                      <option value="/dashboard">Dashboard</option>
+                      <option value="/tickets">Tickets</option>
+                      <option value="/clients">Clients</option>
+                      <option value="/reports">Reports</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Primary color</span>
+                    <input className="input" type="color" value={generalDraft.primaryColor} onChange={(event) => setGeneralDraft((current) => ({ ...current, primaryColor: event.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Secondary color</span>
+                    <input className="input" type="color" value={generalDraft.secondaryColor} onChange={(event) => setGeneralDraft((current) => ({ ...current, secondaryColor: event.target.value }))} />
+                  </label>
+                </div>
+              </div>
+
+              <div className="panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>Branding Assets</h2>
+                    <p className="muted">Upload PNG, JPG, WebP, SVG, or ICO assets up to 2 MB.</p>
+                  </div>
+                </div>
+                <div className="branding-asset-list settings-section">
+                  {[
+                    { type: "logo" as const, label: "App logo", value: generalDraft.logoUrl },
+                    { type: "loginLogo" as const, label: "Login logo", value: generalDraft.loginLogoUrl },
+                    { type: "appIcon" as const, label: "Browser icon", value: generalDraft.appIconUrl }
+                  ].map((asset) => (
+                    <div className="branding-asset-row" key={asset.type}>
+                      <div className="branding-preview">
+                        {asset.value ? <img src={asset.value} alt="" /> : <span>{generalDraft.applicationName.slice(0, 1)}</span>}
+                      </div>
+                      <div>
+                        <strong>{asset.label}</strong>
+                        <span className="muted">{asset.value || "No asset uploaded"}</span>
+                      </div>
+                      <label className="button secondary file-button">
+                        <Upload size={16} aria-hidden="true" />
+                        <span>{busy === `branding-${asset.type}` ? "Uploading" : "Upload"}</span>
+                        <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon,.ico" onChange={(event) => void uploadBrandingAsset(asset.type, event.target.files?.[0] ?? null)} />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>Login Page</h2>
+                    <p className="muted">Control the public login headline and supporting text.</p>
+                  </div>
+                </div>
+                <div className="client-form-grid settings-section">
+                  <label className="field full-span">
+                    <span>Headline</span>
+                    <input className="input" value={generalDraft.loginHeadline ?? ""} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginHeadline: event.target.value }))} />
+                  </label>
+                  <label className="field full-span">
+                    <span>Subtitle</span>
+                    <textarea className="textarea compact-textarea" value={generalDraft.loginSubtitle ?? ""} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginSubtitle: event.target.value }))} />
+                  </label>
+                  <label className="field full-span">
+                    <span>Footer text</span>
+                    <input className="input" value={generalDraft.loginFooterText ?? ""} onChange={(event) => setGeneralDraft((current) => ({ ...current, loginFooterText: event.target.value }))} />
+                  </label>
+                </div>
+              </div>
+
+              <div className="panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>Defaults & Support</h2>
+                    <p className="muted">Set app defaults and the top-bar support button behavior.</p>
+                  </div>
+                </div>
+                <div className="client-form-grid settings-section">
+                  <label className="field">
+                    <span>Timezone</span>
+                    <input className="input" value={generalDraft.defaultTimezone} onChange={(event) => setGeneralDraft((current) => ({ ...current, defaultTimezone: event.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Language</span>
+                    <input className="input" value={generalDraft.defaultLanguage} onChange={(event) => setGeneralDraft((current) => ({ ...current, defaultLanguage: event.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Date format</span>
+                    <input className="input" value={generalDraft.dateFormat} onChange={(event) => setGeneralDraft((current) => ({ ...current, dateFormat: event.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Time format</span>
+                    <select className="input" value={generalDraft.timeFormat} onChange={(event) => setGeneralDraft((current) => ({ ...current, timeFormat: event.target.value as "12h" | "24h" }))}>
+                      <option value="12h">12-hour</option>
+                      <option value="24h">24-hour</option>
+                    </select>
+                  </label>
+                  <label className="checkbox-row full-span">
+                    <input type="checkbox" checked={generalDraft.supportButtonEnabled} onChange={(event) => setGeneralDraft((current) => ({ ...current, supportButtonEnabled: event.target.checked }))} />
+                    Show support button in the header
+                  </label>
+                  <label className="field">
+                    <span>Support button label</span>
+                    <input className="input" value={generalDraft.supportButtonLabel} onChange={(event) => setGeneralDraft((current) => ({ ...current, supportButtonLabel: event.target.value }))} />
+                  </label>
+                  <label className="field">
+                    <span>Support button URL</span>
+                    <input className="input" placeholder="https://..." value={generalDraft.supportButtonUrl ?? ""} onChange={(event) => setGeneralDraft((current) => ({ ...current, supportButtonUrl: event.target.value }))} />
+                  </label>
+                </div>
+                <div className="settings-actions settings-section">
+                  <button className="button" type="button" onClick={saveGeneralSettings} disabled={busy === "general-settings"}>
+                    Save General Settings
+                  </button>
+                  {generalSettings ? <span className="muted">Current application title: {generalSettings.applicationName}</span> : null}
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           {activeSection === "mailboxes" ? (
       <section className="grid columns-2">
         <div className="panel">
@@ -2082,6 +2426,151 @@ export function SettingsWorkspace() {
                     <span className="muted">Associated stored files are deleted before the database records are removed.</span>
                   </div>
                 </div>
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === "logs" ? (
+            <section className="panel settings-section">
+              <div className="section-heading">
+                <div>
+                  <h2>Event Logs</h2>
+                  <p className="muted">Review administrative and system activity across the application.</p>
+                </div>
+                <button className="button secondary" type="button" onClick={exportAuditLogs} disabled={!auditLogs?.items.length}>
+                  <Download size={16} aria-hidden="true" />
+                  <span>Export CSV</span>
+                </button>
+              </div>
+
+              <div className="audit-filter-grid settings-section">
+                <label className="field">
+                  <span>Start date</span>
+                  <input className="input" type="date" value={auditFilters.startDate} onChange={(event) => setAuditFilters((current) => ({ ...current, startDate: event.target.value, page: "1" }))} />
+                </label>
+                <label className="field">
+                  <span>End date</span>
+                  <input className="input" type="date" value={auditFilters.endDate} onChange={(event) => setAuditFilters((current) => ({ ...current, endDate: event.target.value, page: "1" }))} />
+                </label>
+                <label className="field">
+                  <span>User</span>
+                  <select className="input" value={auditFilters.userId} onChange={(event) => setAuditFilters((current) => ({ ...current, userId: event.target.value, page: "1" }))}>
+                    <option value="">All users</option>
+                    {(auditLogs?.users ?? []).map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name} ({user.email})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Action</span>
+                  <select className="input" value={auditFilters.action} onChange={(event) => setAuditFilters((current) => ({ ...current, action: event.target.value, page: "1" }))}>
+                    <option value="">All actions</option>
+                    {(auditLogs?.actions ?? []).map((action) => (
+                      <option key={action} value={action}>
+                        {action}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Entity</span>
+                  <select className="input" value={auditFilters.entityType} onChange={(event) => setAuditFilters((current) => ({ ...current, entityType: event.target.value, page: "1" }))}>
+                    <option value="">All entities</option>
+                    {(auditLogs?.entityTypes ?? []).map((entityType) => (
+                      <option key={entityType} value={entityType}>
+                        {entityType}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field audit-search-field">
+                  <span>Search</span>
+                  <input className="input" placeholder="Action, entity, IP, user agent..." value={auditFilters.search} onChange={(event) => setAuditFilters((current) => ({ ...current, search: event.target.value, page: "1" }))} />
+                </label>
+                <button className="button" type="button" onClick={() => void applyAuditFilters(auditFilters)} disabled={busy === "audit-logs"}>
+                  Apply Filters
+                </button>
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={() => void applyAuditFilters({ startDate: "", endDate: "", userId: "", action: "", entityType: "", search: "", page: "1", pageSize: auditFilters.pageSize })}
+                >
+                  Clear
+                </button>
+              </div>
+
+              <div className="table-scroll settings-section">
+                <table className="tickets-table audit-log-table">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>User</th>
+                      <th>Action</th>
+                      <th>Entity</th>
+                      <th>IP</th>
+                      <th>Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditLogs?.items.length === 0 ? (
+                      <tr>
+                        <td colSpan={6}>
+                          <span className="muted">No events match the current filters.</span>
+                        </td>
+                      </tr>
+                    ) : null}
+                    {(auditLogs?.items ?? []).map((log) => (
+                      <tr key={log.id}>
+                        <td>{new Date(log.createdAt).toLocaleString()}</td>
+                        <td>
+                          <strong>{log.user ? `${log.user.firstName} ${log.user.lastName}`.trim() || log.user.email : "System"}</strong>
+                          <span className="muted">{log.user?.email ?? "No user context"}</span>
+                        </td>
+                        <td>{log.action}</td>
+                        <td>
+                          <strong>{log.entityType}</strong>
+                          <span className="muted">{log.entityId ?? "No record id"}</span>
+                        </td>
+                        <td>{log.ipAddress ?? "-"}</td>
+                        <td>
+                          {formatAuditMetadata(log.metadata) ? (
+                            <details className="audit-metadata">
+                              <summary>View metadata</summary>
+                              <pre>{formatAuditMetadata(log.metadata)}</pre>
+                            </details>
+                          ) : (
+                            <span className="muted">No metadata</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="settings-actions settings-section audit-pagination">
+                <span className="muted">
+                  Showing {auditLogs?.items.length ?? 0} of {auditLogs?.total ?? 0} events.
+                </span>
+                <button
+                  className="button secondary"
+                  type="button"
+                  disabled={Number(auditFilters.page) <= 1 || busy === "audit-logs"}
+                  onClick={() => void applyAuditFilters({ ...auditFilters, page: String(Math.max(1, Number(auditFilters.page) - 1)) })}
+                >
+                  Previous
+                </button>
+                <span className="status-pill">Page {auditLogs?.page ?? auditFilters.page}</span>
+                <button
+                  className="button secondary"
+                  type="button"
+                  disabled={!auditLogs || auditLogs.page * auditLogs.pageSize >= auditLogs.total || busy === "audit-logs"}
+                  onClick={() => void applyAuditFilters({ ...auditFilters, page: String(Number(auditFilters.page) + 1) })}
+                >
+                  Next
+                </button>
               </div>
             </section>
           ) : null}

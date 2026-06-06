@@ -24,6 +24,10 @@ export class FileStorageService {
     return this.provider.saveFile(input);
   }
 
+  async saveSystemFile(input: SaveFileInput): Promise<StoredFileResult> {
+    return this.provider.saveFile(input);
+  }
+
   getFileStream(storageKey: string) {
     return this.provider.getFileStream(storageKey);
   }
