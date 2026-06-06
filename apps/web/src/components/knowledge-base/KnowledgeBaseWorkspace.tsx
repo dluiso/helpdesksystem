@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, Edit3, Eye, FileUp, ImagePlus, Plus, Save, Search, Trash2, UploadCloud, X } from "lucide-react";
+import { Archive, Bold, Edit3, Eye, FileUp, ImagePlus, Italic, List, ListOrdered, Plus, Save, Search, Trash2, Underline, UploadCloud, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
@@ -78,6 +78,14 @@ function emptyDraft(): Partial<KnowledgeArticle> {
     categoryId: null
   };
 }
+
+const editorCommands = [
+  { command: "bold", label: "Bold", icon: Bold },
+  { command: "italic", label: "Italic", icon: Italic },
+  { command: "underline", label: "Underline", icon: Underline },
+  { command: "insertUnorderedList", label: "Bullet list", icon: List },
+  { command: "insertOrderedList", label: "Numbered list", icon: ListOrdered }
+];
 
 export function KnowledgeBaseWorkspace() {
   const searchParams = useSearchParams();
@@ -399,11 +407,14 @@ export function KnowledgeBaseWorkspace() {
                 <input className="input" value={(draft.tags ?? []).join(", ")} onChange={(event) => setDraft((current) => ({ ...current, tags: event.target.value.split(",") }))} placeholder="Tags, separated by commas" />
               </div>
               <div className="editor-toolbar">
-                {["bold", "italic", "underline", "insertUnorderedList", "insertOrderedList"].map((command) => (
-                  <button className="icon-button" type="button" key={command} onClick={() => document.execCommand(command)}>
-                    {command.replace("insert", "").replace("Unordered", "Bullet ").replace("Ordered", "Numbered ")}
-                  </button>
-                ))}
+                {editorCommands.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button className="icon-button" type="button" key={item.command} onClick={() => document.execCommand(item.command)} title={item.label} aria-label={item.label}>
+                      <Icon size={16} aria-hidden="true" />
+                    </button>
+                  );
+                })}
                 <button className="button secondary" type="button" onClick={() => imageInputRef.current?.click()} disabled={!selectedArticleId}>
                   <ImagePlus size={16} aria-hidden="true" />
                   <span>Image</span>

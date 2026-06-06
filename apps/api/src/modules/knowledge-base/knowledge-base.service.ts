@@ -383,33 +383,34 @@ export class KnowledgeBaseService {
     return trimmed ? trimmed : null;
   }
 
-  private splitPdfTextIntoPages(text: string) {
-    const pagePattern = /(^|\n)\s+([A-Za-z0-9 &.'/-]+?) Page \d+\s*(?=\n|$)/g;
-    const matches = [...text.matchAll(pagePattern)];
+  splitPdfTextIntoPages(text: string) {
+    const normalizedText = text.replace(/^\s*--\s*\d+\s+of\s+\d+\s*--\s*$/gim, "");
+    const pagePattern = /(^|\n)\s*([A-Za-z0-9 &.'/-]+?) Page \d+\s*(?=\n|$)/g;
+    const matches = [...normalizedText.matchAll(pagePattern)];
     if (matches.length < 2) {
-      return text.split(/\f+/).map((page) => page.trim()).filter(Boolean);
+      return normalizedText.split(/\f+/).map((page) => page.trim()).filter(Boolean);
     }
 
     const pages: string[] = [];
     let start = 0;
     for (const match of matches) {
       const end = match.index ?? 0;
-      const page = text.slice(start, end).trim();
+      const page = normalizedText.slice(start, end).trim();
       if (page) {
         pages.push(page);
       }
       start = end + match[0].length;
     }
-    const last = text.slice(start).trim();
+    const last = normalizedText.slice(start).trim();
     if (last) {
       pages.push(last);
     }
-    return pages.length ? pages : [text.trim()].filter(Boolean);
+    return pages.length ? pages : [normalizedText.trim()].filter(Boolean);
   }
 
   private toImportItem(rawText: string, pageNumber: number) {
     const lines = rawText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    const title = this.cleanImportTitle(lines[0] ?? `Imported page ${pageNumber}`);
+    const title = this.cleanImportTitle(this.detectImportTitle(lines, pageNumber));
     const categoryName = this.detectCategory(rawText) ?? "Imported";
     const warnings = SENSITIVE_PATTERNS.filter((item) => item.pattern.test(rawText)).map((item) => item.id);
     const tags = [
@@ -439,6 +440,17 @@ export class KnowledgeBaseService {
 
   private cleanImportTitle(value: string) {
     return value.replace(/[•○▪]+/g, "").trim().slice(0, 180) || "Imported note";
+  }
+
+  private detectImportTitle(lines: string[], pageNumber: number) {
+    return (
+      lines.find(
+        (line) =>
+          !/^https?:\/\//i.test(line) &&
+          !/^[A-Za-z]+,\s+[A-Za-z]+\s+\d{1,2},\s+\d{4}/.test(line) &&
+          !/^[•○▪-]+$/.test(line)
+      ) ?? `Imported page ${pageNumber}`
+    );
   }
 
   private escapeHtml(value: string) {

@@ -52,4 +52,25 @@ describe("KnowledgeBaseService", () => {
       })
     );
   });
+
+  it("splits OneNote PDF text on page footer markers", () => {
+    const service = new KnowledgeBaseService({} as never, {} as never, {} as never);
+
+    const pages = service.splitPdfTextIntoPages(
+      [
+        "Network Topology",
+        "Gateway / Router = 192.168.0.1",
+        "Abbott Printing Page 1",
+        "-- 1 of 2 --",
+        "Bitdefender Gravity Portal",
+        "Username: admin@example.com",
+        "BitDefender Page 2",
+        "-- 2 of 2 --"
+      ].join("\n")
+    );
+
+    expect(pages).toHaveLength(2);
+    expect(pages[0]).toContain("Network Topology");
+    expect(pages[1]).toContain("Bitdefender Gravity Portal");
+  });
 });
