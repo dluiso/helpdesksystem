@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, CheckCircle2, ClipboardList, MessageSquare, Plus, RefreshCw, Save, UsersRound } from "lucide-react";
+import { CalendarDays, CheckCircle2, ClipboardList, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Trash2, UsersRound, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
@@ -49,6 +49,7 @@ interface EventServiceRequest {
   additionalInfo: string | null;
   createdAt: string;
   updatedAt: string;
+  deletedAt?: string | null;
   client: { id: string; name: string; shortName: string | null } | null;
   assignedTeam: TicketTeam | null;
   services: Array<{ service: EventServiceCatalogItem }>;
@@ -81,6 +82,10 @@ export function EventServicesWorkspace() {
   const [requests, setRequests] = useState<EventServiceRequest[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<EventServiceRequest | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [selectedRequestIds, setSelectedRequestIds] = useState<string[]>([]);
+  const [recycleBinOpen, setRecycleBinOpen] = useState(false);
+  const [recycledRequests, setRecycledRequests] = useState<EventServiceRequest[]>([]);
   const [services, setServices] = useState<EventServiceCatalogItem[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [teams, setTeams] = useState<TicketTeam[]>([]);
@@ -118,8 +123,11 @@ export function EventServicesWorkspace() {
       setServices(serviceData);
       setUsers(userData);
       setTeams(teamData);
-      if (!selectedId && requestData[0]) {
-        setSelectedId(requestData[0].id);
+      setSelectedRequestIds((current) => current.filter((id) => requestData.some((request) => request.id === id)));
+      if (selectedId && !requestData.some((request) => request.id === selectedId)) {
+        setSelectedId(null);
+        setSelected(null);
+        setDetailOpen(false);
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to load Event & Services.");
@@ -160,8 +168,106 @@ export function EventServicesWorkspace() {
   }, []);
 
   useEffect(() => {
-    void loadSelected(selectedId);
-  }, [selectedId]);
+    if (detailOpen) {
+      void loadSelected(selectedId);
+    }
+  }, [selectedId, detailOpen]);
+
+  function openRequest(id: string) {
+    setSelectedId(id);
+    setDetailOpen(true);
+  }
+
+  function closeRequest() {
+    setDetailOpen(false);
+    setSelected(null);
+  }
+
+  function toggleRequestSelection(requestId: string, checked: boolean) {
+    setSelectedRequestIds((current) => checked ? [...new Set([...current, requestId])] : current.filter((id) => id !== requestId));
+  }
+
+  function toggleAllRequests(checked: boolean) {
+    setSelectedRequestIds(checked ? requests.map((request) => request.id) : []);
+  }
+
+  function updateRequestInState(updated: EventServiceRequest) {
+    setRequests((current) => current.map((request) => request.id === updated.id ? updated : request));
+    setSelected((current) => current?.id === updated.id ? updated : current);
+  }
+
+  async function quickUpdateRequest(request: EventServiceRequest, patch: Partial<Pick<EventServiceRequest, "status" | "priority">> & { assignedTeamId?: string | null }) {
+    setBusy(`quick-${request.id}`);
+    setError(null);
+    try {
+      const updated = await apiFetch<EventServiceRequest>(`/event-services/${request.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch)
+      });
+      updateRequestInState(updated);
+      setNotice(`${request.trackingNumber} updated.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to update event request.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function moveSelectedToRecycleBin() {
+    if (!selectedRequestIds.length) return;
+    const confirmed = window.confirm(`Move ${selectedRequestIds.length} event request${selectedRequestIds.length === 1 ? "" : "s"} to the Event & Services recycle bin?`);
+    if (!confirmed) return;
+    setBusy("delete");
+    setError(null);
+    try {
+      await apiFetch("/event-services/recycle-bin", {
+        method: "POST",
+        body: JSON.stringify({ requestIds: selectedRequestIds })
+      });
+      if (selectedId && selectedRequestIds.includes(selectedId)) {
+        closeRequest();
+        setSelectedId(null);
+      }
+      setSelectedRequestIds([]);
+      setNotice("Event request moved to recycle bin.");
+      await loadData();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to move event request to recycle bin.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function loadRecycleBin() {
+    setBusy("recycle-bin");
+    setError(null);
+    try {
+      const data = await apiFetch<EventServiceRequest[]>("/event-services/recycle-bin");
+      setRecycledRequests(data);
+      setRecycleBinOpen(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to load event recycle bin.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function restoreRequest(requestId: string) {
+    setBusy(`restore-${requestId}`);
+    setError(null);
+    try {
+      await apiFetch("/event-services/recycle-bin/restore", {
+        method: "POST",
+        body: JSON.stringify({ requestIds: [requestId] })
+      });
+      setNotice("Event request restored.");
+      await Promise.all([loadData(), loadRecycleBin()]);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to restore event request.");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function saveRequest() {
     if (!selected) return;
@@ -233,10 +339,16 @@ export function EventServicesWorkspace() {
           <h1>Event & Services</h1>
           <p className="muted">Manage event requests, service assignments, task progress, and public scheduling intake.</p>
         </div>
-        <button className="button secondary" type="button" onClick={() => void loadData()} disabled={loading}>
-          <RefreshCw size={16} aria-hidden="true" />
-          <span>Refresh</span>
-        </button>
+        <div className="button-row">
+          <button className="button secondary" type="button" onClick={() => void loadRecycleBin()} disabled={busy === "recycle-bin"}>
+            <Trash2 size={16} aria-hidden="true" />
+            <span>Recycle Bin</span>
+          </button>
+          <button className="button secondary" type="button" onClick={() => void loadData()} disabled={loading}>
+            <RefreshCw size={16} aria-hidden="true" />
+            <span>Refresh</span>
+          </button>
+        </div>
       </div>
       {error ? <div className="alert error">{error}</div> : null}
       {notice ? <div className="alert success">{notice}</div> : null}
@@ -272,11 +384,25 @@ export function EventServicesWorkspace() {
               <h2>Requests</h2>
               <p className="muted">{requests.length} event request{requests.length === 1 ? "" : "s"} in this view.</p>
             </div>
+            <div className="button-row">
+              <button className="button danger" type="button" onClick={() => void moveSelectedToRecycleBin()} disabled={!selectedRequestIds.length || busy === "delete"}>
+                <Trash2 size={16} aria-hidden="true" />
+                <span>Delete Selected</span>
+              </button>
+            </div>
           </div>
           <div className="table-scroll">
             <table className="tickets-table event-request-table">
               <thead>
                 <tr>
+                  <th>
+                    <input
+                      aria-label="Select all event requests"
+                      type="checkbox"
+                      checked={requests.length > 0 && selectedRequestIds.length === requests.length}
+                      onChange={(event) => toggleAllRequests(event.target.checked)}
+                    />
+                  </th>
                   <th>Tracking</th>
                   <th>Event</th>
                   <th>Requester</th>
@@ -293,13 +419,22 @@ export function EventServicesWorkspace() {
               <tbody>
                 {requests.length === 0 ? (
                   <tr>
-                    <td colSpan={11}>
+                    <td colSpan={12}>
                       <span className="muted">{loading ? "Loading requests..." : "No event requests match the filters."}</span>
                     </td>
                   </tr>
                 ) : null}
                 {requests.map((request) => (
-                  <tr className={selectedId === request.id ? "selected-row" : ""} key={request.id} onClick={() => setSelectedId(request.id)}>
+                  <tr className={selectedId === request.id && detailOpen ? "selected-row" : ""} key={request.id} onClick={() => openRequest(request.id)}>
+                    <td>
+                      <input
+                        aria-label={`Select ${request.trackingNumber}`}
+                        type="checkbox"
+                        checked={selectedRequestIds.includes(request.id)}
+                        onChange={(event) => { event.stopPropagation(); toggleRequestSelection(request.id, event.target.checked); }}
+                        onClick={(event) => event.stopPropagation()}
+                      />
+                    </td>
                     <td><strong>{request.trackingNumber}</strong></td>
                     <td>
                       <strong>{request.eventName}</strong>
@@ -314,16 +449,35 @@ export function EventServicesWorkspace() {
                       <span className="muted">{request.startTime ?? "--"} - {request.endTime ?? "--"}</span>
                     </td>
                     <td>{request.services.map((item) => item.service.name).join(", ") || "None"}</td>
-                    <td><span className={`status-pill status-${request.status.toLowerCase().replaceAll("_", "-")}`}>{label(request.status)}</span></td>
+                    <td>
+                      <select
+                        className="input compact-select"
+                        value={request.status}
+                        disabled={busy === `quick-${request.id}`}
+                        onChange={(event) => { event.stopPropagation(); void quickUpdateRequest(request, { status: event.target.value as EventStatus }); }}
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        {statuses.map((status) => <option key={status} value={status}>{label(status)}</option>)}
+                      </select>
+                    </td>
                     <td>{label(request.priority)}</td>
                     <td>
-                      <strong>{request.assignedTeam?.name ?? "No team"}</strong>
+                      <select
+                        className="input compact-select"
+                        value={request.assignedTeam?.id ?? ""}
+                        disabled={busy === `quick-${request.id}`}
+                        onChange={(event) => { event.stopPropagation(); void quickUpdateRequest(request, { assignedTeamId: event.target.value || null }); }}
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <option value="">No team</option>
+                        {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+                      </select>
                       <span className="muted">{request.assignees.map((assignee) => userName(assignee.user)).join(", ") || "Unassigned"}</span>
                     </td>
                     <td><span className="count-pill">{request.progressPercent}%</span></td>
                     <td>{formatDateTime(request.updatedAt)}</td>
                     <td>
-                      <button className="icon-button" type="button" onClick={(event) => { event.stopPropagation(); setSelectedId(request.id); }}>
+                      <button className="icon-button" type="button" onClick={(event) => { event.stopPropagation(); openRequest(request.id); }}>
                         Open
                       </button>
                     </td>
@@ -334,15 +488,21 @@ export function EventServicesWorkspace() {
           </div>
         </section>
 
-        <section className="panel event-detail-panel">
-          {selected ? (
+        {detailOpen ? (
+          <section className="panel event-detail-panel">
+            {selected ? (
             <>
               <div className="section-heading">
                 <div>
                   <h2>{selected.trackingNumber}</h2>
                   <p className="muted">{selected.eventName}</p>
                 </div>
-                <span className="count-pill">{selected.progressPercent}%</span>
+                <div className="button-row">
+                  <span className="count-pill">{selected.progressPercent}%</span>
+                  <button className="icon-button" type="button" onClick={closeRequest} aria-label="Close event details">
+                    <X size={16} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
               <div className="event-detail-grid">
                 <div><span className="muted">Requester</span><strong>{selected.requesterFirstName} {selected.requesterLastName}</strong><small>{selected.requesterEmail}</small></div>
@@ -400,9 +560,58 @@ export function EventServicesWorkspace() {
                 </div>
               </div>
             </>
-          ) : <p className="muted">Select a request to review details.</p>}
-        </section>
+            ) : <p className="muted">Loading request detail...</p>}
+          </section>
+        ) : null}
       </div>
+
+      {recycleBinOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-panel event-recycle-panel" role="dialog" aria-modal="true" aria-label="Event request recycle bin">
+            <div className="section-heading">
+              <div>
+                <h2>Event Recycle Bin</h2>
+                <p className="muted">{recycledRequests.length} deleted event request{recycledRequests.length === 1 ? "" : "s"}.</p>
+              </div>
+              <button className="icon-button" type="button" onClick={() => setRecycleBinOpen(false)} aria-label="Close event recycle bin">
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="table-scroll">
+              <table className="tickets-table event-request-table">
+                <thead>
+                  <tr>
+                    <th>Tracking</th>
+                    <th>Event</th>
+                    <th>Requester</th>
+                    <th>Deleted</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recycledRequests.length === 0 ? (
+                    <tr><td colSpan={5}><span className="muted">No deleted event requests.</span></td></tr>
+                  ) : null}
+                  {recycledRequests.map((request) => (
+                    <tr key={request.id}>
+                      <td><strong>{request.trackingNumber}</strong></td>
+                      <td><strong>{request.eventName}</strong><span className="muted">{request.venue ?? "No venue"}</span></td>
+                      <td><strong>{request.requesterFirstName} {request.requesterLastName}</strong><span className="muted">{request.requesterEmail}</span></td>
+                      <td>{formatDateTime(request.deletedAt ?? null)}</td>
+                      <td>
+                        <button className="button secondary" type="button" onClick={() => void restoreRequest(request.id)} disabled={busy === `restore-${request.id}`}>
+                          <RotateCcw size={16} aria-hidden="true" />
+                          <span>Restore</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

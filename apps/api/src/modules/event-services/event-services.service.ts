@@ -120,7 +120,8 @@ export class EventServicesService {
 
   async list(user: AuthenticatedUser, query: ListEventServiceRequestsDto) {
     const where: Prisma.EventServiceRequestWhereInput = {
-      organizationId: user.organizationId
+      organizationId: user.organizationId,
+      deletedAt: null
     };
     if (query.status) {
       where.status = query.status as EventServiceRequestStatus;
@@ -157,7 +158,7 @@ export class EventServicesService {
 
   async get(requestId: string, user: AuthenticatedUser) {
     const request = await this.prisma.eventServiceRequest.findFirst({
-      where: { id: requestId, organizationId: user.organizationId },
+      where: { id: requestId, organizationId: user.organizationId, deletedAt: null },
       include: this.requestInclude(true)
     });
     if (!request) {
@@ -209,6 +210,59 @@ export class EventServicesService {
     await this.notifyAssignedUsers(requestId, "Event request updated", `${updated.trackingNumber}: ${updated.eventName}`);
 
     return updated;
+  }
+
+  async listRecycleBin(user: AuthenticatedUser) {
+    return this.prisma.eventServiceRequest.findMany({
+      where: { organizationId: user.organizationId, deletedAt: { not: null } },
+      include: this.requestInclude(),
+      orderBy: { deletedAt: "desc" },
+      take: 150
+    });
+  }
+
+  async moveToRecycleBin(user: AuthenticatedUser, requestIds: string[]) {
+    const ids = [...new Set(requestIds)];
+    if (ids.length === 0) {
+      return { deleted: 0 };
+    }
+
+    const result = await this.prisma.eventServiceRequest.updateMany({
+      where: { id: { in: ids }, organizationId: user.organizationId, deletedAt: null },
+      data: { deletedAt: new Date() }
+    });
+
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "EventServiceRequest",
+      entityId: null,
+      action: "event_service_request.bulk_deleted",
+      metadata: { requestIds: ids, deleted: result.count }
+    });
+
+    return { deleted: result.count };
+  }
+
+  async restoreFromRecycleBin(user: AuthenticatedUser, requestIds: string[]) {
+    const ids = [...new Set(requestIds)];
+    if (ids.length === 0) {
+      return { restored: 0 };
+    }
+
+    const result = await this.prisma.eventServiceRequest.updateMany({
+      where: { id: { in: ids }, organizationId: user.organizationId, deletedAt: { not: null } },
+      data: { deletedAt: null }
+    });
+
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "EventServiceRequest",
+      entityId: null,
+      action: "event_service_request.bulk_restored",
+      metadata: { requestIds: ids, restored: result.count }
+    });
+
+    return { restored: result.count };
   }
 
   async createTask(requestId: string, user: AuthenticatedUser, input: CreateEventServiceTaskDto) {

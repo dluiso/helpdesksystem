@@ -1392,9 +1392,26 @@ select {
   vertical-align: middle;
 }
 
+.event-request-table th:first-child,
+.event-request-table td:first-child {
+  width: 36px;
+  text-align: center;
+}
+
 .event-request-table td strong,
 .event-request-table td span {
   display: block;
+}
+
+.event-request-table .compact-select {
+  width: 100%;
+  min-width: 145px;
+  height: 34px;
+  padding-block: 4px;
+}
+
+.event-recycle-panel {
+  width: min(980px, 100%);
 }
 
 .event-request-row {
@@ -1593,6 +1610,10 @@ select {
 .public-event-success strong {
   font-size: 34px;
   color: #155eef;
+}
+
+.public-event-success .button {
+  justify-self: center;
 }
 
 .public-event-grid {

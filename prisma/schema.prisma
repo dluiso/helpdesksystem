@@ -1555,6 +1555,7 @@ model EventServiceRequest {
   submittedUserAgent String?
   completedAt        DateTime?
   cancelledAt        DateTime?
+  deletedAt          DateTime?
   createdAt          DateTime                  @default(now())
   updatedAt          DateTime                  @updatedAt
   organization       Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -1574,6 +1575,7 @@ model EventServiceRequest {
   @@index([linkedTicketId])
   @@index([assignedTeamId])
   @@index([eventDate])
+  @@index([deletedAt])
   @@map("event_service_requests")
 }
 

@@ -85,6 +85,20 @@ export function PublicEventServiceRequest() {
     window.turnstile?.reset();
   }
 
+  function startAnotherRequest() {
+    setTrackingNumber(null);
+    setFormData({});
+    setSelectedServiceIds([]);
+    setStartHour("");
+    setStartMinute("00");
+    setStartPeriod("AM");
+    setEndHour("");
+    setEndMinute("00");
+    setEndPeriod("AM");
+    setError(null);
+    resetTurnstile();
+  }
+
   function toApiTime(hour: string, minute: string, period: "AM" | "PM") {
     if (!hour) {
       return undefined;
@@ -163,6 +177,9 @@ export function PublicEventServiceRequest() {
           <p>Your event request has been submitted. Keep this tracking number for follow-up.</p>
           <strong>{trackingNumber}</strong>
           <span>{config?.organization.supportEmail}</span>
+          <button className="button" type="button" onClick={startAnotherRequest}>
+            Request Another Event
+          </button>
         </section>
       </main>
     );

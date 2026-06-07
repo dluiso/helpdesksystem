@@ -15,6 +15,7 @@ import { UpdateEventServiceTaskDto } from "./dto/update-event-service-task.dto";
 import { UpsertEventServiceFormFieldDto } from "./dto/upsert-event-service-form-field.dto";
 import { UpsertEventServiceServiceDto } from "./dto/upsert-event-service-service.dto";
 import { EventServicesService } from "./event-services.service";
+import { BulkEventServiceRequestIdsDto } from "./dto/bulk-event-service-request-ids.dto";
 
 @Controller()
 export class EventServicesController {
@@ -38,6 +39,27 @@ export class EventServicesController {
   @RequirePermissions("event_services.view")
   list(@CurrentUser() user: AuthenticatedUser, @Query() query: ListEventServiceRequestsDto) {
     return this.eventServices.list(user, query);
+  }
+
+  @Get("event-services/recycle-bin")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.view")
+  recycleBin(@CurrentUser() user: AuthenticatedUser) {
+    return this.eventServices.listRecycleBin(user);
+  }
+
+  @Post("event-services/recycle-bin")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.update")
+  moveToRecycleBin(@CurrentUser() user: AuthenticatedUser, @Body() body: BulkEventServiceRequestIdsDto) {
+    return this.eventServices.moveToRecycleBin(user, body.requestIds);
+  }
+
+  @Post("event-services/recycle-bin/restore")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.update")
+  restoreFromRecycleBin(@CurrentUser() user: AuthenticatedUser, @Body() body: BulkEventServiceRequestIdsDto) {
+    return this.eventServices.restoreFromRecycleBin(user, body.requestIds);
   }
 
   @Get("event-services/services")
