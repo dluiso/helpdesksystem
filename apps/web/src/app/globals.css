@@ -1496,19 +1496,62 @@ select.compact-select {
   width: 100%;
   min-width: 160px;
   height: 38px;
-  padding: 0 32px 0 12px;
-  border-radius: 10px;
-  background-color: var(--surface-raised);
-  background-image: var(--select-arrow);
-  background-position: right 10px center;
+  padding: 0 42px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background-color: var(--control-bg);
+  background-image:
+    linear-gradient(var(--line), var(--line)),
+    var(--select-arrow);
+  background-position:
+    right 34px center,
+    right 12px center;
   background-repeat: no-repeat;
-  background-size: 14px 14px;
+  background-size:
+    1px 18px,
+    14px 14px;
   color: var(--text);
   font-weight: 700;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--line) 45%, transparent);
+  cursor: pointer;
 }
 
 .event-request-table .event-inline-select {
   max-width: 180px;
+}
+
+.event-request-table .compact-select:hover {
+  border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--line));
+  background-color: var(--surface-raised);
+}
+
+.event-request-table .compact-select:focus {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 18%, transparent);
+}
+
+.event-open-button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: var(--text);
+  background: var(--surface-raised);
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--line) 45%, transparent);
+}
+
+.event-open-button:hover {
+  border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--line));
+  color: var(--brand-primary);
+  background: var(--surface-selected);
+}
+
+.event-open-button:focus {
+  outline: none;
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 18%, transparent);
 }
 
 .event-task-table td {
@@ -1522,10 +1565,17 @@ select.compact-select {
 
 .event-task-table .event-inline-select {
   min-width: 150px;
-  background-image: var(--select-arrow);
-  background-position: right 10px center;
+  padding-right: 42px;
+  background-image:
+    linear-gradient(var(--line), var(--line)),
+    var(--select-arrow);
+  background-position:
+    right 34px center,
+    right 12px center;
   background-repeat: no-repeat;
-  background-size: 14px 14px;
+  background-size:
+    1px 18px,
+    14px 14px;
 }
 
 .event-progress-input {
@@ -4808,15 +4858,30 @@ a.dashboard-list-row:hover {
 
   .mobile-bottom-nav-link {
     min-width: 0;
-    min-height: 50px;
+    min-height: 52px;
     border-radius: 8px;
-    display: grid;
-    place-items: center;
-    align-content: center;
-    gap: 3px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
     color: var(--text-muted);
     font-size: 11px;
     font-weight: 800;
+    line-height: 1.08;
+    text-align: center;
+  }
+
+  .mobile-bottom-nav-link svg {
+    flex: 0 0 auto;
+  }
+
+  .mobile-bottom-nav-link span {
+    min-height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
   }
 
   .mobile-bottom-nav-link.active {

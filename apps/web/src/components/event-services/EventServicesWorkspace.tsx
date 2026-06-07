@@ -576,7 +576,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                     <td><span className="count-pill">{request.progressPercent}%</span></td>
                     <td>{formatDateTime(request.updatedAt)}</td>
                     <td>
-                      <button className="icon-button" type="button" onClick={(event) => { event.stopPropagation(); openRequest(request); }}>
+                      <button className="event-open-button" type="button" onClick={(event) => { event.stopPropagation(); openRequest(request); }}>
                         Open
                       </button>
                     </td>
