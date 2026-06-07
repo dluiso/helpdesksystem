@@ -401,10 +401,9 @@ export function ProfileWorkspace() {
 
   return (
     <div className="stack">
-      <div className="page-heading">
+      <div className="compact-page-header">
         <div>
           <h1>Profile</h1>
-          <p className="muted">Manage your account, password, notification preferences, and ticket reply signature.</p>
         </div>
       </div>
 

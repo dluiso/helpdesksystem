@@ -1626,10 +1626,9 @@ export function SettingsWorkspace() {
 
   return (
     <div className="settings-page">
-      <div className="page-header">
+      <div className="compact-page-header">
         <div>
           <h1>Settings</h1>
-          <p className="muted">Mailbox sync, unknown sender domains, branding, attachment policy, AI, and remote access settings.</p>
         </div>
         <button className="button secondary" type="button" onClick={loadSettingsData} disabled={loading}>
           <RefreshCcw size={16} aria-hidden="true" />

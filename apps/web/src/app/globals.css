@@ -799,6 +799,27 @@ select.compact-select {
   line-height: 1.2;
 }
 
+.compact-page-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.compact-page-header h1 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.compact-page-header .form-actions,
+.compact-page-header .button-row {
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .grid {
   display: grid;
   gap: 16px;
@@ -2829,7 +2850,7 @@ a.dashboard-list-row:hover {
 
 .dashboard-section-heading h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
 }
 
 .dashboard-loading {
@@ -4845,9 +4866,19 @@ a.dashboard-list-row:hover {
     margin-bottom: 16px;
   }
 
+  .compact-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    margin-bottom: 10px;
+  }
+
   .page-header h1,
   .settings-page .page-header h1 {
     font-size: 26px;
+  }
+
+  .compact-page-header h1 {
+    font-size: 22px;
   }
 
   .panel {

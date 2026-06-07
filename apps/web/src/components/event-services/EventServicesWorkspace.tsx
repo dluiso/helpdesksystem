@@ -407,10 +407,9 @@ export function EventServicesWorkspace() {
 
   return (
     <div className="event-services-page">
-      <div className="page-title-row">
+      <div className="compact-page-header">
         <div>
           <h1>Event & Services</h1>
-          <p className="muted">Manage event requests, service assignments, task progress, and public scheduling intake.</p>
         </div>
         <div className="button-row">
           <button className="button secondary" type="button" onClick={() => void loadRecycleBin()} disabled={busy === "recycle-bin"}>

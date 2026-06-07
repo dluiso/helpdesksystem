@@ -423,10 +423,9 @@ export function ClientsWorkspace() {
 
   return (
     <>
-      <div className="page-header clients-page-header">
+      <div className="compact-page-header clients-page-header">
         <div>
           <h1>Clients</h1>
-          <p className="muted">Manage institutions, their email routing domains, and the requesters who open tickets.</p>
         </div>
         <div className="form-actions">
           <button className="button secondary" type="button" onClick={loadClients} disabled={loading || saving}>

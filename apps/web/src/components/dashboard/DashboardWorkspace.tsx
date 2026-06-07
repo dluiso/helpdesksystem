@@ -381,7 +381,6 @@ export function DashboardWorkspace() {
     <div className="dashboard-page">
       <div className="dashboard-section-heading">
         <h2>Tickets</h2>
-        <p className="muted">Helpdesk workload and ticket response health.</p>
       </div>
       <section className="dashboard-kpi-grid">
         {summaryCards.map((card) => (
@@ -391,7 +390,6 @@ export function DashboardWorkspace() {
 
       <div className="dashboard-section-heading">
         <h2>Event & Services</h2>
-        <p className="muted">Public event requests and service scheduling workload.</p>
       </div>
       <section className="dashboard-kpi-grid dashboard-event-kpi-grid">
         {eventSummaryCards.map((card) => (

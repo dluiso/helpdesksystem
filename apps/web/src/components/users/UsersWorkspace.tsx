@@ -368,10 +368,9 @@ export function UsersWorkspace() {
 
   return (
     <>
-      <div className="page-header">
+      <div className="compact-page-header">
         <div>
           <h1>Users</h1>
-          <p className="muted">Manage staff users, groups, roles, and permission assignments for ticket operations.</p>
         </div>
         <div className="form-actions">
           <button className="button secondary" type="button" onClick={loadAccessData} disabled={loading || saving}>
