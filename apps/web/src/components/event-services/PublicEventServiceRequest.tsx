@@ -32,18 +32,26 @@ interface PublicFormConfig {
   };
 }
 
+type PublicFormData = Record<string, string | string[]>;
+
 const minuteOptions = ["00", "15", "30", "45"];
 const hourOptions24 = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
 const hourOptions12 = Array.from({ length: 12 }, (_, index) => String(index + 1));
 
-function fieldValue(data: Record<string, string>, key: string) {
-  return data[key] ?? "";
+function fieldValue(data: PublicFormData, key: string) {
+  const value = data[key];
+  return Array.isArray(value) ? value.join(", ") : value ?? "";
+}
+
+function fieldArrayValue(data: PublicFormData, key: string) {
+  const value = data[key];
+  return Array.isArray(value) ? value : value ? [value] : [];
 }
 
 export function PublicEventServiceRequest() {
   const branding = useBranding();
   const [config, setConfig] = useState<PublicFormConfig | null>(null);
-  const [formData, setFormData] = useState<Record<string, string>>({});
+  const [formData, setFormData] = useState<PublicFormData>({});
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
   const [startHour, setStartHour] = useState("");
   const [startMinute, setStartMinute] = useState("00");
@@ -65,6 +73,7 @@ export function PublicEventServiceRequest() {
   };
 
   const customFields = useMemo(() => (config?.form.fields ?? []).filter((field) => !["eventName", "venue", "organizer", "eventDate", "additionalInfo"].includes(field.fieldKey)), [config?.form.fields]);
+  const fieldByKey = useMemo(() => new Map((config?.form.fields ?? []).map((field) => [field.fieldKey, field])), [config?.form.fields]);
 
   useEffect(() => {
     apiFetch<PublicFormConfig>("/public/event-services/form")
@@ -73,8 +82,18 @@ export function PublicEventServiceRequest() {
       .finally(() => setLoading(false));
   }, []);
 
-  function updateField(key: string, value: string) {
+  function updateField(key: string, value: string | string[]) {
     setFormData((current) => ({ ...current, [key]: value }));
+  }
+
+  function configuredField(key: string, fallback: { label: string; required?: boolean; placeholder?: string }) {
+    const field = fieldByKey.get(key);
+    return {
+      label: field?.label ?? fallback.label,
+      required: field?.isRequired ?? fallback.required ?? false,
+      placeholder: field?.placeholder ?? fallback.placeholder ?? "",
+      helpText: field?.helpText ?? null
+    };
   }
 
   function toggleService(serviceId: string) {
@@ -153,12 +172,50 @@ export function PublicEventServiceRequest() {
     if (field.type === "TEXTAREA") {
       return <textarea className="public-event-input" required={field.isRequired} placeholder={field.placeholder ?? ""} value={fieldValue(formData, field.fieldKey)} onChange={(event) => updateField(field.fieldKey, event.target.value)} />;
     }
-    if (field.type === "SELECT" || field.type === "RADIO") {
+    if (field.type === "SELECT") {
       return (
         <select className="public-event-input" required={field.isRequired} value={fieldValue(formData, field.fieldKey)} onChange={(event) => updateField(field.fieldKey, event.target.value)}>
           <option value="">Select...</option>
           {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
+      );
+    }
+    if (field.type === "MULTI_SELECT") {
+      return (
+        <select
+          className="public-event-input"
+          required={field.isRequired}
+          multiple
+          value={fieldArrayValue(formData, field.fieldKey)}
+          onChange={(event) => updateField(field.fieldKey, Array.from(event.target.selectedOptions).map((option) => option.value))}
+        >
+          {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      );
+    }
+    if (field.type === "CHECKBOX" || field.type === "RADIO") {
+      const selected = fieldArrayValue(formData, field.fieldKey);
+      return (
+        <div className="public-event-choice-group">
+          {field.options.map((option) => (
+            <label key={option}>
+              <input
+                type={field.type === "RADIO" ? "radio" : "checkbox"}
+                name={field.fieldKey}
+                checked={selected.includes(option)}
+                required={field.isRequired && selected.length === 0}
+                onChange={(event) => {
+                  if (field.type === "RADIO") {
+                    updateField(field.fieldKey, option);
+                    return;
+                  }
+                  updateField(field.fieldKey, event.target.checked ? [...selected, option] : selected.filter((value) => value !== option));
+                }}
+              />
+              {option}
+            </label>
+          ))}
+        </div>
       );
     }
     return <input className="public-event-input" type={field.type === "NUMBER" ? "number" : field.type === "DATE" ? "date" : field.type === "EMAIL" ? "email" : "text"} required={field.isRequired} placeholder={field.placeholder ?? ""} value={fieldValue(formData, field.fieldKey)} onChange={(event) => updateField(field.fieldKey, event.target.value)} />;
@@ -199,6 +256,14 @@ export function PublicEventServiceRequest() {
       </section>
 
       <form className="public-event-form-card" onSubmit={submit}>
+        {(() => {
+          const eventNameField = configuredField("eventName", { label: "Event Name", required: true });
+          const venueField = configuredField("venue", { label: "Event Address and Venue Name", required: true });
+          const organizerField = configuredField("organizer", { label: "Organizer", required: true });
+          const dateField = configuredField("eventDate", { label: "Date", required: true });
+          const additionalInfoField = configuredField("additionalInfo", { label: "Additional information" });
+          return (
+            <>
         <div className="section-heading">
           <div>
             <h2>{config?.form.name ?? "Event Scheduling Request"}</h2>
@@ -208,11 +273,11 @@ export function PublicEventServiceRequest() {
         {error ? <div className="alert error">{error}</div> : null}
 
         <div className="public-event-grid">
-          <label>Event Name *<input className="public-event-input" required value={fieldValue(formData, "eventName")} onChange={(event) => updateField("eventName", event.target.value)} /></label>
-          <label>Event Address and Venue Name *<input className="public-event-input" required value={fieldValue(formData, "venue")} onChange={(event) => updateField("venue", event.target.value)} /></label>
-          <label className="span-2">Organizer *<input className="public-event-input" required value={fieldValue(formData, "organizer")} onChange={(event) => updateField("organizer", event.target.value)} /></label>
+          <label>{eventNameField.label}{eventNameField.required ? " *" : ""}<input className="public-event-input" required={eventNameField.required} placeholder={eventNameField.placeholder} value={fieldValue(formData, "eventName")} onChange={(event) => updateField("eventName", event.target.value)} />{eventNameField.helpText ? <small>{eventNameField.helpText}</small> : null}</label>
+          <label>{venueField.label}{venueField.required ? " *" : ""}<input className="public-event-input" required={venueField.required} placeholder={venueField.placeholder} value={fieldValue(formData, "venue")} onChange={(event) => updateField("venue", event.target.value)} />{venueField.helpText ? <small>{venueField.helpText}</small> : null}</label>
+          <label className="span-2">{organizerField.label}{organizerField.required ? " *" : ""}<input className="public-event-input" required={organizerField.required} placeholder={organizerField.placeholder} value={fieldValue(formData, "organizer")} onChange={(event) => updateField("organizer", event.target.value)} />{organizerField.helpText ? <small>{organizerField.helpText}</small> : null}</label>
           <div className="public-event-schedule-row span-2">
-            <label><CalendarDays size={15} /> Date *<input className="public-event-input" type="date" required value={fieldValue(formData, "eventDate")} onChange={(event) => updateField("eventDate", event.target.value)} /></label>
+            <label><CalendarDays size={15} /> {dateField.label}{dateField.required ? " *" : ""}<input className="public-event-input" type="date" required={dateField.required} value={fieldValue(formData, "eventDate")} onChange={(event) => updateField("eventDate", event.target.value)} />{dateField.helpText ? <small>{dateField.helpText}</small> : null}</label>
             <div className="public-event-time-group">
               <span><Clock size={15} /> Start Time *</span>
               <select required value={startHour} onChange={(event) => setStartHour(event.target.value)}><option value="">HH</option>{hourOptions.map((hour) => <option key={hour} value={hour}>{hour}</option>)}</select>
@@ -246,9 +311,9 @@ export function PublicEventServiceRequest() {
           <label>&nbsp;<input className="public-event-input" required placeholder="Last" value={fieldValue(formData, "requesterLastName")} onChange={(event) => updateField("requesterLastName", event.target.value)} /></label>
           <label><Mail size={15} /> Email *<input className="public-event-input" type="email" required value={fieldValue(formData, "requesterEmail")} onChange={(event) => updateField("requesterEmail", event.target.value)} /></label>
           <label>Phone<input className="public-event-input" value={fieldValue(formData, "requesterPhone")} onChange={(event) => updateField("requesterPhone", event.target.value)} /></label>
-          <label className="span-2">Additional information<textarea className="public-event-input" value={fieldValue(formData, "additionalInfo")} onChange={(event) => updateField("additionalInfo", event.target.value)} /></label>
+          <label className="span-2">{additionalInfoField.label}{additionalInfoField.required ? " *" : ""}<textarea className="public-event-input" required={additionalInfoField.required} placeholder={additionalInfoField.placeholder} value={fieldValue(formData, "additionalInfo")} onChange={(event) => updateField("additionalInfo", event.target.value)} />{additionalInfoField.helpText ? <small>{additionalInfoField.helpText}</small> : null}</label>
           {customFields.map((field) => (
-            <label key={field.fieldKey}>
+            <label className={field.type === "TEXTAREA" || field.type === "CHECKBOX" || field.type === "RADIO" ? "span-2" : ""} key={field.fieldKey}>
               {field.label}{field.isRequired ? " *" : ""}
               {renderCustomField(field)}
               {field.helpText ? <small>{field.helpText}</small> : null}
@@ -267,6 +332,9 @@ export function PublicEventServiceRequest() {
           <Send size={16} aria-hidden="true" />
           <span>{submitting ? "Submitting..." : "Schedule"}</span>
         </button>
+            </>
+          );
+        })()}
       </form>
 
       <footer className="public-event-footer">

@@ -1487,6 +1487,7 @@ model EventServiceService {
   name            String
   description     String?
   icon            String?
+  sortOrder       Int          @default(0)
   isActive        Boolean      @default(true)
   defaultTeamId   String?      @db.Uuid
   defaultUserIds  String[]     @default([]) @db.Uuid
@@ -1496,6 +1497,7 @@ model EventServiceService {
   requests        EventServiceRequestService[]
 
   @@unique([organizationId, name])
+  @@index([organizationId, sortOrder])
   @@index([organizationId, isActive])
   @@map("event_service_services")
 }

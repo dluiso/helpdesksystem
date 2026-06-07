@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { EventServiceRequestStatus, EventServiceTaskStatus, Prisma, TicketPriority } from "@prisma/client";
+import { EventServiceFieldType, EventServiceRequestStatus, EventServiceTaskStatus, Prisma, TicketPriority } from "@prisma/client";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { MailDeliveryService } from "../mailboxes/mail-delivery.service";
@@ -40,7 +40,7 @@ export class EventServicesService {
       }),
       this.prisma.eventServiceService.findMany({
         where: { organizationId: organization.id, isActive: true },
-        orderBy: { name: "asc" }
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
       }),
       this.getActiveForm(organization.id)
     ]);
@@ -61,6 +61,8 @@ export class EventServicesService {
     await this.ensureDefaultCatalog(organization.id);
     await this.verifyPublicTurnstile(organization.id, input.captchaToken, context.ipAddress);
     this.validateTimeRange(input.startTime, input.endTime);
+    const activeForm = await this.getActiveForm(organization.id);
+    this.validatePublicFormData(activeForm.fields, input);
 
     const services = await this.prisma.eventServiceService.findMany({
       where: { id: { in: [...new Set(input.serviceIds)] }, organizationId: organization.id, isActive: true }
@@ -387,7 +389,7 @@ export class EventServicesService {
     await this.ensureDefaultCatalog(user.organizationId);
     return this.prisma.eventServiceService.findMany({
       where: { organizationId: user.organizationId },
-      orderBy: [{ isActive: "desc" }, { name: "asc" }]
+      orderBy: [{ isActive: "desc" }, { sortOrder: "asc" }, { name: "asc" }]
     });
   }
 
@@ -468,7 +470,14 @@ export class EventServicesService {
 
   async listFormFields(user: AuthenticatedUser) {
     await this.ensureDefaultCatalog(user.organizationId);
-    return this.getActiveForm(user.organizationId);
+    const form = await this.prisma.eventServiceForm.findFirst({
+      where: { organizationId: user.organizationId, slug: "default" },
+      include: { fields: { orderBy: [{ sortOrder: "asc" }, { label: "asc" }] } }
+    });
+    if (!form) {
+      throw new NotFoundException("Event services form is not configured.");
+    }
+    return form;
   }
 
   async createFormField(user: AuthenticatedUser, input: UpsertEventServiceFormFieldDto) {
@@ -517,9 +526,9 @@ export class EventServicesService {
     if (serviceCount === 0) {
       await this.prisma.eventServiceService.createMany({
         data: [
-          { organizationId, name: "Photography", icon: "camera", description: "Photography coverage for events." },
-          { organizationId, name: "Videography", icon: "video", description: "Video recording and production support." },
-          { organizationId, name: "Audio (Speakers & Microphone)", icon: "mic", description: "Audio setup, speakers, and microphones." }
+          { organizationId, name: "Audio (Speakers & Microphone)", icon: "mic", description: "Audio setup, speakers, and microphones.", sortOrder: 10 },
+          { organizationId, name: "Photography", icon: "camera", description: "Photography coverage for events.", sortOrder: 20 },
+          { organizationId, name: "Videography", icon: "video", description: "Video recording and production support.", sortOrder: 30 }
         ],
         skipDuplicates: true
       });
@@ -679,6 +688,7 @@ export class EventServicesService {
       name: input.name.trim(),
       description: this.optionalTrim(input.description),
       icon: this.optionalTrim(input.icon),
+      sortOrder: input.sortOrder ?? 0,
       isActive: input.isActive ?? true,
       defaultTeamId: input.defaultTeamId ?? null,
       defaultUserIds: input.defaultUserIds ?? []
@@ -690,6 +700,7 @@ export class EventServicesService {
       name: input.name.trim(),
       description: this.optionalTrim(input.description),
       icon: this.optionalTrim(input.icon),
+      sortOrder: input.sortOrder ?? 0,
       isActive: input.isActive ?? true,
       defaultTeamId: input.defaultTeamId ?? null,
       defaultUserIds: input.defaultUserIds ?? []
@@ -697,17 +708,45 @@ export class EventServicesService {
   }
 
   private formFieldData(input: UpsertEventServiceFormFieldDto) {
+    const fieldKey = input.fieldKey.trim();
+    const optionTypes: EventServiceFieldType[] = ["SELECT", "MULTI_SELECT", "CHECKBOX", "RADIO"];
+    const options = input.options?.map((option) => option.trim()).filter(Boolean) ?? [];
+    if (!/^[a-z][a-zA-Z0-9_]*$/.test(fieldKey)) {
+      throw new BadRequestException("Field key must start with a lowercase letter and use only letters, numbers, or underscores.");
+    }
+    if (optionTypes.includes(input.type) && options.length === 0) {
+      throw new BadRequestException("Selection fields require at least one option.");
+    }
     return {
       type: input.type,
       label: input.label.trim(),
-      fieldKey: input.fieldKey.trim(),
+      fieldKey,
       placeholder: this.optionalTrim(input.placeholder),
       helpText: this.optionalTrim(input.helpText),
       isRequired: input.isRequired ?? false,
-      options: input.options?.map((option) => option.trim()).filter(Boolean) ?? [],
+      options,
       sortOrder: input.sortOrder ?? 0,
       isActive: input.isActive ?? true
     };
+  }
+
+  private validatePublicFormData(fields: Array<{ fieldKey: string; label: string; isRequired: boolean; isActive: boolean }>, input: CreatePublicEventServiceRequestDto) {
+    const fixedValues: Record<string, unknown> = {
+      eventName: input.eventName,
+      venue: input.venue,
+      organizer: input.organizer,
+      eventDate: input.eventDate,
+      additionalInfo: input.additionalInfo
+    };
+    const data = (input.formData ?? {}) as Record<string, unknown>;
+    for (const field of fields) {
+      if (!field.isActive || !field.isRequired) continue;
+      const value = Object.prototype.hasOwnProperty.call(fixedValues, field.fieldKey) ? fixedValues[field.fieldKey] : data[field.fieldKey];
+      const missing = Array.isArray(value) ? value.length === 0 : value === undefined || value === null || String(value).trim() === "";
+      if (missing) {
+        throw new BadRequestException(`${field.label} is required.`);
+      }
+    }
   }
 
   private async recalculateProgress(requestId: string) {

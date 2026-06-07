@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
+import { IsArray, IsBoolean, IsInt, IsOptional, IsString, IsUUID, MaxLength, Min } from "class-validator";
 
 export class UpsertEventServiceServiceDto {
   @IsString()
@@ -18,6 +18,11 @@ export class UpsertEventServiceServiceDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  sortOrder?: number;
 
   @IsOptional()
   @IsUUID()
