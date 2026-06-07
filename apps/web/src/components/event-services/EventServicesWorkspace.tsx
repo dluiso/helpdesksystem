@@ -58,6 +58,17 @@ interface EventServiceRequest {
   comments?: Array<{ id: string; body: string; createdAt: string; user: UserOption | null }>;
 }
 
+interface EventServiceTaskAssignment {
+  id: string;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  progressPercent: number;
+  updatedAt: string;
+  assignedUser: UserOption | null;
+  request: EventServiceRequest;
+}
+
 const statuses: EventStatus[] = ["NEW", "UNDER_REVIEW", "SCHEDULED", "ASSIGNED", "IN_PROGRESS", "WAITING_ON_CLIENT", "WAITING_ON_INTERNAL_TEAM", "COMPLETED", "CANCELLED", "CONVERTED_TO_TICKET"];
 const taskStatuses: TaskStatus[] = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE", "CANCELLED"];
 const priorities: Priority[] = ["LOW", "NORMAL", "HIGH", "URGENT", "CRITICAL"];
@@ -79,7 +90,10 @@ function formatDateTime(value: string | null) {
 }
 
 export function EventServicesWorkspace() {
+  const [activeTab, setActiveTab] = useState<"requests" | "myTasks">("requests");
   const [requests, setRequests] = useState<EventServiceRequest[]>([]);
+  const [myTasks, setMyTasks] = useState<EventServiceTaskAssignment[]>([]);
+  const [myTaskDrafts, setMyTaskDrafts] = useState<Record<string, { status: TaskStatus; progressPercent: number; comment: string }>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<EventServiceRequest | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -113,18 +127,27 @@ export function EventServicesWorkspace() {
       if (value) params.set(key, value);
     });
     try {
-      const [requestData, serviceData, userData, teamData] = await Promise.all([
+      const [requestData, myTaskData, serviceData, userData, teamData] = await Promise.all([
         apiFetch<EventServiceRequest[]>(`/event-services?${params.toString()}`),
+        apiFetch<EventServiceTaskAssignment[]>("/event-services/my-tasks"),
         apiFetch<EventServiceCatalogItem[]>("/event-services/services"),
         apiFetch<UserOption[]>("/users"),
         apiFetch<TicketTeam[]>("/ticket-teams")
       ]);
       setRequests(requestData);
+      setMyTasks(myTaskData);
+      setMyTaskDrafts((current) => {
+        const next: Record<string, { status: TaskStatus; progressPercent: number; comment: string }> = {};
+        myTaskData.forEach((task) => {
+          next[task.id] = current[task.id] ?? { status: task.status, progressPercent: task.progressPercent, comment: "" };
+        });
+        return next;
+      });
       setServices(serviceData);
       setUsers(userData);
       setTeams(teamData);
       setSelectedRequestIds((current) => current.filter((id) => requestData.some((request) => request.id === id)));
-      if (selectedId && !requestData.some((request) => request.id === selectedId)) {
+      if (selectedId && !detailOpen && !requestData.some((request) => request.id === selectedId)) {
         setSelectedId(null);
         setSelected(null);
         setDetailOpen(false);
@@ -162,6 +185,11 @@ export function EventServicesWorkspace() {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       urlFilters.status = params.get("status") ?? "";
+      const requestId = params.get("request");
+      if (requestId) {
+        setSelectedId(requestId);
+        setDetailOpen(true);
+      }
       setFilters(urlFilters);
     }
     void loadData(urlFilters);
@@ -176,11 +204,22 @@ export function EventServicesWorkspace() {
   function openRequest(id: string) {
     setSelectedId(id);
     setDetailOpen(true);
+    setActiveTab("requests");
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("request", id);
+      window.history.replaceState(null, "", url);
+    }
   }
 
   function closeRequest() {
     setDetailOpen(false);
     setSelected(null);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("request");
+      window.history.replaceState(null, "", url);
+    }
   }
 
   function toggleRequestSelection(requestId: string, checked: boolean) {
@@ -315,6 +354,39 @@ export function EventServicesWorkspace() {
     await loadData();
   }
 
+  function updateMyTaskDraft(taskId: string, patch: Partial<{ status: TaskStatus; progressPercent: number; comment: string }>) {
+    setMyTaskDrafts((current) => ({
+      ...current,
+      [taskId]: {
+        ...(current[taskId] ?? { status: "TODO" as TaskStatus, progressPercent: 0, comment: "" }),
+        ...patch
+      }
+    }));
+  }
+
+  async function saveMyTask(taskId: string) {
+    const draft = myTaskDrafts[taskId];
+    if (!draft) return;
+    setBusy(`my-task-${taskId}`);
+    setError(null);
+    try {
+      await apiFetch(`/event-services/my-tasks/${taskId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: draft.status,
+          progressPercent: draft.progressPercent,
+          comment: draft.comment.trim() || undefined
+        })
+      });
+      setNotice("Task progress saved.");
+      await loadData();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to save task progress.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function addComment() {
     if (!selected || !commentDraft.trim()) return;
     setBusy("comment");
@@ -360,6 +432,18 @@ export function EventServicesWorkspace() {
         <div className="dashboard-kpi-card"><CheckCircle2 size={18} /><span>Completed</span><strong>{summary.completed}</strong><small>Finished events</small></div>
       </section>
 
+      <div className="event-workspace-tabs" role="tablist" aria-label="Event & Services views">
+        <button className={activeTab === "requests" ? "active" : ""} type="button" onClick={() => setActiveTab("requests")}>
+          Requests
+        </button>
+        <button className={activeTab === "myTasks" ? "active" : ""} type="button" onClick={() => setActiveTab("myTasks")}>
+          My Tasks
+          <span>{myTasks.length}</span>
+        </button>
+      </div>
+
+      {activeTab === "requests" ? (
+      <>
       <section className="panel event-filter-panel">
         <input className="input" placeholder="Search tracking, event, requester, venue..." value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} />
         <select className="input" value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}>
@@ -451,7 +535,7 @@ export function EventServicesWorkspace() {
                     <td>{request.services.map((item) => item.service.name).join(", ") || "None"}</td>
                     <td>
                       <select
-                        className="input compact-select"
+                        className="input compact-select event-inline-select"
                         value={request.status}
                         disabled={busy === `quick-${request.id}`}
                         onChange={(event) => { event.stopPropagation(); void quickUpdateRequest(request, { status: event.target.value as EventStatus }); }}
@@ -463,7 +547,7 @@ export function EventServicesWorkspace() {
                     <td>{label(request.priority)}</td>
                     <td>
                       <select
-                        className="input compact-select"
+                        className="input compact-select event-inline-select"
                         value={request.assignedTeam?.id ?? ""}
                         disabled={busy === `quick-${request.id}`}
                         onChange={(event) => { event.stopPropagation(); void quickUpdateRequest(request, { assignedTeamId: event.target.value || null }); }}
@@ -564,6 +648,81 @@ export function EventServicesWorkspace() {
           </section>
         ) : null}
       </div>
+      </>
+      ) : (
+        <section className="panel event-my-tasks-panel">
+          <div className="section-heading compact-heading">
+            <div>
+              <h2>My Event Tasks</h2>
+              <p className="muted">Update the event tasks assigned to you and report progress to the rest of the team.</p>
+            </div>
+            <button className="button secondary" type="button" onClick={() => void loadData()} disabled={loading}>
+              <RefreshCw size={16} aria-hidden="true" />
+              <span>Refresh</span>
+            </button>
+          </div>
+          <div className="table-scroll">
+            <table className="tickets-table event-task-table">
+              <thead>
+                <tr>
+                  <th>Task</th>
+                  <th>Event</th>
+                  <th>Date / Time</th>
+                  <th>Status</th>
+                  <th>Progress</th>
+                  <th>Progress note</th>
+                  <th>Updated</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {myTasks.length === 0 ? (
+                  <tr>
+                    <td colSpan={8}><span className="muted">{loading ? "Loading tasks..." : "No event tasks are assigned to you."}</span></td>
+                  </tr>
+                ) : null}
+                {myTasks.map((task) => {
+                  const draftTask = myTaskDrafts[task.id] ?? { status: task.status, progressPercent: task.progressPercent, comment: "" };
+                  return (
+                    <tr key={task.id}>
+                      <td>
+                        <strong>{task.title}</strong>
+                        {task.description ? <span className="muted">{task.description}</span> : null}
+                      </td>
+                      <td>
+                        <strong>{task.request.trackingNumber}</strong>
+                        <span className="muted">{task.request.eventName}</span>
+                      </td>
+                      <td>
+                        <strong>{formatDate(task.request.eventDate)}</strong>
+                        <span className="muted">{task.request.startTime ?? "--"} - {task.request.endTime ?? "--"}</span>
+                      </td>
+                      <td>
+                        <select className="input compact-select event-inline-select" value={draftTask.status} onChange={(event) => updateMyTaskDraft(task.id, { status: event.target.value as TaskStatus })}>
+                          {taskStatuses.map((status) => <option key={status} value={status}>{label(status)}</option>)}
+                        </select>
+                      </td>
+                      <td>
+                        <input className="input event-progress-input" type="number" min={0} max={100} value={draftTask.progressPercent} onChange={(event) => updateMyTaskDraft(task.id, { progressPercent: Number(event.target.value) })} />
+                      </td>
+                      <td>
+                        <input className="input" placeholder="Optional note..." value={draftTask.comment} onChange={(event) => updateMyTaskDraft(task.id, { comment: event.target.value })} />
+                      </td>
+                      <td>{formatDateTime(task.updatedAt)}</td>
+                      <td>
+                        <div className="event-task-actions">
+                          <button className="button secondary" type="button" onClick={() => openRequest(task.request.id)}>Open Event</button>
+                          <button className="button" type="button" onClick={() => void saveMyTask(task.id)} disabled={busy === `my-task-${task.id}`}>Save</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {recycleBinOpen ? (
         <div className="modal-backdrop" role="presentation">

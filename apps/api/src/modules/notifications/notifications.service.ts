@@ -14,18 +14,25 @@ export type NotificationEventType =
   | "internalNoteMention"
   | "routingRuleMatched"
   | "ticketReopened"
-  | "newTicketCreated";
+  | "newTicketCreated"
+  | "eventAssignedToMe"
+  | "eventRequestUpdated"
+  | "eventTaskAssignedToMe"
+  | "eventTaskUpdated"
+  | "eventCommentAdded";
 
 interface NotifyUserInput {
   userId: string;
   ticketId?: string | null;
+  eventServiceRequestId?: string | null;
+  eventServiceTaskId?: string | null;
   title: string;
   body?: string | null;
   eventType: NotificationEventType;
   metadata?: Prisma.InputJsonValue;
 }
 
-const EVENT_CHANNEL_FIELDS: Record<NotificationEventType, { inApp: keyof UpdateNotificationPreferencesDto; email: keyof UpdateNotificationPreferencesDto; legacy: keyof UpdateNotificationPreferencesDto }> = {
+const EVENT_CHANNEL_FIELDS: Record<NotificationEventType, { inApp: keyof UpdateNotificationPreferencesDto; email: keyof UpdateNotificationPreferencesDto; legacy?: keyof UpdateNotificationPreferencesDto }> = {
   ticketAssignedToMe: { inApp: "inAppTicketAssignedToMe", email: "emailTicketAssignedToMe", legacy: "ticketAssignedToMe" },
   ticketAssignedToMyTeam: { inApp: "inAppTicketAssignedToMyTeam", email: "emailTicketAssignedToMyTeam", legacy: "ticketAssignedToMyTeam" },
   ticketReplyOnAssignedTicket: { inApp: "inAppTicketReplyOnAssignedTicket", email: "emailTicketReplyOnAssignedTicket", legacy: "ticketReplyOnAssignedTicket" },
@@ -33,7 +40,12 @@ const EVENT_CHANNEL_FIELDS: Record<NotificationEventType, { inApp: keyof UpdateN
   internalNoteMention: { inApp: "inAppInternalNoteMention", email: "emailInternalNoteMention", legacy: "internalNoteMention" },
   routingRuleMatched: { inApp: "inAppRoutingRuleMatched", email: "emailRoutingRuleMatched", legacy: "routingRuleMatched" },
   ticketReopened: { inApp: "inAppTicketReopened", email: "emailTicketReopened", legacy: "ticketReopened" },
-  newTicketCreated: { inApp: "inAppNewTicketCreated", email: "emailNewTicketCreated", legacy: "newTicketCreated" }
+  newTicketCreated: { inApp: "inAppNewTicketCreated", email: "emailNewTicketCreated", legacy: "newTicketCreated" },
+  eventAssignedToMe: { inApp: "inAppEventAssignedToMe", email: "emailEventAssignedToMe" },
+  eventRequestUpdated: { inApp: "inAppEventRequestUpdated", email: "emailEventRequestUpdated" },
+  eventTaskAssignedToMe: { inApp: "inAppEventTaskAssignedToMe", email: "emailEventTaskAssignedToMe" },
+  eventTaskUpdated: { inApp: "inAppEventTaskUpdated", email: "emailEventTaskUpdated" },
+  eventCommentAdded: { inApp: "inAppEventCommentAdded", email: "emailEventCommentAdded" }
 };
 
 @Injectable()
@@ -80,7 +92,7 @@ export class NotificationsService {
             ticketId: input.ticketId ?? null,
             title: input.title,
             body: input.body ?? null,
-            metadata: input.metadata ?? undefined
+            metadata: input.metadata ?? this.eventMetadata(input)
           }
         })
       : null;
@@ -92,6 +104,8 @@ export class NotificationsService {
         title: input.title,
         body: input.body,
         ticketId: input.ticketId,
+        eventServiceRequestId: input.eventServiceRequestId,
+        eventServiceTaskId: input.eventServiceTaskId,
         eventType: input.eventType
       });
     }
@@ -260,6 +274,16 @@ export class NotificationsService {
       emailRoutingRuleMatched: false,
       emailTicketReopened: false,
       emailNewTicketCreated: false,
+      inAppEventAssignedToMe: true,
+      inAppEventRequestUpdated: true,
+      inAppEventTaskAssignedToMe: true,
+      inAppEventTaskUpdated: true,
+      inAppEventCommentAdded: true,
+      emailEventAssignedToMe: false,
+      emailEventRequestUpdated: false,
+      emailEventTaskAssignedToMe: false,
+      emailEventTaskUpdated: false,
+      emailEventCommentAdded: false,
       dailyDigestEnabled: false,
       createdAt: null,
       updatedAt: null
@@ -277,10 +301,19 @@ export class NotificationsService {
       return channelValue;
     }
 
-    return Boolean(preferences[fields.legacy as string]);
+    return fields.legacy ? Boolean(preferences[fields.legacy as string]) : false;
   }
 
-  private async sendEmailNotification(input: { organizationId: string; email: string; title: string; body?: string | null; ticketId?: string | null; eventType: NotificationEventType }) {
+  private async sendEmailNotification(input: {
+    organizationId: string;
+    email: string;
+    title: string;
+    body?: string | null;
+    ticketId?: string | null;
+    eventServiceRequestId?: string | null;
+    eventServiceTaskId?: string | null;
+    eventType: NotificationEventType;
+  }) {
     try {
       const ticket = input.ticketId
         ? await this.prisma.ticket.findFirst({
@@ -302,7 +335,44 @@ export class NotificationsService {
             }
           })
         : null;
-      const emailBody = ticket ? this.buildTicketEmailBody(input.title, input.body, ticket, input.eventType) : { text: input.body ?? input.title, html: `<p>${this.escapeHtml(input.body ?? input.title).replace(/\n/g, "<br>")}</p>` };
+      const eventRequest = input.eventServiceRequestId
+        ? await this.prisma.eventServiceRequest.findFirst({
+            where: { id: input.eventServiceRequestId, organizationId: input.organizationId, deletedAt: null },
+            select: {
+              id: true,
+              trackingNumber: true,
+              eventName: true,
+              venue: true,
+              eventDate: true,
+              startTime: true,
+              endTime: true,
+              status: true,
+              priority: true,
+              progressPercent: true,
+              requesterFirstName: true,
+              requesterLastName: true,
+              requesterEmail: true,
+              requesterPhone: true,
+              additionalInfo: true,
+              createdAt: true,
+              updatedAt: true,
+              client: { select: { name: true } },
+              assignedTeam: { select: { name: true } },
+              services: { include: { service: { select: { name: true } } }, orderBy: { service: { name: "asc" } } },
+              assignees: { include: { user: { select: { firstName: true, lastName: true, email: true } } }, orderBy: { createdAt: "asc" } },
+              tasks: {
+                where: input.eventServiceTaskId ? { id: input.eventServiceTaskId } : undefined,
+                include: { assignedUser: { select: { firstName: true, lastName: true, email: true } } },
+                orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+              }
+            }
+          })
+        : null;
+      const emailBody = ticket
+        ? this.buildTicketEmailBody(input.title, input.body, ticket, input.eventType)
+        : eventRequest
+          ? this.buildEventEmailBody(input.title, input.body, eventRequest, input.eventType)
+          : { text: input.body ?? input.title, html: `<p>${this.escapeHtml(input.body ?? input.title).replace(/\n/g, "<br>")}</p>` };
 
       await this.mailDelivery.sendTicketReply({
         organizationId: input.organizationId,
@@ -314,6 +384,99 @@ export class NotificationsService {
     } catch {
       // Email notification failures must not block ticket workflows.
     }
+  }
+
+  private eventMetadata(input: NotifyUserInput) {
+    if (!input.eventServiceRequestId) {
+      return undefined;
+    }
+    return {
+      entityType: "EventServiceRequest",
+      requestId: input.eventServiceRequestId,
+      ...(input.eventServiceTaskId ? { taskId: input.eventServiceTaskId } : {})
+    } satisfies Prisma.InputJsonValue;
+  }
+
+  private buildEventEmailBody(
+    title: string,
+    body: string | null | undefined,
+    request: {
+      id: string;
+      trackingNumber: string;
+      eventName: string;
+      venue: string | null;
+      eventDate: Date | null;
+      startTime: string | null;
+      endTime: string | null;
+      status: string;
+      priority: string;
+      progressPercent: number;
+      requesterFirstName: string;
+      requesterLastName: string;
+      requesterEmail: string;
+      requesterPhone: string | null;
+      additionalInfo: string | null;
+      createdAt: Date;
+      updatedAt: Date;
+      client: { name: string } | null;
+      assignedTeam: { name: string } | null;
+      services: Array<{ service: { name: string } }>;
+      assignees: Array<{ user: { firstName: string; lastName: string; email: string } }>;
+      tasks: Array<{ title: string; status: string; progressPercent: number; assignedUser: { firstName: string; lastName: string; email: string } | null }>;
+    },
+    eventType: NotificationEventType
+  ) {
+    const requester = `${request.requesterFirstName} ${request.requesterLastName}`.trim() || request.requesterEmail;
+    const assignedTo = request.assignees.map((assignee) => this.userDisplay(assignee.user)).join(", ") || request.assignedTeam?.name || "Unassigned";
+    const services = request.services.map((item) => item.service.name).join(", ") || "None";
+    const task = request.tasks[0];
+    const eventUrl = `${this.appUrl()}/event-services?request=${encodeURIComponent(request.id)}`;
+    const reason = body?.trim() || title;
+    const details = [
+      ["Tracking", request.trackingNumber],
+      ["Event", request.eventName],
+      ["Notification", this.eventLabel(eventType)],
+      ["Reason", reason],
+      ["Client", request.client?.name ?? "Unmapped / no client"],
+      ["Requester", `${requester} (${request.requesterEmail})`],
+      ["Phone", request.requesterPhone ?? "Not provided"],
+      ["Venue", request.venue ?? "Not provided"],
+      ["Date", request.eventDate ? request.eventDate.toLocaleDateString("en-US", { timeZone: "America/Chicago" }) : "Not provided"],
+      ["Time", `${request.startTime ?? "--"} - ${request.endTime ?? "--"}`],
+      ["Services", services],
+      ["Status", this.label(request.status)],
+      ["Priority", this.label(request.priority)],
+      ["Progress", `${request.progressPercent}%`],
+      ["Assigned to", assignedTo],
+      ...(task ? [["Task", `${task.title} - ${this.label(task.status)} (${task.progressPercent}%)`]] : []),
+      ["Updated", request.updatedAt.toLocaleString("en-US", { timeZone: "America/Chicago" })]
+    ];
+    const lines = [
+      title,
+      "",
+      ...details.map(([key, value]) => `${key}: ${value}`),
+      "",
+      `Open event request: ${eventUrl}`
+    ];
+
+    return {
+      text: lines.join("\n"),
+      html: `
+        <div>
+          <p>${this.escapeHtml(title)}</p>
+          <table cellpadding="6" cellspacing="0" style="border-collapse:collapse;border:1px solid #d8dee9;">
+            <tbody>
+              ${details
+                .map(
+                  ([key, value]) =>
+                    `<tr><th align="left" style="border:1px solid #d8dee9;background:#f5f7fb;">${this.escapeHtml(key)}</th><td style="border:1px solid #d8dee9;">${this.escapeHtml(value)}</td></tr>`
+                )
+                .join("")}
+            </tbody>
+          </table>
+          <p><a href="${this.escapeHtml(eventUrl)}">Open event request ${this.escapeHtml(request.trackingNumber)}</a></p>
+        </div>`
+    };
   }
 
   private buildTicketEmailBody(
@@ -409,9 +572,18 @@ export class NotificationsService {
       internalNoteMention: "Mentioned on internal note",
       routingRuleMatched: "Routing rule matched",
       ticketReopened: "Ticket reopened",
-      newTicketCreated: "New ticket created"
+      newTicketCreated: "New ticket created",
+      eventAssignedToMe: "Event assigned to me",
+      eventRequestUpdated: "Event request updated",
+      eventTaskAssignedToMe: "Event task assigned to me",
+      eventTaskUpdated: "Event task updated",
+      eventCommentAdded: "Event comment added"
     };
     return labels[eventType];
+  }
+
+  private userDisplay(user: { firstName: string; lastName: string; email: string }) {
+    return `${user.firstName} ${user.lastName}`.trim() || user.email;
   }
 
   private label(value: string) {

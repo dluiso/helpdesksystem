@@ -173,6 +173,16 @@ interface NotificationPreference {
   emailRoutingRuleMatched: boolean;
   emailTicketReopened: boolean;
   emailNewTicketCreated: boolean;
+  inAppEventAssignedToMe: boolean;
+  inAppEventRequestUpdated: boolean;
+  inAppEventTaskAssignedToMe: boolean;
+  inAppEventTaskUpdated: boolean;
+  inAppEventCommentAdded: boolean;
+  emailEventAssignedToMe: boolean;
+  emailEventRequestUpdated: boolean;
+  emailEventTaskAssignedToMe: boolean;
+  emailEventTaskUpdated: boolean;
+  emailEventCommentAdded: boolean;
   dailyDigestEnabled: boolean;
 }
 
@@ -346,7 +356,12 @@ const NOTIFICATION_FIELDS: Array<{ label: string; inAppKey: keyof NotificationPr
   { label: "Internal note on assigned ticket", inAppKey: "inAppInternalNoteOnAssignedTicket", emailKey: "emailInternalNoteOnAssignedTicket" },
   { label: "Mentioned on internal note", inAppKey: "inAppInternalNoteMention", emailKey: "emailInternalNoteMention" },
   { label: "Routing rule matched", inAppKey: "inAppRoutingRuleMatched", emailKey: "emailRoutingRuleMatched" },
-  { label: "Ticket reopened", inAppKey: "inAppTicketReopened", emailKey: "emailTicketReopened" }
+  { label: "Ticket reopened", inAppKey: "inAppTicketReopened", emailKey: "emailTicketReopened" },
+  { label: "Event assigned to me", inAppKey: "inAppEventAssignedToMe", emailKey: "emailEventAssignedToMe" },
+  { label: "Event request updated", inAppKey: "inAppEventRequestUpdated", emailKey: "emailEventRequestUpdated" },
+  { label: "Event task assigned to me", inAppKey: "inAppEventTaskAssignedToMe", emailKey: "emailEventTaskAssignedToMe" },
+  { label: "Event task updated", inAppKey: "inAppEventTaskUpdated", emailKey: "emailEventTaskUpdated" },
+  { label: "Event comment added", inAppKey: "inAppEventCommentAdded", emailKey: "emailEventCommentAdded" }
 ];
 
 const GENERAL_TABS = [
@@ -1375,6 +1390,16 @@ export function SettingsWorkspace() {
           emailRoutingRuleMatched: preference.emailRoutingRuleMatched,
           emailTicketReopened: preference.emailTicketReopened,
           emailNewTicketCreated: preference.emailNewTicketCreated,
+          inAppEventAssignedToMe: preference.inAppEventAssignedToMe,
+          inAppEventRequestUpdated: preference.inAppEventRequestUpdated,
+          inAppEventTaskAssignedToMe: preference.inAppEventTaskAssignedToMe,
+          inAppEventTaskUpdated: preference.inAppEventTaskUpdated,
+          inAppEventCommentAdded: preference.inAppEventCommentAdded,
+          emailEventAssignedToMe: preference.emailEventAssignedToMe,
+          emailEventRequestUpdated: preference.emailEventRequestUpdated,
+          emailEventTaskAssignedToMe: preference.emailEventTaskAssignedToMe,
+          emailEventTaskUpdated: preference.emailEventTaskUpdated,
+          emailEventCommentAdded: preference.emailEventCommentAdded,
           dailyDigestEnabled: preference.dailyDigestEnabled
         })
       });

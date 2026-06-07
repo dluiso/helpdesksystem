@@ -12,6 +12,7 @@ import { ListEventServiceRequestsDto } from "./dto/list-event-service-requests.d
 import { UpdateEventServiceTurnstileDto } from "./dto/update-event-service-turnstile.dto";
 import { UpdateEventServiceRequestDto } from "./dto/update-event-service-request.dto";
 import { UpdateEventServiceTaskDto } from "./dto/update-event-service-task.dto";
+import { UpdateMyEventServiceTaskDto } from "./dto/update-my-event-service-task.dto";
 import { UpsertEventServiceFormFieldDto } from "./dto/upsert-event-service-form-field.dto";
 import { UpsertEventServiceServiceDto } from "./dto/upsert-event-service-service.dto";
 import { EventServicesService } from "./event-services.service";
@@ -60,6 +61,20 @@ export class EventServicesController {
   @RequirePermissions("event_services.update")
   restoreFromRecycleBin(@CurrentUser() user: AuthenticatedUser, @Body() body: BulkEventServiceRequestIdsDto) {
     return this.eventServices.restoreFromRecycleBin(user, body.requestIds);
+  }
+
+  @Get("event-services/my-tasks")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.view")
+  myTasks(@CurrentUser() user: AuthenticatedUser) {
+    return this.eventServices.listMyTasks(user);
+  }
+
+  @Patch("event-services/my-tasks/:taskId")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.view")
+  updateMyTask(@Param("taskId") taskId: string, @CurrentUser() user: AuthenticatedUser, @Body() body: UpdateMyEventServiceTaskDto) {
+    return this.eventServices.updateMyTask(taskId, user, body);
   }
 
   @Get("event-services/services")

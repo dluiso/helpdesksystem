@@ -4,6 +4,7 @@ import { EventServiceRequestStatus, EventServiceTaskStatus, Prisma, TicketPriori
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { MailDeliveryService } from "../mailboxes/mail-delivery.service";
+import { NotificationsService, NotificationEventType } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateEventServiceCommentDto } from "./dto/create-event-service-comment.dto";
 import { CreateEventServiceTaskDto } from "./dto/create-event-service-task.dto";
@@ -12,6 +13,7 @@ import { ListEventServiceRequestsDto } from "./dto/list-event-service-requests.d
 import { UpdateEventServiceTurnstileDto } from "./dto/update-event-service-turnstile.dto";
 import { UpdateEventServiceRequestDto } from "./dto/update-event-service-request.dto";
 import { UpdateEventServiceTaskDto } from "./dto/update-event-service-task.dto";
+import { UpdateMyEventServiceTaskDto } from "./dto/update-my-event-service-task.dto";
 import { UpsertEventServiceFormFieldDto } from "./dto/upsert-event-service-form-field.dto";
 import { UpsertEventServiceServiceDto } from "./dto/upsert-event-service-service.dto";
 
@@ -24,7 +26,8 @@ export class EventServicesService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly mailDelivery: MailDeliveryService,
-    private readonly auditLogs: AuditLogsService
+    private readonly auditLogs: AuditLogsService,
+    private readonly notifications: NotificationsService
   ) {}
 
   async getPublicForm() {
@@ -107,7 +110,7 @@ export class EventServicesService {
     });
 
     await Promise.all([
-      this.notifyAssignedUsers(request.id, "New event request assigned", `${request.trackingNumber}: ${request.eventName}`),
+      this.notifyAssignedUsers(request.id, "New event request assigned", `${request.trackingNumber}: ${request.eventName}`, "eventAssignedToMe"),
       this.sendRequesterConfirmation(request).catch((error) =>
         this.logActivity(request.id, null, "event_service_request.confirmation_email_failed", {
           message: error instanceof Error ? error.message : "Unknown email error"
@@ -167,6 +170,26 @@ export class EventServicesService {
     return request;
   }
 
+  async listMyTasks(user: AuthenticatedUser) {
+    return this.prisma.eventServiceTask.findMany({
+      where: {
+        assignedUserId: user.id,
+        request: {
+          organizationId: user.organizationId,
+          deletedAt: null
+        }
+      },
+      include: {
+        assignedUser: { select: this.userSelect() },
+        request: {
+          include: this.requestInclude()
+        }
+      },
+      orderBy: [{ status: "asc" }, { updatedAt: "desc" }],
+      take: 150
+    });
+  }
+
   async update(requestId: string, user: AuthenticatedUser, input: UpdateEventServiceRequestDto) {
     await this.get(requestId, user);
     const assignedUserIds = input.assignedUserIds === undefined ? null : await this.validUserIds(user.organizationId, input.assignedUserIds);
@@ -207,7 +230,7 @@ export class EventServicesService {
       assignedUserIds: assignedUserIds ?? undefined,
       assignedTeamId: input.assignedTeamId
     });
-    await this.notifyAssignedUsers(requestId, "Event request updated", `${updated.trackingNumber}: ${updated.eventName}`);
+    await this.notifyAssignedUsers(requestId, "Event request updated", `${updated.trackingNumber}: ${updated.eventName}`, "eventRequestUpdated", user.id);
 
     return updated;
   }
@@ -282,7 +305,7 @@ export class EventServicesService {
     });
     await this.logActivity(requestId, user.id, "event_service_task.created", { taskId: task.id, title: task.title });
     if (task.assignedUserId) {
-      await this.createNotification(task.assignedUserId, "Event task assigned", task.title, requestId);
+      await this.notifyTaskAssignee(task.assignedUserId, requestId, task.id, "Event task assigned", task.title, "eventTaskAssignedToMe");
     }
     return task;
   }
@@ -305,8 +328,48 @@ export class EventServicesService {
     });
     await this.recalculateProgress(requestId);
     await this.logActivity(requestId, user.id, "event_service_task.updated", { taskId, status: task.status, progressPercent: task.progressPercent });
-    await this.notifyAssignedUsers(requestId, "Event task updated", `${task.title} is ${this.statusLabel(task.status)}`);
+    await this.notifyAssignedUsers(requestId, "Event task updated", `${task.title} is ${this.statusLabel(task.status)}`, "eventTaskUpdated", user.id, taskId);
     return task;
+  }
+
+  async updateMyTask(taskId: string, user: AuthenticatedUser, input: UpdateMyEventServiceTaskDto) {
+    const task = await this.prisma.eventServiceTask.findFirst({
+      where: {
+        id: taskId,
+        assignedUserId: user.id,
+        request: { organizationId: user.organizationId, deletedAt: null }
+      },
+      select: { id: true, requestId: true, title: true }
+    });
+    if (!task) {
+      throw new NotFoundException("Assigned event task was not found.");
+    }
+
+    const updated = await this.prisma.eventServiceTask.update({
+      where: { id: taskId },
+      data: {
+        status: input.status,
+        progressPercent: input.progressPercent
+      },
+      include: {
+        assignedUser: { select: this.userSelect() },
+        request: { include: this.requestInclude() }
+      }
+    });
+    if (input.comment?.trim()) {
+      await this.prisma.eventServiceComment.create({
+        data: { requestId: task.requestId, userId: user.id, body: input.comment.trim() }
+      });
+    }
+    await this.recalculateProgress(task.requestId);
+    await this.logActivity(task.requestId, user.id, "event_service_task.self_updated", {
+      taskId,
+      status: input.status,
+      progressPercent: input.progressPercent,
+      commentAdded: Boolean(input.comment?.trim())
+    });
+    await this.notifyAssignedUsers(task.requestId, "Event task progress updated", `${task.title} was updated by ${user.email}`, "eventTaskUpdated", user.id, taskId);
+    return updated;
   }
 
   async addComment(requestId: string, user: AuthenticatedUser, input: CreateEventServiceCommentDto) {
@@ -316,7 +379,7 @@ export class EventServicesService {
       include: { user: { select: this.userSelect() } }
     });
     await this.logActivity(requestId, user.id, "event_service_comment.created", { commentId: comment.id });
-    await this.notifyAssignedUsers(requestId, "Event comment added", input.body.trim().slice(0, 240), user.id);
+    await this.notifyAssignedUsers(requestId, "Event comment added", input.body.trim().slice(0, 240), "eventCommentAdded", user.id);
     return comment;
   }
 
@@ -654,23 +717,28 @@ export class EventServicesService {
     await this.prisma.eventServiceRequest.update({ where: { id: requestId }, data: { progressPercent } });
   }
 
-  private async notifyAssignedUsers(requestId: string, title: string, body: string, excludeUserId?: string) {
+  private async notifyAssignedUsers(requestId: string, title: string, body: string, eventType: NotificationEventType, excludeUserId?: string, taskId?: string) {
     const assignees = await this.prisma.eventServiceAssignee.findMany({ where: { requestId }, select: { userId: true } });
     await Promise.all(
       assignees
         .map((assignee) => assignee.userId)
         .filter((userId) => userId !== excludeUserId)
-        .map((userId) => this.createNotification(userId, title, body, requestId))
+        .map((userId) => this.notifyTaskAssignee(userId, requestId, taskId ?? null, title, body, eventType))
     );
   }
 
-  private createNotification(userId: string, title: string, body: string, requestId: string) {
-    return this.prisma.notification.create({
-      data: {
-        userId,
-        title,
-        body,
-        metadata: { entityType: "EventServiceRequest", requestId }
+  private notifyTaskAssignee(userId: string, requestId: string, taskId: string | null, title: string, body: string, eventType: NotificationEventType) {
+    return this.notifications.notifyUser({
+      userId,
+      title,
+      body,
+      eventType,
+      eventServiceRequestId: requestId,
+      eventServiceTaskId: taskId,
+      metadata: {
+        entityType: "EventServiceRequest",
+        requestId,
+        ...(taskId ? { taskId } : {})
       }
     });
   }

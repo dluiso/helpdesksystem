@@ -1368,6 +1368,44 @@ select {
   align-items: end;
 }
 
+.event-workspace-tabs {
+  display: inline-flex;
+  width: fit-content;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-raised);
+}
+
+.event-workspace-tabs button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 12px;
+  color: var(--text-muted);
+  background: transparent;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.event-workspace-tabs button.active {
+  color: var(--brand-primary);
+  background: var(--surface-selected);
+}
+
+.event-workspace-tabs button span {
+  min-width: 22px;
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: var(--text);
+  background: var(--surface-subtle);
+  font-size: 12px;
+}
+
 .event-services-layout {
   display: grid;
   gap: 14px;
@@ -1405,9 +1443,46 @@ select {
 
 .event-request-table .compact-select {
   width: 100%;
-  min-width: 145px;
-  height: 34px;
-  padding-block: 4px;
+  min-width: 160px;
+  height: 38px;
+  padding: 0 32px 0 12px;
+  border-radius: 10px;
+  background-color: var(--surface-raised);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.event-request-table .event-inline-select {
+  max-width: 180px;
+}
+
+.event-task-table td {
+  vertical-align: middle;
+}
+
+.event-task-table td strong,
+.event-task-table td span {
+  display: block;
+}
+
+.event-task-table .event-inline-select {
+  min-width: 150px;
+}
+
+.event-progress-input {
+  width: 92px;
+}
+
+.event-my-tasks-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.event-task-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .event-recycle-panel {
@@ -5074,6 +5149,19 @@ a.dashboard-list-row:hover {
   .event-task-row,
   .event-admin-row {
     grid-template-columns: 1fr;
+  }
+
+  .event-workspace-tabs {
+    width: 100%;
+  }
+
+  .event-workspace-tabs button {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+
+  .event-task-table {
+    min-width: 980px;
   }
 
   .public-event-hero {

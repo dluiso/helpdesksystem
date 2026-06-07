@@ -107,5 +107,45 @@ export class UpdateNotificationPreferencesDto {
 
   @IsOptional()
   @IsBoolean()
+  inAppEventAssignedToMe?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  inAppEventRequestUpdated?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  inAppEventTaskAssignedToMe?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  inAppEventTaskUpdated?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  inAppEventCommentAdded?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  emailEventAssignedToMe?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  emailEventRequestUpdated?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  emailEventTaskAssignedToMe?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  emailEventTaskUpdated?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  emailEventCommentAdded?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   dailyDigestEnabled?: boolean;
 }

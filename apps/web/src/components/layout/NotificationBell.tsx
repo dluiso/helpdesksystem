@@ -12,6 +12,7 @@ interface NotificationItem {
   status: "UNREAD" | "READ";
   createdAt: string;
   ticket: { id: string; ticketNumber: string; subject: string } | null;
+  metadata?: { entityType?: string; requestId?: string } | null;
 }
 
 interface NotificationPreferences {
@@ -41,6 +42,16 @@ interface NotificationPreferences {
   emailRoutingRuleMatched: boolean;
   emailTicketReopened: boolean;
   emailNewTicketCreated: boolean;
+  inAppEventAssignedToMe: boolean;
+  inAppEventRequestUpdated: boolean;
+  inAppEventTaskAssignedToMe: boolean;
+  inAppEventTaskUpdated: boolean;
+  inAppEventCommentAdded: boolean;
+  emailEventAssignedToMe: boolean;
+  emailEventRequestUpdated: boolean;
+  emailEventTaskAssignedToMe: boolean;
+  emailEventTaskUpdated: boolean;
+  emailEventCommentAdded: boolean;
   dailyDigestEnabled: boolean;
 }
 
@@ -55,6 +66,11 @@ const preferenceLabels: Array<{ key: keyof NotificationPreferences; label: strin
   { key: "inAppInternalNoteMention", label: "In-app: mentions" },
   { key: "inAppRoutingRuleMatched", label: "In-app: routing rules" },
   { key: "inAppTicketReopened", label: "In-app: reopened tickets" },
+  { key: "inAppEventAssignedToMe", label: "In-app: event assignments" },
+  { key: "inAppEventRequestUpdated", label: "In-app: event updates" },
+  { key: "inAppEventTaskAssignedToMe", label: "In-app: event tasks" },
+  { key: "inAppEventTaskUpdated", label: "In-app: event task updates" },
+  { key: "inAppEventCommentAdded", label: "In-app: event comments" },
   { key: "emailNewTicketCreated", label: "Email: new tickets" },
   { key: "emailTicketAssignedToMe", label: "Email: assigned to me" },
   { key: "emailTicketAssignedToMyTeam", label: "Email: assigned to my team" },
@@ -63,6 +79,11 @@ const preferenceLabels: Array<{ key: keyof NotificationPreferences; label: strin
   { key: "emailInternalNoteMention", label: "Email: mentions" },
   { key: "emailRoutingRuleMatched", label: "Email: routing rules" },
   { key: "emailTicketReopened", label: "Email: reopened tickets" },
+  { key: "emailEventAssignedToMe", label: "Email: event assignments" },
+  { key: "emailEventRequestUpdated", label: "Email: event updates" },
+  { key: "emailEventTaskAssignedToMe", label: "Email: event tasks" },
+  { key: "emailEventTaskUpdated", label: "Email: event task updates" },
+  { key: "emailEventCommentAdded", label: "Email: event comments" },
   { key: "dailyDigestEnabled", label: "Daily digest" }
 ];
 
@@ -110,6 +131,16 @@ export function NotificationBell() {
       method: "PATCH",
       body: JSON.stringify({ [key]: value })
     });
+  }
+
+  function notificationHref(item: NotificationItem) {
+    if (item.ticket) {
+      return `/tickets/${item.ticket.ticketNumber}`;
+    }
+    if (item.metadata?.entityType === "EventServiceRequest" && item.metadata.requestId) {
+      return `/event-services?request=${encodeURIComponent(item.metadata.requestId)}`;
+    }
+    return "#";
   }
 
   useEffect(() => {
@@ -165,7 +196,7 @@ export function NotificationBell() {
             <div className="notification-list">
               {items.length === 0 ? <p className="muted">No notifications yet.</p> : null}
               {items.map((item) => (
-                <Link className={`notification-item ${item.status === "UNREAD" ? "unread" : ""}`} href={item.ticket ? `/tickets/${item.ticket.ticketNumber}` : "#"} key={item.id}>
+                <Link className={`notification-item ${item.status === "UNREAD" ? "unread" : ""}`} href={notificationHref(item)} key={item.id}>
                   <strong>{item.title}</strong>
                   {item.body ? <span>{item.body}</span> : null}
                   <small>{new Date(item.createdAt).toLocaleString()}</small>
