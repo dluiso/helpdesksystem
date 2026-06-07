@@ -69,6 +69,10 @@ interface EventServiceTaskAssignment {
   request: EventServiceRequest;
 }
 
+interface EventServicesWorkspaceProps {
+  detailTrackingNumber?: string;
+}
+
 const statuses: EventStatus[] = ["NEW", "UNDER_REVIEW", "SCHEDULED", "ASSIGNED", "IN_PROGRESS", "WAITING_ON_CLIENT", "WAITING_ON_INTERNAL_TEAM", "COMPLETED", "CANCELLED", "CONVERTED_TO_TICKET"];
 const taskStatuses: TaskStatus[] = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE", "CANCELLED"];
 const priorities: Priority[] = ["LOW", "NORMAL", "HIGH", "URGENT", "CRITICAL"];
@@ -90,14 +94,15 @@ function formatDateTime(value: string | null) {
   return value ? new Date(value).toLocaleString(undefined, { month: "short", day: "2-digit", hour: "numeric", minute: "2-digit" }) : "No date";
 }
 
-export function EventServicesWorkspace() {
+export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWorkspaceProps = {}) {
+  const detailPage = Boolean(detailTrackingNumber);
   const [activeTab, setActiveTab] = useState<"requests" | "myTasks">("requests");
   const [requests, setRequests] = useState<EventServiceRequest[]>([]);
   const [myTasks, setMyTasks] = useState<EventServiceTaskAssignment[]>([]);
   const [myTaskDrafts, setMyTaskDrafts] = useState<Record<string, { status: TaskStatus; progressPercent: number; comment: string }>>({});
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(detailTrackingNumber ?? null);
   const [selected, setSelected] = useState<EventServiceRequest | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(detailPage);
   const [selectedRequestIds, setSelectedRequestIds] = useState<string[]>([]);
   const [recycleBinOpen, setRecycleBinOpen] = useState(false);
   const [recycledRequests, setRecycledRequests] = useState<EventServiceRequest[]>([]);
@@ -168,6 +173,7 @@ export function EventServicesWorkspace() {
     try {
       const item = await apiFetch<EventServiceRequest>(`/event-services/${id}`);
       setSelected(item);
+      setSelectedId(item.id);
       setDraft({
         status: item.status,
         priority: item.priority,
@@ -183,13 +189,21 @@ export function EventServicesWorkspace() {
 
   useEffect(() => {
     const urlFilters = { ...filters };
-    if (typeof window !== "undefined") {
+    if (detailTrackingNumber) {
+      setSelectedId(detailTrackingNumber);
+      setDetailOpen(true);
+    } else if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       urlFilters.status = params.get("status") ?? "";
-      const requestId = params.get("request");
-      if (requestId) {
-        setSelectedId(requestId);
-        setDetailOpen(true);
+      const legacyRequestRef = params.get("request");
+      if (legacyRequestRef) {
+        void apiFetch<EventServiceRequest>(`/event-services/${legacyRequestRef}`)
+          .then((item) => {
+            window.location.replace(`/event-services/${encodeURIComponent(item.trackingNumber)}`);
+          })
+          .catch((caught) => {
+            setError(caught instanceof Error ? caught.message : "Unable to load request detail.");
+          });
       }
       setFilters(urlFilters);
     }
@@ -202,25 +216,20 @@ export function EventServicesWorkspace() {
     }
   }, [selectedId, detailOpen]);
 
-  function openRequest(id: string) {
-    setSelectedId(id);
-    setDetailOpen(true);
+  function openRequest(request: EventServiceRequest) {
     setActiveTab("requests");
     if (typeof window !== "undefined") {
-      const url = new URL(window.location.href);
-      url.searchParams.set("request", id);
-      window.history.replaceState(null, "", url);
+      window.location.href = `/event-services/${encodeURIComponent(request.trackingNumber)}`;
     }
   }
 
   function closeRequest() {
+    if (typeof window !== "undefined") {
+      window.location.href = "/event-services";
+      return;
+    }
     setDetailOpen(false);
     setSelected(null);
-    if (typeof window !== "undefined") {
-      const url = new URL(window.location.href);
-      url.searchParams.delete("request");
-      window.history.replaceState(null, "", url);
-    }
   }
 
   function toggleRequestSelection(requestId: string, checked: boolean) {
@@ -406,17 +415,23 @@ export function EventServicesWorkspace() {
   }
 
   return (
-    <div className="event-services-page">
+    <div className={detailPage ? "event-services-page event-detail-page" : "event-services-page"}>
       <div className="compact-page-header">
         <div>
-          <h1>Event & Services</h1>
+          <h1>{detailPage ? selected?.trackingNumber ?? detailTrackingNumber : "Event & Services"}</h1>
         </div>
         <div className="button-row">
-          <button className="button secondary" type="button" onClick={() => void loadRecycleBin()} disabled={busy === "recycle-bin"}>
-            <Trash2 size={16} aria-hidden="true" />
-            <span>Recycle Bin</span>
-          </button>
-          <button className="button secondary" type="button" onClick={() => void loadData()} disabled={loading}>
+          {detailPage ? (
+            <button className="button secondary" type="button" onClick={closeRequest}>
+              <span>Back to Requests</span>
+            </button>
+          ) : (
+            <button className="button secondary" type="button" onClick={() => void loadRecycleBin()} disabled={busy === "recycle-bin"}>
+              <Trash2 size={16} aria-hidden="true" />
+              <span>Recycle Bin</span>
+            </button>
+          )}
+          <button className="button secondary" type="button" onClick={() => detailPage ? void loadSelected(selectedId) : void loadData()} disabled={loading}>
             <RefreshCw size={16} aria-hidden="true" />
             <span>Refresh</span>
           </button>
@@ -509,7 +524,7 @@ export function EventServicesWorkspace() {
                   </tr>
                 ) : null}
                 {requests.map((request) => (
-                  <tr className={selectedId === request.id && detailOpen ? "selected-row" : ""} key={request.id} onClick={() => openRequest(request.id)}>
+                  <tr className={selectedId === request.id && detailOpen ? "selected-row" : ""} key={request.id} onClick={() => openRequest(request)}>
                     <td>
                       <input
                         aria-label={`Select ${request.trackingNumber}`}
@@ -561,7 +576,7 @@ export function EventServicesWorkspace() {
                     <td><span className="count-pill">{request.progressPercent}%</span></td>
                     <td>{formatDateTime(request.updatedAt)}</td>
                     <td>
-                      <button className="icon-button" type="button" onClick={(event) => { event.stopPropagation(); openRequest(request.id); }}>
+                      <button className="icon-button" type="button" onClick={(event) => { event.stopPropagation(); openRequest(request); }}>
                         Open
                       </button>
                     </td>
@@ -572,7 +587,7 @@ export function EventServicesWorkspace() {
           </div>
         </section>
 
-        {detailOpen ? (
+        {detailPage && detailOpen ? (
           <section className="panel event-detail-panel">
             {selected ? (
             <>
@@ -711,7 +726,7 @@ export function EventServicesWorkspace() {
                       <td>{formatDateTime(task.updatedAt)}</td>
                       <td>
                         <div className="event-task-actions">
-                          <button className="button secondary" type="button" onClick={() => openRequest(task.request.id)}>Open Event</button>
+                          <button className="button secondary" type="button" onClick={() => openRequest(task.request)}>Open Event</button>
                           <button className="button" type="button" onClick={() => void saveMyTask(task.id)} disabled={busy === `my-task-${task.id}`}>Save</button>
                         </div>
                       </td>

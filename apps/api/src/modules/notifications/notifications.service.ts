@@ -430,7 +430,7 @@ export class NotificationsService {
     const assignedTo = request.assignees.map((assignee) => this.userDisplay(assignee.user)).join(", ") || request.assignedTeam?.name || "Unassigned";
     const services = request.services.map((item) => item.service.name).join(", ") || "None";
     const task = request.tasks[0];
-    const eventUrl = `${this.appUrl()}/event-services?request=${encodeURIComponent(request.id)}`;
+    const eventUrl = `${this.appUrl()}/event-services/${encodeURIComponent(request.trackingNumber)}`;
     const reason = body?.trim() || title;
     const details = [
       ["Tracking", request.trackingNumber],

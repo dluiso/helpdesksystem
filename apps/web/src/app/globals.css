@@ -1452,6 +1452,17 @@ select.compact-select {
   align-items: start;
 }
 
+.event-detail-page .event-kpi-grid,
+.event-detail-page .event-workspace-tabs,
+.event-detail-page .event-filter-panel,
+.event-detail-page .event-request-table-panel {
+  display: none;
+}
+
+.event-detail-page .event-services-layout {
+  display: block;
+}
+
 .event-request-table-panel,
 .event-detail-panel {
   display: grid;
@@ -1488,6 +1499,10 @@ select.compact-select {
   padding: 0 32px 0 12px;
   border-radius: 10px;
   background-color: var(--surface-raised);
+  background-image: var(--select-arrow);
+  background-position: right 10px center;
+  background-repeat: no-repeat;
+  background-size: 14px 14px;
   color: var(--text);
   font-weight: 700;
 }
@@ -1507,6 +1522,10 @@ select.compact-select {
 
 .event-task-table .event-inline-select {
   min-width: 150px;
+  background-image: var(--select-arrow);
+  background-position: right 10px center;
+  background-repeat: no-repeat;
+  background-size: 14px 14px;
 }
 
 .event-progress-input {

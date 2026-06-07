@@ -161,9 +161,17 @@ export class EventServicesService {
     });
   }
 
-  async get(requestId: string, user: AuthenticatedUser) {
+  async get(requestRef: string, user: AuthenticatedUser) {
+    const normalizedRef = requestRef.trim();
     const request = await this.prisma.eventServiceRequest.findFirst({
-      where: { id: requestId, organizationId: user.organizationId, deletedAt: null },
+      where: {
+        organizationId: user.organizationId,
+        deletedAt: null,
+        OR: [
+          { id: normalizedRef },
+          { trackingNumber: normalizedRef.toUpperCase() }
+        ]
+      },
       include: this.requestInclude(true)
     });
     if (!request) {
@@ -758,15 +766,17 @@ export class EventServicesService {
 
   private async notifyAssignedUsers(requestId: string, title: string, body: string, eventType: NotificationEventType, excludeUserId?: string, taskId?: string) {
     const assignees = await this.prisma.eventServiceAssignee.findMany({ where: { requestId }, select: { userId: true } });
+    const request = await this.prisma.eventServiceRequest.findUnique({ where: { id: requestId }, select: { trackingNumber: true } });
     await Promise.all(
       assignees
         .map((assignee) => assignee.userId)
         .filter((userId) => userId !== excludeUserId)
-        .map((userId) => this.notifyTaskAssignee(userId, requestId, taskId ?? null, title, body, eventType))
+        .map((userId) => this.notifyTaskAssignee(userId, requestId, taskId ?? null, title, body, eventType, request?.trackingNumber ?? null))
     );
   }
 
-  private notifyTaskAssignee(userId: string, requestId: string, taskId: string | null, title: string, body: string, eventType: NotificationEventType) {
+  private async notifyTaskAssignee(userId: string, requestId: string, taskId: string | null, title: string, body: string, eventType: NotificationEventType, trackingNumber?: string | null) {
+    const resolvedTrackingNumber = trackingNumber ?? (await this.prisma.eventServiceRequest.findUnique({ where: { id: requestId }, select: { trackingNumber: true } }))?.trackingNumber ?? null;
     return this.notifications.notifyUser({
       userId,
       title,
@@ -777,6 +787,7 @@ export class EventServicesService {
       metadata: {
         entityType: "EventServiceRequest",
         requestId,
+        ...(resolvedTrackingNumber ? { trackingNumber: resolvedTrackingNumber } : {}),
         ...(taskId ? { taskId } : {})
       }
     });

@@ -12,7 +12,7 @@ interface NotificationItem {
   status: "UNREAD" | "READ";
   createdAt: string;
   ticket: { id: string; ticketNumber: string; subject: string } | null;
-  metadata?: { entityType?: string; requestId?: string } | null;
+  metadata?: { entityType?: string; requestId?: string; trackingNumber?: string } | null;
 }
 
 interface NotificationPreferences {
@@ -137,8 +137,13 @@ export function NotificationBell() {
     if (item.ticket) {
       return `/tickets/${item.ticket.ticketNumber}`;
     }
-    if (item.metadata?.entityType === "EventServiceRequest" && item.metadata.requestId) {
-      return `/event-services?request=${encodeURIComponent(item.metadata.requestId)}`;
+    if (item.metadata?.entityType === "EventServiceRequest") {
+      if (item.metadata.trackingNumber) {
+        return `/event-services/${encodeURIComponent(item.metadata.trackingNumber)}`;
+      }
+      if (item.metadata.requestId) {
+        return `/event-services?request=${encodeURIComponent(item.metadata.requestId)}`;
+      }
     }
     return "#";
   }
