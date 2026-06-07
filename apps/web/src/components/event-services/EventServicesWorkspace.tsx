@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, CheckCircle2, ClipboardList, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Trash2, UsersRound, X } from "lucide-react";
+import { CalendarDays, CheckCircle2, ChevronDown, ClipboardList, ExternalLink, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Trash2, UsersRound, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
@@ -426,10 +426,16 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
               <span>Back to Requests</span>
             </button>
           ) : (
-            <button className="button secondary" type="button" onClick={() => void loadRecycleBin()} disabled={busy === "recycle-bin"}>
-              <Trash2 size={16} aria-hidden="true" />
-              <span>Recycle Bin</span>
-            </button>
+            <>
+              <button className="button secondary" type="button" onClick={() => window.open("https://events.aviditytechnologies.com/", "_blank", "noopener,noreferrer")}>
+                <ExternalLink size={16} aria-hidden="true" />
+                <span>Customer Portal</span>
+              </button>
+              <button className="button secondary" type="button" onClick={() => void loadRecycleBin()} disabled={busy === "recycle-bin"}>
+                <Trash2 size={16} aria-hidden="true" />
+                <span>Recycle Bin</span>
+              </button>
+            </>
           )}
           <button className="button secondary" type="button" onClick={() => detailPage ? void loadSelected(selectedId) : void loadData()} disabled={loading}>
             <RefreshCw size={16} aria-hidden="true" />
@@ -549,28 +555,34 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                     </td>
                     <td>{request.services.map((item) => item.service.name).join(", ") || "None"}</td>
                     <td>
-                      <select
-                        className="input compact-select event-inline-select"
-                        value={request.status}
-                        disabled={busy === `quick-${request.id}`}
-                        onChange={(event) => { event.stopPropagation(); void quickUpdateRequest(request, { status: event.target.value as EventStatus }); }}
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        {statuses.map((status) => <option key={status} value={status}>{label(status)}</option>)}
-                      </select>
+                      <span className="event-select-wrap">
+                        <select
+                          className="input compact-select event-inline-select"
+                          value={request.status}
+                          disabled={busy === `quick-${request.id}`}
+                          onChange={(event) => { event.stopPropagation(); void quickUpdateRequest(request, { status: event.target.value as EventStatus }); }}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          {statuses.map((status) => <option key={status} value={status}>{label(status)}</option>)}
+                        </select>
+                        <ChevronDown className="event-select-chevron" size={15} aria-hidden="true" />
+                      </span>
                     </td>
                     <td>{label(request.priority)}</td>
                     <td>
-                      <select
-                        className="input compact-select event-inline-select"
-                        value={request.assignedTeam?.id ?? ""}
-                        disabled={busy === `quick-${request.id}`}
-                        onChange={(event) => { event.stopPropagation(); void quickUpdateRequest(request, { assignedTeamId: event.target.value || null }); }}
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <option value="">No team</option>
-                        {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
-                      </select>
+                      <span className="event-select-wrap">
+                        <select
+                          className="input compact-select event-inline-select"
+                          value={request.assignedTeam?.id ?? ""}
+                          disabled={busy === `quick-${request.id}`}
+                          onChange={(event) => { event.stopPropagation(); void quickUpdateRequest(request, { assignedTeamId: event.target.value || null }); }}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <option value="">No team</option>
+                          {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+                        </select>
+                        <ChevronDown className="event-select-chevron" size={15} aria-hidden="true" />
+                      </span>
                       <span className="muted">{request.assignees.map((assignee) => userName(assignee.user)).join(", ") || "Unassigned"}</span>
                     </td>
                     <td><span className="count-pill">{request.progressPercent}%</span></td>

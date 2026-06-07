@@ -1481,9 +1481,20 @@ select.compact-select {
   vertical-align: middle;
 }
 
+.event-request-table th {
+  text-align: left;
+}
+
 .event-request-table th:first-child,
 .event-request-table td:first-child {
   width: 36px;
+  text-align: center;
+}
+
+.event-request-table th:nth-child(10),
+.event-request-table td:nth-child(10),
+.event-request-table th:nth-child(12),
+.event-request-table td:nth-child(12) {
   text-align: center;
 }
 
@@ -1492,24 +1503,25 @@ select.compact-select {
   display: block;
 }
 
+.event-select-wrap {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  max-width: 180px;
+}
+
 .event-request-table .compact-select {
   width: 100%;
   min-width: 160px;
   height: 38px;
-  padding: 0 42px 0 12px;
+  padding: 0 44px 0 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background-color: var(--control-bg);
-  background-image:
-    linear-gradient(var(--line), var(--line)),
-    var(--select-arrow);
-  background-position:
-    right 34px center,
-    right 12px center;
+  background-image: linear-gradient(var(--line), var(--line));
+  background-position: right 34px center;
   background-repeat: no-repeat;
-  background-size:
-    1px 18px,
-    14px 14px;
+  background-size: 1px 18px;
   color: var(--text);
   font-weight: 700;
   box-shadow: 0 1px 0 color-mix(in srgb, var(--line) 45%, transparent);
@@ -1518,6 +1530,17 @@ select.compact-select {
 
 .event-request-table .event-inline-select {
   max-width: 180px;
+}
+
+.event-select-chevron {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  z-index: 1;
+  color: var(--text);
+  stroke-width: 2.6;
+  pointer-events: none;
+  transform: translateY(-50%);
 }
 
 .event-request-table .compact-select:hover {
