@@ -163,14 +163,15 @@ export class EventServicesService {
 
   async get(requestRef: string, user: AuthenticatedUser) {
     const normalizedRef = requestRef.trim();
+    const requestMatchers: Prisma.EventServiceRequestWhereInput[] = [{ trackingNumber: normalizedRef.toUpperCase() }];
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizedRef)) {
+      requestMatchers.push({ id: normalizedRef });
+    }
     const request = await this.prisma.eventServiceRequest.findFirst({
       where: {
         organizationId: user.organizationId,
         deletedAt: null,
-        OR: [
-          { id: normalizedRef },
-          { trackingNumber: normalizedRef.toUpperCase() }
-        ]
+        OR: requestMatchers
       },
       include: this.requestInclude(true)
     });
