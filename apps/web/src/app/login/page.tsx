@@ -22,7 +22,7 @@ function brandingFontFamily(value?: string) {
 
 export default function LoginPage() {
   const branding = useBranding();
-  const [email, setEmail] = useState("admin@aviditytechnologies.com");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mfaCode, setMfaCode] = useState("");
   const [mfaChallengeToken, setMfaChallengeToken] = useState<string | null>(null);
