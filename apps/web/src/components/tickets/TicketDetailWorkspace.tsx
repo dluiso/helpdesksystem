@@ -129,6 +129,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const [mergeBusy, setMergeBusy] = useState(false);
   const [mergeSearchBusy, setMergeSearchBusy] = useState(false);
   const [toolBusy, setToolBusy] = useState<string | null>(null);
+  const [assignmentNotice, setAssignmentNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const requester = useMemo(() => {
@@ -168,6 +169,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   async function saveAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
+    setAssignmentNotice(null);
     setError(null);
     try {
       await apiFetch(`/tickets/${ticketId}/assignment`, {
@@ -200,6 +202,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
           watchers
         };
       });
+      setAssignmentNotice("Assignment saved.");
     } catch {
       setError("Unable to save assignment.");
     } finally {
@@ -558,8 +561,9 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
             </div>
             <button className="button" type="submit" disabled={saving}>
               <Save size={16} aria-hidden="true" />
-              <span>Save Assignment</span>
+              <span>{saving ? "Saving..." : "Save Assignment"}</span>
             </button>
+            {assignmentNotice ? <span className="status-pill success">{assignmentNotice}</span> : null}
           </form>
           <div className="panel">
             <div className="section-heading compact-heading">

@@ -37,10 +37,14 @@ const toolbar = [
 
 const INLINE_AUTOCOMPLETE_CLASS = "ai-inline-suggestion";
 
+function normalizeEditorText(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
 function htmlToText(html: string) {
   const container = document.createElement("div");
   container.innerHTML = html;
-  return container.innerText.trim();
+  return normalizeEditorText(container.innerText);
 }
 
 type ComposerAction = "send" | "send_and_close" | "save_note" | "send_note" | "send_note_and_close";
@@ -74,7 +78,6 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
   const [draftText, setDraftText] = useState("");
   const [autocompleteSuggestion, setAutocompleteSuggestion] = useState("");
   const [autocompleteDismissedFor, setAutocompleteDismissedFor] = useState("");
-  const [autocompleteEnabled, setAutocompleteEnabled] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -100,7 +103,7 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
   }, []);
 
   useEffect(() => {
-    if (!ticketId || preview || aiBusy || saving || !autocompleteEnabled) {
+    if (!ticketId || preview || aiBusy || saving) {
       return;
     }
 
@@ -127,11 +130,11 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
             setAutocompleteSuggestion("");
           }
         })
-        .catch(() => setAutocompleteEnabled(false));
+        .catch(() => setAutocompleteSuggestion(""));
     }, 650);
 
     return () => window.clearTimeout(timeout);
-  }, [aiBusy, autocompleteDismissedFor, autocompleteEnabled, draftText, preview, saving, ticketId]);
+  }, [aiBusy, autocompleteDismissedFor, draftText, preview, saving, ticketId]);
 
   function runCommand(command: string, value?: string) {
     removeInlineAutocomplete();
@@ -225,7 +228,7 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
   }
 
   function isCursorAtAutocompleteBoundary() {
-    const textAfterCursor = getTextAfterCursor();
+    const textAfterCursor = normalizeEditorText(getTextAfterCursor());
     return !textAfterCursor || Boolean(signatureTextRef.current && textAfterCursor === signatureTextRef.current);
   }
 
@@ -264,12 +267,17 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
     node.contentEditable = "false";
     node.textContent = `${prefix}${suggestion}`;
     node.setAttribute("aria-hidden", "true");
-    range.insertNode(node);
-    range.setStartBefore(node);
-    range.collapse(true);
-    selection.removeAllRanges();
-    selection.addRange(range);
-    return true;
+    try {
+      range.insertNode(node);
+      range.setStartBefore(node);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return true;
+    } catch {
+      node.remove();
+      return false;
+    }
   }
 
   function acceptAutocompleteSuggestion() {
@@ -500,14 +508,14 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
     setAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId));
   }
 
-  async function runAiAction(action: "paraphrase" | "improve-reply" | "suggest-reply") {
+  async function runAiAction(action: "paraphrase" | "improve-reply" | "fix-grammar" | "suggest-reply") {
     if (!ticketId || !editorRef.current) {
       return;
     }
 
     removeInlineAutocomplete();
     setAutocompleteSuggestion("");
-    const selectedText = action === "paraphrase" ? getSelectedText() : "";
+    const selectedText = action === "paraphrase" || action === "fix-grammar" ? getSelectedText() : "";
     const draft = selectedText || getEditorText();
     if (action !== "suggest-reply" && !draft) {
       setError(action === "paraphrase" ? "Select text to paraphrase or write a draft first." : "Write a draft first.");
@@ -597,6 +605,10 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
         <button className="button secondary compact-button" type="button" onClick={() => runAiAction("improve-reply")} disabled={Boolean(aiBusy)}>
           <Wand2 size={15} aria-hidden="true" />
           <span>Rewrite Draft</span>
+        </button>
+        <button className="button secondary compact-button" type="button" onClick={() => runAiAction("fix-grammar")} disabled={Boolean(aiBusy)}>
+          <Wand2 size={15} aria-hidden="true" />
+          <span>Fix Grammar</span>
         </button>
         <button className="button secondary compact-button" type="button" onClick={() => runAiAction("suggest-reply")} disabled={Boolean(aiBusy)}>
           <Wand2 size={15} aria-hidden="true" />
