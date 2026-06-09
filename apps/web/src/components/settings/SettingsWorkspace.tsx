@@ -76,6 +76,7 @@ interface RoutingRule {
   subjectContains: string | null;
   bodyContains: string | null;
   senderDomain: string | null;
+  setPriority: string | null;
   assignTeam?: { id: string; name: string } | null;
   assignUser?: User | null;
 }
@@ -459,6 +460,18 @@ const DEFAULT_SECURITY_SETTINGS: SecuritySettings = {
   turnstileProtectPasswordReset: false
 };
 
+const EMPTY_RULE_DRAFT = {
+  name: "",
+  subjectContains: "",
+  bodyContains: "",
+  senderDomain: "",
+  assignUserId: "",
+  assignTeamId: "",
+  setPriority: "",
+  isActive: true,
+  priority: "100"
+};
+
 function normalizeSyncIntervalSeconds(value: string, unit: "seconds" | "minutes") {
   const parsed = Number(value);
   const seconds = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed * (unit === "minutes" ? 60 : 1)) : 300;
@@ -521,15 +534,8 @@ export function SettingsWorkspace() {
       }
     >
   >({});
-  const [ruleDraft, setRuleDraft] = useState({
-    name: "",
-    subjectContains: "",
-    bodyContains: "",
-    senderDomain: "",
-    assignUserId: "",
-    assignTeamId: "",
-    setPriority: ""
-  });
+  const [ruleDraft, setRuleDraft] = useState({ ...EMPTY_RULE_DRAFT });
+  const [editingRoutingRuleId, setEditingRoutingRuleId] = useState<string | null>(null);
   const [teamDraft, setTeamDraft] = useState({ name: "", description: "", memberIds: [] as string[] });
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
   const [teamEditDraft, setTeamEditDraft] = useState({ name: "", description: "", memberIds: [] as string[], isActive: true });
@@ -960,7 +966,22 @@ export function SettingsWorkspace() {
     }
   }
 
-  async function createRoutingRule() {
+  function routingRulePayload(clearEmptyValues = false) {
+    const priority = Number(ruleDraft.priority);
+    return {
+      name: ruleDraft.name.trim(),
+      subjectContains: ruleDraft.subjectContains.trim() || (clearEmptyValues ? null : undefined),
+      bodyContains: ruleDraft.bodyContains.trim() || (clearEmptyValues ? null : undefined),
+      senderDomain: ruleDraft.senderDomain.trim() || (clearEmptyValues ? null : undefined),
+      assignUserId: ruleDraft.assignUserId || (clearEmptyValues ? null : undefined),
+      assignTeamId: ruleDraft.assignTeamId || (clearEmptyValues ? null : undefined),
+      setPriority: ruleDraft.setPriority || (clearEmptyValues ? null : undefined),
+      isActive: ruleDraft.isActive,
+      priority: Number.isFinite(priority) && priority > 0 ? Math.floor(priority) : 100
+    };
+  }
+
+  async function submitRoutingRule() {
     if (!ruleDraft.name.trim()) {
       setError("Routing rule name is required.");
       return;
@@ -970,23 +991,60 @@ export function SettingsWorkspace() {
     setNotice(null);
     setError(null);
     try {
-      await apiFetch("/ticket-routing-rules", {
-        method: "POST",
-        body: JSON.stringify({
-          name: ruleDraft.name,
-          subjectContains: ruleDraft.subjectContains || undefined,
-          bodyContains: ruleDraft.bodyContains || undefined,
-          senderDomain: ruleDraft.senderDomain || undefined,
-          assignUserId: ruleDraft.assignUserId || undefined,
-          assignTeamId: ruleDraft.assignTeamId || undefined,
-          setPriority: ruleDraft.setPriority || undefined
-        })
+      await apiFetch(editingRoutingRuleId ? `/ticket-routing-rules/${editingRoutingRuleId}` : "/ticket-routing-rules", {
+        method: editingRoutingRuleId ? "PATCH" : "POST",
+        body: JSON.stringify(routingRulePayload(Boolean(editingRoutingRuleId)))
       });
-      setRuleDraft({ name: "", subjectContains: "", bodyContains: "", senderDomain: "", assignUserId: "", assignTeamId: "", setPriority: "" });
-      setNotice("Routing rule created.");
+      setRuleDraft({ ...EMPTY_RULE_DRAFT });
+      setEditingRoutingRuleId(null);
+      setNotice(editingRoutingRuleId ? "Routing rule updated." : "Routing rule created.");
       await loadSettingsData();
     } catch {
-      setError("Unable to create routing rule.");
+      setError(editingRoutingRuleId ? "Unable to update routing rule." : "Unable to create routing rule.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function editRoutingRule(rule: RoutingRule) {
+    setEditingRoutingRuleId(rule.id);
+    setRuleDraft({
+      name: rule.name,
+      subjectContains: rule.subjectContains ?? "",
+      bodyContains: rule.bodyContains ?? "",
+      senderDomain: rule.senderDomain ?? "",
+      assignUserId: rule.assignUser?.id ?? "",
+      assignTeamId: rule.assignTeam?.id ?? "",
+      setPriority: rule.setPriority ?? "",
+      isActive: rule.isActive,
+      priority: String(rule.priority)
+    });
+    setNotice(null);
+    setError(null);
+  }
+
+  function cancelRoutingRuleEdit() {
+    setEditingRoutingRuleId(null);
+    setRuleDraft({ ...EMPTY_RULE_DRAFT });
+  }
+
+  async function deleteRoutingRule(rule: RoutingRule) {
+    if (!window.confirm(`Delete routing rule "${rule.name}"? Existing tickets will keep their current assignments.`)) {
+      return;
+    }
+
+    setBusy(rule.id);
+    setNotice(null);
+    setError(null);
+    try {
+      await apiFetch(`/ticket-routing-rules/${rule.id}`, { method: "DELETE" });
+      if (editingRoutingRuleId === rule.id) {
+        cancelRoutingRuleEdit();
+      }
+      setNotice("Routing rule deleted.");
+      await loadSettingsData();
+    } catch {
+      setError("Unable to delete routing rule.");
     } finally {
       setBusy(null);
     }
@@ -2681,6 +2739,18 @@ export function SettingsWorkspace() {
             value={ruleDraft.senderDomain}
             onChange={(event) => setRuleDraft((current) => ({ ...current, senderDomain: event.target.value }))}
           />
+          <select className="input" value={ruleDraft.isActive ? "active" : "inactive"} onChange={(event) => setRuleDraft((current) => ({ ...current, isActive: event.target.value === "active" }))}>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+          <input
+            className="input"
+            min="1"
+            placeholder="Priority"
+            type="number"
+            value={ruleDraft.priority}
+            onChange={(event) => setRuleDraft((current) => ({ ...current, priority: event.target.value }))}
+          />
           <select className="input" value={ruleDraft.assignUserId} onChange={(event) => setRuleDraft((current) => ({ ...current, assignUserId: event.target.value }))}>
             <option value="">Assign technician</option>
             {users.map((user) => (
@@ -2705,9 +2775,14 @@ export function SettingsWorkspace() {
             <option value="URGENT">Urgent</option>
             <option value="CRITICAL">Critical</option>
           </select>
-          <button className="button" type="button" onClick={createRoutingRule} disabled={busy === "routing-rule"}>
-            Create Rule
+          <button className="button" type="button" onClick={submitRoutingRule} disabled={busy === "routing-rule"}>
+            {editingRoutingRuleId ? "Update Rule" : "Create Rule"}
           </button>
+          {editingRoutingRuleId ? (
+            <button className="button secondary" type="button" onClick={cancelRoutingRuleEdit} disabled={busy === "routing-rule"}>
+              Cancel
+            </button>
+          ) : null}
         </div>
         <div className="stack-list settings-section">
           {routingRules.length === 0 ? <p className="muted">No routing rules yet.</p> : null}
@@ -2728,6 +2803,15 @@ export function SettingsWorkspace() {
                 Assigned to {rule.assignUser ? `${rule.assignUser.firstName} ${rule.assignUser.lastName}` : "no technician"}
                 {rule.assignTeam ? ` / ${rule.assignTeam.name}` : ""}
               </span>
+              <span className="muted">{rule.setPriority ? `Sets priority to ${rule.setPriority.toLowerCase()}` : "Keeps current priority"}</span>
+              <div className="row-actions">
+                <button className="button secondary small-button" type="button" onClick={() => editRoutingRule(rule)} disabled={busy === rule.id}>
+                  Edit
+                </button>
+                <button className="button secondary danger-soft small-button" type="button" onClick={() => deleteRoutingRule(rule)} disabled={busy === rule.id}>
+                  Delete
+                </button>
+              </div>
             </div>
           ))}
         </div>

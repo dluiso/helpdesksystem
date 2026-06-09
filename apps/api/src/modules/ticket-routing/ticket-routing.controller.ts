@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
@@ -34,5 +34,11 @@ export class TicketRoutingController {
   @RequirePermissions("tickets.assign")
   update(@Param("ruleId") ruleId: string, @Body() body: Partial<CreateTicketRoutingRuleDto>, @CurrentUser() user: AuthenticatedUser) {
     return this.rulesService.update(ruleId, body, user);
+  }
+
+  @Delete(":ruleId")
+  @RequirePermissions("tickets.assign")
+  delete(@Param("ruleId") ruleId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.rulesService.delete(ruleId, user);
   }
 }

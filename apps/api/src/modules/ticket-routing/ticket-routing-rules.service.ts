@@ -78,6 +78,19 @@ export class TicketRoutingRulesService {
     });
   }
 
+  async delete(ruleId: string, user: AuthenticatedUser) {
+    const existing = await this.prisma.ticketRoutingRule.findFirst({
+      where: { id: ruleId, organizationId: user.organizationId }
+    });
+
+    if (!existing) {
+      throw new NotFoundException("Ticket routing rule was not found.");
+    }
+
+    await this.prisma.ticketRoutingRule.delete({ where: { id: ruleId } });
+    return { ok: true };
+  }
+
   applyToExistingTickets(user: AuthenticatedUser) {
     return this.ticketRouting.applyRulesToExistingTickets(user);
   }
