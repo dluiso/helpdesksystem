@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookOpen, Download, ExternalLink, Eye, GitMerge, RefreshCcw, Save, Search, Sparkles, X } from "lucide-react";
+import { BookOpen, Download, ExternalLink, Eye, GitMerge, RefreshCcw, Save, Search, Sparkles, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
 import { TicketReplyEditor } from "./TicketReplyEditor";
@@ -305,6 +305,26 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
     }
   }
 
+  async function deleteCurrentTicket() {
+    if (!ticket || !window.confirm(`Move ticket ${ticket.ticketNumber} to the recycle bin?`)) {
+      return;
+    }
+
+    setToolBusy("DELETE");
+    setError(null);
+    try {
+      await apiFetch("/tickets/bulk/delete", {
+        method: "POST",
+        body: JSON.stringify({ ticketIds: [ticket.id] })
+      });
+      router.push("/tickets");
+    } catch {
+      setError("Unable to move ticket to recycle bin.");
+    } finally {
+      setToolBusy(null);
+    }
+  }
+
   useEffect(() => {
     void load();
   }, [ticketId]);
@@ -452,6 +472,10 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
             <button className="button secondary full-width-button" type="button" onClick={() => blockSender("DOMAIN")} disabled={!ticket.senderDomain || toolBusy === "DOMAIN"}>
               <X size={16} aria-hidden="true" />
               <span>Block Domain</span>
+            </button>
+            <button className="button danger full-width-button" type="button" onClick={() => void deleteCurrentTicket()} disabled={toolBusy === "DELETE"}>
+              <Trash2 size={16} aria-hidden="true" />
+              <span>{toolBusy === "DELETE" ? "Deleting..." : "Delete Ticket"}</span>
             </button>
           </div>
           <div className="panel ticket-summary-panel">
