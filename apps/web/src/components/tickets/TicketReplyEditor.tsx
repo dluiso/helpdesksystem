@@ -37,6 +37,12 @@ const toolbar = [
 
 const INLINE_AUTOCOMPLETE_CLASS = "ai-inline-suggestion";
 
+function htmlToText(html: string) {
+  const container = document.createElement("div");
+  container.innerHTML = html;
+  return container.innerText.trim();
+}
+
 type ComposerAction = "send" | "send_and_close" | "save_note" | "send_note" | "send_note_and_close";
 
 interface UserSignature {
@@ -54,6 +60,7 @@ interface TicketReplyEditorProps {
 export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], onSaved }: TicketReplyEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const autocompleteRequestRef = useRef(0);
+  const signatureTextRef = useRef("");
   const [mode, setMode] = useState<"public" | "internal">("public");
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [preview, setPreview] = useState(false);
@@ -74,7 +81,11 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
     let mounted = true;
     apiFetch<UserSignature>("/profile/signature")
       .then((signature) => {
-        if (!mounted || !signature.useSignatureByDefault || !signature.htmlSignature.trim() || !editorRef.current) {
+        if (!mounted || !signature.htmlSignature.trim() || !editorRef.current) {
+          return;
+        }
+        signatureTextRef.current = htmlToText(signature.htmlSignature);
+        if (!signature.useSignatureByDefault) {
           return;
         }
         if (!editorRef.current.innerText.trim() && !editorRef.current.innerHTML.trim()) {
@@ -93,7 +104,7 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
       return;
     }
 
-    const draft = draftText.trim();
+    const draft = getAutocompleteDraft();
     if (draft.length < 35 || draft === autocompleteDismissedFor) {
       return;
     }
@@ -117,7 +128,7 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
           }
         })
         .catch(() => setAutocompleteEnabled(false));
-    }, 900);
+    }, 650);
 
     return () => window.clearTimeout(timeout);
   }, [aiBusy, autocompleteDismissedFor, autocompleteEnabled, draftText, preview, saving, ticketId]);
@@ -149,6 +160,49 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
     return clone.innerText.trim();
   }
 
+  function getTextBeforeCursor() {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    const anchorNode = selection?.anchorNode ?? null;
+    if (!editor || !selection || !anchorNode || selection.rangeCount === 0 || !selection.isCollapsed || !editor.contains(anchorNode)) {
+      return "";
+    }
+
+    const range = selection.getRangeAt(0).cloneRange();
+    range.selectNodeContents(editor);
+    range.setEnd(anchorNode, selection.anchorOffset);
+    const fragment = range.cloneContents();
+    const container = document.createElement("div");
+    container.appendChild(fragment);
+    container.querySelectorAll(`.${INLINE_AUTOCOMPLETE_CLASS}`).forEach((node) => node.remove());
+    return container.innerText.trim();
+  }
+
+  function getTextAfterCursor() {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    const anchorNode = selection?.anchorNode ?? null;
+    if (!editor || !selection || !anchorNode || selection.rangeCount === 0 || !selection.isCollapsed || !editor.contains(anchorNode)) {
+      return "";
+    }
+
+    const range = selection.getRangeAt(0).cloneRange();
+    range.selectNodeContents(editor);
+    range.setStart(anchorNode, selection.anchorOffset);
+    const fragment = range.cloneContents();
+    const container = document.createElement("div");
+    container.appendChild(fragment);
+    container.querySelectorAll(`.${INLINE_AUTOCOMPLETE_CLASS}`).forEach((node) => node.remove());
+    return container.innerText.trim();
+  }
+
+  function getAutocompleteDraft() {
+    if (!isCursorAtAutocompleteBoundary()) {
+      return "";
+    }
+    return getTextBeforeCursor();
+  }
+
   function handleEditorInput() {
     autocompleteRequestRef.current += 1;
     removeInlineAutocomplete();
@@ -164,6 +218,17 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
     getInlineAutocompleteNode()?.remove();
   }
 
+  function clearAutocomplete() {
+    autocompleteRequestRef.current += 1;
+    removeInlineAutocomplete();
+    setAutocompleteSuggestion("");
+  }
+
+  function isCursorAtAutocompleteBoundary() {
+    const textAfterCursor = getTextAfterCursor();
+    return !textAfterCursor || Boolean(signatureTextRef.current && textAfterCursor === signatureTextRef.current);
+  }
+
   function canInsertInlineAutocomplete() {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || !selection.isCollapsed || !editorRef.current?.contains(selection.anchorNode)) {
@@ -175,7 +240,7 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
       return false;
     }
 
-    return !anchorElement.closest("a, table, img, pre, blockquote");
+    return isCursorAtAutocompleteBoundary() && !anchorElement.closest("a, table, img, pre, blockquote");
   }
 
   function showInlineAutocomplete(rawSuggestion: string) {
@@ -192,8 +257,8 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
       return false;
     }
 
-    const currentText = getEditorText();
-    const prefix = currentText && !/\s$/.test(editorRef.current.innerText) && !/^[\s.,;:!?)]/.test(suggestion) ? " " : "";
+    const currentText = getTextBeforeCursor();
+    const prefix = currentText && !/\s$/.test(currentText) && !/^[\s.,;:!?)]/.test(suggestion) ? " " : "";
     const node = document.createElement("span");
     node.className = INLINE_AUTOCOMPLETE_CLASS;
     node.contentEditable = "false";
@@ -245,6 +310,13 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
       removeInlineAutocomplete();
       setAutocompleteSuggestion("");
     }
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(event.key)) {
+      clearAutocomplete();
+    }
+  }
+
+  function handleEditorMouseDown() {
+    clearAutocomplete();
   }
 
   function getSelectedText() {
@@ -547,6 +619,7 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
         ref={editorRef}
         onInput={handleEditorInput}
         onKeyDown={handleEditorKeyDown}
+        onMouseDown={handleEditorMouseDown}
         onPaste={handlePaste}
         role="textbox"
         aria-label={mode === "public" ? "Public reply body" : "Internal note body"}

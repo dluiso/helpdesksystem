@@ -182,7 +182,24 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
         method: "PATCH",
         body: JSON.stringify({ userIds: watcherIds })
       });
-      await load();
+      setTicket((current) => {
+        if (!current) {
+          return current;
+        }
+        const assignedUsers = users.filter((user) => assignedUserIds.includes(user.id));
+        const assignedTeam = ticketTeams.find((team) => team.id === assignedTeamId) ?? null;
+        const watchers = users.filter((user) => watcherIds.includes(user.id)).map((user) => ({ user }));
+
+        return {
+          ...current,
+          assignedUserId: assignedUsers[0]?.id ?? null,
+          assignedUser: assignedUsers[0] ?? null,
+          assignedTeamId: assignedTeam?.id ?? null,
+          assignedTeam,
+          assignees: assignedUsers.map((user) => ({ user })),
+          watchers
+        };
+      });
     } catch {
       setError("Unable to save assignment.");
     } finally {
