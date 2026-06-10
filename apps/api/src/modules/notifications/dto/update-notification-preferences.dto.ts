@@ -147,5 +147,13 @@ export class UpdateNotificationPreferencesDto {
 
   @IsOptional()
   @IsBoolean()
+  inAppNewEventRequestCreated?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  emailNewEventRequestCreated?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   dailyDigestEnabled?: boolean;
 }

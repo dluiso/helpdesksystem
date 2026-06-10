@@ -52,6 +52,16 @@ describe("MailboxesService", () => {
       ticketMessage: {
         findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([])
+      },
+      eventServiceMessage: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn()
+      },
+      eventServiceRequest: {
+        findFirst: jest.fn().mockResolvedValue(null)
+      },
+      eventServiceActivity: {
+        create: jest.fn()
       }
     };
     const ticketsService = {
@@ -126,6 +136,16 @@ describe("MailboxesService", () => {
       ticketMessage: {
         findFirst: jest.fn().mockResolvedValue({ id: "message-existing", ticketId: "ticket-1" }),
         findMany: jest.fn().mockResolvedValue([])
+      },
+      eventServiceMessage: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn()
+      },
+      eventServiceRequest: {
+        findFirst: jest.fn().mockResolvedValue(null)
+      },
+      eventServiceActivity: {
+        create: jest.fn()
       }
     };
     const ticketsService = {
@@ -191,6 +211,16 @@ describe("MailboxesService", () => {
         findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn()
+      },
+      eventServiceMessage: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn()
+      },
+      eventServiceRequest: {
+        findFirst: jest.fn().mockResolvedValue(null)
+      },
+      eventServiceActivity: {
+        create: jest.fn()
       }
     };
     const ticketsService = {
@@ -294,6 +324,16 @@ describe("MailboxesService", () => {
           }
         ]),
         update: jest.fn()
+      },
+      eventServiceMessage: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn()
+      },
+      eventServiceRequest: {
+        findFirst: jest.fn().mockResolvedValue(null)
+      },
+      eventServiceActivity: {
+        create: jest.fn()
       }
     };
     const ticketAttachmentsService = {

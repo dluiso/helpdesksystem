@@ -53,6 +53,14 @@ interface EventTurnstileSettings {
   eventTurnstileSecretReference: string | null;
 }
 
+interface EventCalendarSettings {
+  eventCalendarSyncEnabled: boolean;
+  eventCalendarTenantId: string | null;
+  eventCalendarClientId: string | null;
+  eventCalendarClientSecretReference: string | null;
+  eventCalendarDefaultTimeZone: string | null;
+}
+
 const fieldTypes = ["TEXT", "TEXTAREA", "EMAIL", "PHONE", "DATE", "TIME", "SELECT", "MULTI_SELECT", "CHECKBOX", "RADIO", "NUMBER"];
 const optionFieldTypes = new Set(["SELECT", "MULTI_SELECT", "CHECKBOX", "RADIO"]);
 
@@ -134,7 +142,7 @@ function fieldToDraft(field: EventFormField): FieldDraft {
 }
 
 export function EventServicesConfigPanel() {
-  const [activeTab, setActiveTab] = useState<"form" | "preview" | "turnstile">("form");
+  const [activeTab, setActiveTab] = useState<"form" | "preview" | "turnstile" | "calendar">("form");
   const [services, setServices] = useState<EventServiceCatalogItem[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [teams, setTeams] = useState<TicketTeam[]>([]);
@@ -143,6 +151,13 @@ export function EventServicesConfigPanel() {
     eventTurnstileEnabled: false,
     eventTurnstileSiteKey: "",
     eventTurnstileSecretReference: "env:EVENT_TURNSTILE_SECRET_KEY"
+  });
+  const [calendarSettings, setCalendarSettings] = useState<EventCalendarSettings>({
+    eventCalendarSyncEnabled: false,
+    eventCalendarTenantId: "",
+    eventCalendarClientId: "",
+    eventCalendarClientSecretReference: "env:MICROSOFT_CLIENT_SECRET",
+    eventCalendarDefaultTimeZone: "America/Chicago"
   });
   const [serviceDraft, setServiceDraft] = useState<ServiceDraft>(blankServiceDraft);
   const [serviceEdits, setServiceEdits] = useState<Record<string, ServiceDraft>>({});
@@ -160,10 +175,11 @@ export function EventServicesConfigPanel() {
   async function loadConfig() {
     setError(null);
     try {
-      const [serviceData, formData, turnstileData, userData, teamData] = await Promise.all([
+      const [serviceData, formData, turnstileData, calendarData, userData, teamData] = await Promise.all([
         apiFetch<EventServiceCatalogItem[]>("/event-services/services"),
         apiFetch<EventForm>("/event-services/form"),
         apiFetch<EventTurnstileSettings>("/event-services/config/turnstile"),
+        apiFetch<EventCalendarSettings>("/event-services/config/calendar"),
         apiFetch<UserOption[]>("/users"),
         apiFetch<TicketTeam[]>("/ticket-teams")
       ]);
@@ -175,6 +191,13 @@ export function EventServicesConfigPanel() {
         eventTurnstileEnabled: turnstileData.eventTurnstileEnabled,
         eventTurnstileSiteKey: turnstileData.eventTurnstileSiteKey ?? "",
         eventTurnstileSecretReference: turnstileData.eventTurnstileSecretReference ?? "env:EVENT_TURNSTILE_SECRET_KEY"
+      });
+      setCalendarSettings({
+        eventCalendarSyncEnabled: calendarData.eventCalendarSyncEnabled,
+        eventCalendarTenantId: calendarData.eventCalendarTenantId ?? "",
+        eventCalendarClientId: calendarData.eventCalendarClientId ?? "",
+        eventCalendarClientSecretReference: calendarData.eventCalendarClientSecretReference ?? "env:MICROSOFT_CLIENT_SECRET",
+        eventCalendarDefaultTimeZone: calendarData.eventCalendarDefaultTimeZone ?? "America/Chicago"
       });
       setServiceDraft((current) => ({ ...current, sortOrder: Math.max(10, Math.max(0, ...serviceData.map((service) => service.sortOrder)) + 10) }));
       setFieldDraft((current) => ({ ...current, sortOrder: Math.max(10, Math.max(0, ...formData.fields.map((field) => field.sortOrder)) + 10) }));
@@ -314,6 +337,29 @@ export function EventServicesConfigPanel() {
     }
   }
 
+  async function saveCalendarSettings() {
+    setBusy("calendar");
+    setError(null);
+    try {
+      const saved = await apiFetch<EventCalendarSettings>("/event-services/config/calendar", {
+        method: "PATCH",
+        body: JSON.stringify(calendarSettings)
+      });
+      setCalendarSettings({
+        eventCalendarSyncEnabled: saved.eventCalendarSyncEnabled,
+        eventCalendarTenantId: saved.eventCalendarTenantId ?? "",
+        eventCalendarClientId: saved.eventCalendarClientId ?? "",
+        eventCalendarClientSecretReference: saved.eventCalendarClientSecretReference ?? "env:MICROSOFT_CLIENT_SECRET",
+        eventCalendarDefaultTimeZone: saved.eventCalendarDefaultTimeZone ?? "America/Chicago"
+      });
+      setNotice("Event calendar sync settings saved.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to save event calendar sync settings.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   function updateServiceEdit(serviceId: string, patch: Partial<ServiceDraft>) {
     setServiceEdits((current) => ({ ...current, [serviceId]: { ...(current[serviceId] ?? blankServiceDraft), ...patch } }));
   }
@@ -385,6 +431,10 @@ export function EventServicesConfigPanel() {
         <button className={activeTab === "turnstile" ? "active" : ""} type="button" onClick={() => setActiveTab("turnstile")}>
           <ShieldCheck size={16} aria-hidden="true" />
           Cloudflare Turnstile
+        </button>
+        <button className={activeTab === "calendar" ? "active" : ""} type="button" onClick={() => setActiveTab("calendar")}>
+          <SlidersHorizontal size={16} aria-hidden="true" />
+          Calendar Sync
         </button>
       </div>
 
@@ -564,6 +614,42 @@ export function EventServicesConfigPanel() {
           </div>
           <p className="muted">Production example: add EVENT_TURNSTILE_SECRET_KEY to .env.production, then save env:EVENT_TURNSTILE_SECRET_KEY here.</p>
           <button className="button" type="button" onClick={saveTurnstile} disabled={busy === "turnstile"}>Save Events Turnstile</button>
+        </div>
+      ) : null}
+
+      {activeTab === "calendar" ? (
+        <div className="nested-panel settings-section">
+          <div className="section-heading">
+            <div>
+              <h3>Microsoft Calendar Sync</h3>
+              <p className="muted">Allow event tasks to be added to the assigned specialist's Microsoft calendar on demand.</p>
+            </div>
+            <span className="status-pill">{calendarSettings.eventCalendarSyncEnabled ? "Enabled" : "Disabled"}</span>
+          </div>
+          <label className="checkbox-row">
+            <input type="checkbox" checked={calendarSettings.eventCalendarSyncEnabled} onChange={(event) => setCalendarSettings((current) => ({ ...current, eventCalendarSyncEnabled: event.target.checked }))} />
+            Enable task calendar sync
+          </label>
+          <div className="grid columns-2">
+            <label className="field">
+              <span>Tenant ID</span>
+              <input className="input" value={calendarSettings.eventCalendarTenantId ?? ""} onChange={(event) => setCalendarSettings((current) => ({ ...current, eventCalendarTenantId: event.target.value }))} />
+            </label>
+            <label className="field">
+              <span>Client ID</span>
+              <input className="input" value={calendarSettings.eventCalendarClientId ?? ""} onChange={(event) => setCalendarSettings((current) => ({ ...current, eventCalendarClientId: event.target.value }))} />
+            </label>
+            <label className="field">
+              <span>Client secret reference</span>
+              <input className="input" placeholder="env:MICROSOFT_CLIENT_SECRET" value={calendarSettings.eventCalendarClientSecretReference ?? ""} onChange={(event) => setCalendarSettings((current) => ({ ...current, eventCalendarClientSecretReference: event.target.value }))} />
+            </label>
+            <label className="field">
+              <span>Default timezone</span>
+              <input className="input" value={calendarSettings.eventCalendarDefaultTimeZone ?? "America/Chicago"} onChange={(event) => setCalendarSettings((current) => ({ ...current, eventCalendarDefaultTimeZone: event.target.value }))} />
+            </label>
+          </div>
+          <p className="muted">Use environment variable references for secrets. Calendar events are created only when a specialist chooses to sync a task.</p>
+          <button className="button" type="button" onClick={saveCalendarSettings} disabled={busy === "calendar"}>Save Calendar Sync</button>
         </div>
       ) : null}
     </section>

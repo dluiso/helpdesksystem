@@ -6,9 +6,12 @@ import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
 import { RequirePermissions } from "../permissions/decorators/require-permissions.decorator";
 import { PermissionsGuard } from "../permissions/guards/permissions.guard";
 import { CreateEventServiceCommentDto } from "./dto/create-event-service-comment.dto";
+import { CreateEventServiceMessageDto } from "./dto/create-event-service-message.dto";
 import { CreateEventServiceTaskDto } from "./dto/create-event-service-task.dto";
 import { CreatePublicEventServiceRequestDto } from "./dto/create-public-event-service-request.dto";
 import { ListEventServiceRequestsDto } from "./dto/list-event-service-requests.dto";
+import { SyncEventServiceTaskCalendarDto } from "./dto/sync-event-service-task-calendar.dto";
+import { UpdateEventServiceCalendarSettingsDto } from "./dto/update-event-service-calendar-settings.dto";
 import { UpdateEventServiceTurnstileDto } from "./dto/update-event-service-turnstile.dto";
 import { UpdateEventServiceRequestDto } from "./dto/update-event-service-request.dto";
 import { UpdateEventServiceTaskDto } from "./dto/update-event-service-task.dto";
@@ -98,6 +101,20 @@ export class EventServicesController {
     return this.eventServices.updateTurnstileConfig(user, body);
   }
 
+  @Get("event-services/config/calendar")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.manage_forms")
+  getCalendarConfig(@CurrentUser() user: AuthenticatedUser) {
+    return this.eventServices.getCalendarSettings(user);
+  }
+
+  @Patch("event-services/config/calendar")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.manage_forms")
+  updateCalendarConfig(@CurrentUser() user: AuthenticatedUser, @Body() body: UpdateEventServiceCalendarSettingsDto) {
+    return this.eventServices.updateCalendarSettings(user, body);
+  }
+
   @Post("event-services/services")
   @UseGuards(SessionAuthGuard, PermissionsGuard)
   @RequirePermissions("event_services.manage_forms")
@@ -161,10 +178,24 @@ export class EventServicesController {
     return this.eventServices.updateTask(requestId, taskId, user, body);
   }
 
+  @Post("event-services/:requestId/tasks/:taskId/calendar")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.update")
+  syncTaskCalendar(@Param("requestId") requestId: string, @Param("taskId") taskId: string, @CurrentUser() user: AuthenticatedUser, @Body() body: SyncEventServiceTaskCalendarDto) {
+    return this.eventServices.syncTaskToCalendar(requestId, taskId, user, body);
+  }
+
   @Post("event-services/:requestId/comments")
   @UseGuards(SessionAuthGuard, PermissionsGuard)
   @RequirePermissions("event_services.update")
   addComment(@Param("requestId") requestId: string, @CurrentUser() user: AuthenticatedUser, @Body() body: CreateEventServiceCommentDto) {
     return this.eventServices.addComment(requestId, user, body);
+  }
+
+  @Post("event-services/:requestId/messages")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.update")
+  sendMessage(@Param("requestId") requestId: string, @CurrentUser() user: AuthenticatedUser, @Body() body: CreateEventServiceMessageDto) {
+    return this.eventServices.sendMessage(requestId, user, body);
   }
 }

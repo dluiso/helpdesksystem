@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { AutoReplyScope, MessageDirection, MessageVisibility } from "@prisma/client";
+import { AutoReplyScope, AutoReplyTemplateType, AutoReplyTrigger, MessageDirection, MessageVisibility } from "@prisma/client";
 import { HtmlSanitizerService } from "../../common/html/html-sanitizer.service";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { MailDeliveryService } from "../mailboxes/mail-delivery.service";
@@ -37,6 +37,8 @@ export class AutoRepliesService {
         organizationId: user.organizationId,
         name: input.name.trim(),
         scope: input.scope,
+        templateType: input.templateType ?? AutoReplyTemplateType.TICKET,
+        trigger: input.trigger ?? AutoReplyTrigger.TICKET_CREATED,
         clientId: input.scope === AutoReplyScope.CLIENT ? input.clientId ?? null : null,
         mailboxId: input.mailboxId ?? null,
         subject: input.subject.trim(),
@@ -66,6 +68,8 @@ export class AutoRepliesService {
       data: {
         ...(input.name !== undefined ? { name: input.name.trim() } : {}),
         ...(input.scope !== undefined ? { scope: input.scope } : {}),
+        ...(input.templateType !== undefined ? { templateType: input.templateType } : {}),
+        ...(input.trigger !== undefined ? { trigger: input.trigger } : {}),
         ...(input.clientId !== undefined || input.scope !== undefined ? { clientId: nextScope === AutoReplyScope.CLIENT ? nextClientId : null } : {}),
         ...(input.mailboxId !== undefined ? { mailboxId: nextMailboxId } : {}),
         ...(input.subject !== undefined ? { subject: input.subject.trim() } : {}),
@@ -201,6 +205,184 @@ export class AutoRepliesService {
     }
   }
 
+  async sendForNewEventRequest(input: {
+    organizationId: string;
+    requestId: string;
+  }) {
+    try {
+      const request = await this.prisma.eventServiceRequest.findFirst({
+        where: { id: input.requestId, organizationId: input.organizationId },
+        include: {
+          client: true,
+          services: { include: { service: true }, orderBy: { service: { name: "asc" } } }
+        }
+      });
+
+      if (!request) {
+        return { sent: false, reason: "event_request_not_found" };
+      }
+
+      const threadKey = request.trackingNumber;
+      if (this.shouldSuppressAutoReply({ senderEmail: request.requesterEmail, threadKey })) {
+        return { sent: false, reason: "suppressed" };
+      }
+
+      if (await this.hasRecentAutoReply(request.requesterEmail, threadKey)) {
+        return { sent: false, reason: "recent_auto_reply_exists" };
+      }
+
+      const template = await this.findTemplateForEvent(input.organizationId, request.clientId, AutoReplyTrigger.EVENT_REQUEST_CREATED);
+      if (!template) {
+        return { sent: false, reason: "no_template" };
+      }
+
+      const settings = await this.prisma.systemSetting.findUnique({ where: { organizationId: input.organizationId } });
+      const eventUrl = `${process.env.APP_URL ?? "https://helpdesk.aviditytechnologies.com"}/event-services/${encodeURIComponent(request.trackingNumber)}`;
+      const services = request.services.map((item) => item.service.name).join(", ");
+      const variables = {
+        "event.trackingNumber": request.trackingNumber,
+        "event.name": request.eventName,
+        "event.date": request.eventDate ? request.eventDate.toLocaleDateString("en-US", { timeZone: settings?.defaultTimezone ?? "America/Chicago" }) : "",
+        "event.time": `${request.startTime ?? ""}${request.endTime ? ` - ${request.endTime}` : ""}`.trim(),
+        "event.venue": request.venue ?? "",
+        "event.services": services,
+        "event.url": eventUrl,
+        "requester.firstName": request.requesterFirstName,
+        "requester.lastName": request.requesterLastName,
+        "client.name": request.client?.name ?? "your organization",
+        "company.name": settings?.companyName ?? "Support",
+        "support.email": settings?.supportEmail ?? "support"
+      };
+      const bodyHtml = this.htmlSanitizer.sanitize(this.renderTemplate(template.bodyHtml, variables));
+      const bodyText = this.renderTemplate(template.bodyText, variables);
+      const subject = this.renderTemplate(template.subject, variables);
+
+      const sendResult = await this.mailDelivery.sendTicketReply({
+        organizationId: input.organizationId,
+        to: [request.requesterEmail],
+        subject,
+        bodyHtml,
+        bodyText
+      });
+
+      if (!sendResult) {
+        return { sent: false, reason: "outbound_disabled" };
+      }
+
+      const message = await this.prisma.eventServiceMessage.create({
+        data: {
+          requestId: request.id,
+          direction: MessageDirection.OUTBOUND,
+          visibility: MessageVisibility.PUBLIC,
+          bodyText,
+          bodyHtml,
+          sanitizedBodyHtml: bodyHtml,
+          emailMessageId: sendResult.providerMessageId,
+          emailInternetMessageId: sendResult.internetMessageId ?? null,
+          emailConversationId: sendResult.conversationId ?? null
+        }
+      });
+
+      await this.prisma.autoReplyHistory.create({
+        data: {
+          templateId: template.id,
+          eventServiceRequestId: request.id,
+          recipientEmail: request.requesterEmail.toLowerCase(),
+          threadKey,
+          metadata: {
+            trackingNumber: request.trackingNumber,
+            eventServiceMessageId: message.id,
+            providerMessageId: sendResult.providerMessageId
+          }
+        }
+      });
+
+      return { sent: true, templateId: template.id, messageId: message.id };
+    } catch (error) {
+      return { sent: false, reason: error instanceof Error ? error.message : "event_auto_reply_failed" };
+    }
+  }
+
+  async sendForEventStatusChange(input: {
+    organizationId: string;
+    requestId: string;
+    status: string;
+  }) {
+    try {
+      const request = await this.prisma.eventServiceRequest.findFirst({
+        where: { id: input.requestId, organizationId: input.organizationId },
+        include: {
+          client: true,
+          services: { include: { service: true }, orderBy: { service: { name: "asc" } } }
+        }
+      });
+      if (!request) {
+        return { sent: false, reason: "event_request_not_found" };
+      }
+
+      const template = await this.findTemplateForEvent(input.organizationId, request.clientId, AutoReplyTrigger.EVENT_STATUS_CHANGED);
+      if (!template) {
+        return { sent: false, reason: "no_template" };
+      }
+
+      const settings = await this.prisma.systemSetting.findUnique({ where: { organizationId: input.organizationId } });
+      const appUrl = (process.env.APP_URL ?? "https://helpdesk.aviditytechnologies.com").replace(/\/+$/, "");
+      const variables = {
+        "event.trackingNumber": request.trackingNumber,
+        "event.name": request.eventName,
+        "event.status": input.status.toLowerCase().replace(/_/g, " "),
+        "event.date": request.eventDate ? request.eventDate.toLocaleDateString("en-US", { timeZone: settings?.defaultTimezone ?? "America/Chicago" }) : "",
+        "event.time": `${request.startTime ?? ""}${request.endTime ? ` - ${request.endTime}` : ""}`.trim(),
+        "event.venue": request.venue ?? "",
+        "event.services": request.services.map((item) => item.service.name).join(", "),
+        "event.url": `${appUrl}/event-services/${encodeURIComponent(request.trackingNumber)}`,
+        "requester.firstName": request.requesterFirstName,
+        "requester.lastName": request.requesterLastName,
+        "client.name": request.client?.name ?? "your organization",
+        "company.name": settings?.companyName ?? "Support",
+        "support.email": settings?.supportEmail ?? "support"
+      };
+      const bodyHtml = this.htmlSanitizer.sanitize(this.renderTemplate(template.bodyHtml, variables));
+      const bodyText = this.renderTemplate(template.bodyText, variables);
+      const subject = this.renderTemplate(template.subject, variables);
+      const sendResult = await this.mailDelivery.sendTicketReply({
+        organizationId: input.organizationId,
+        to: [request.requesterEmail],
+        subject,
+        bodyHtml,
+        bodyText
+      });
+      if (!sendResult) {
+        return { sent: false, reason: "outbound_disabled" };
+      }
+      const message = await this.prisma.eventServiceMessage.create({
+        data: {
+          requestId: request.id,
+          direction: MessageDirection.OUTBOUND,
+          visibility: MessageVisibility.PUBLIC,
+          bodyText,
+          bodyHtml,
+          sanitizedBodyHtml: bodyHtml,
+          emailMessageId: sendResult.providerMessageId,
+          emailInternetMessageId: sendResult.internetMessageId ?? null,
+          emailConversationId: sendResult.conversationId ?? null
+        }
+      });
+      await this.prisma.autoReplyHistory.create({
+        data: {
+          templateId: template.id,
+          eventServiceRequestId: request.id,
+          recipientEmail: request.requesterEmail.toLowerCase(),
+          threadKey: `${request.trackingNumber}:status:${input.status}`,
+          metadata: { trackingNumber: request.trackingNumber, status: input.status, eventServiceMessageId: message.id }
+        }
+      });
+      return { sent: true, templateId: template.id, messageId: message.id };
+    } catch (error) {
+      return { sent: false, reason: error instanceof Error ? error.message : "event_status_auto_reply_failed" };
+    }
+  }
+
   shouldSuppressAutoReply(input: { senderEmail: string; autoSubmittedHeader?: string | null; threadKey?: string | null }) {
     const sender = input.senderEmail.trim().toLowerCase();
     const header = input.autoSubmittedHeader?.trim().toLowerCase();
@@ -234,6 +416,8 @@ export class AutoRepliesService {
       where: {
         organizationId,
         isActive: true,
+        templateType: AutoReplyTemplateType.TICKET,
+        trigger: AutoReplyTrigger.TICKET_CREATED,
         OR: [
           ...(clientId ? [{ scope: AutoReplyScope.CLIENT, clientId }] : []),
           { scope: AutoReplyScope.GLOBAL, clientId: null }
@@ -249,6 +433,24 @@ export class AutoRepliesService {
       templates.find((template) => template.scope === AutoReplyScope.GLOBAL && !template.mailboxId) ??
       null
     );
+  }
+
+  private async findTemplateForEvent(organizationId: string, clientId: string | null, trigger: AutoReplyTrigger) {
+    const templates = await this.prisma.autoReplyTemplate.findMany({
+      where: {
+        organizationId,
+        isActive: true,
+        templateType: AutoReplyTemplateType.EVENT_SERVICE,
+        trigger,
+        OR: [
+          ...(clientId ? [{ scope: AutoReplyScope.CLIENT, clientId }] : []),
+          { scope: AutoReplyScope.GLOBAL, clientId: null }
+        ]
+      },
+      orderBy: [{ scope: "desc" }, { updatedAt: "desc" }]
+    });
+
+    return templates.find((template) => template.scope === AutoReplyScope.CLIENT) ?? templates.find((template) => template.scope === AutoReplyScope.GLOBAL) ?? null;
   }
 
   private renderTemplate(template: string, variables: Record<string, string>) {

@@ -15,6 +15,7 @@ export type NotificationEventType =
   | "routingRuleMatched"
   | "ticketReopened"
   | "newTicketCreated"
+  | "newEventRequestCreated"
   | "eventAssignedToMe"
   | "eventRequestUpdated"
   | "eventTaskAssignedToMe"
@@ -41,6 +42,7 @@ const EVENT_CHANNEL_FIELDS: Record<NotificationEventType, { inApp: keyof UpdateN
   routingRuleMatched: { inApp: "inAppRoutingRuleMatched", email: "emailRoutingRuleMatched", legacy: "routingRuleMatched" },
   ticketReopened: { inApp: "inAppTicketReopened", email: "emailTicketReopened", legacy: "ticketReopened" },
   newTicketCreated: { inApp: "inAppNewTicketCreated", email: "emailNewTicketCreated", legacy: "newTicketCreated" },
+  newEventRequestCreated: { inApp: "inAppNewEventRequestCreated", email: "emailNewEventRequestCreated" },
   eventAssignedToMe: { inApp: "inAppEventAssignedToMe", email: "emailEventAssignedToMe" },
   eventRequestUpdated: { inApp: "inAppEventRequestUpdated", email: "emailEventRequestUpdated" },
   eventTaskAssignedToMe: { inApp: "inAppEventTaskAssignedToMe", email: "emailEventTaskAssignedToMe" },
@@ -155,6 +157,58 @@ export class NotificationsService {
           title: `New ticket created: ${ticket.ticketNumber}`,
           body: `${ticket.subject}\nRequester: ${requester}\nClient: ${clientName}`,
           metadata: { ticketNumber: ticket.ticketNumber }
+        })
+      )
+    );
+
+    return { notified: userIds.length };
+  }
+
+  async notifyNewEventRequestCreated(input: { requestId: string; organizationId: string }) {
+    const request = await this.prisma.eventServiceRequest.findFirst({
+      where: { id: input.requestId, organizationId: input.organizationId, deletedAt: null },
+      select: {
+        id: true,
+        trackingNumber: true,
+        eventName: true,
+        requesterFirstName: true,
+        requesterLastName: true,
+        requesterEmail: true,
+        client: { select: { name: true } }
+      }
+    });
+    if (!request) {
+      return { notified: 0 };
+    }
+
+    const preferences = await this.prisma.userNotificationPreference.findMany({
+      where: {
+        OR: [{ inAppNewEventRequestCreated: true }, { emailNewEventRequestCreated: true }],
+        user: {
+          organizationId: input.organizationId,
+          isActive: true,
+          deletedAt: null
+        }
+      },
+      select: { userId: true }
+    });
+    const userIds = [...new Set(preferences.map((preference) => preference.userId))];
+    const requester = `${request.requesterFirstName} ${request.requesterLastName}`.trim() || request.requesterEmail;
+    const clientName = request.client?.name ?? "Unmapped / no client";
+
+    await Promise.all(
+      userIds.map((userId) =>
+        this.notifyUser({
+          userId,
+          eventServiceRequestId: request.id,
+          eventType: "newEventRequestCreated",
+          title: `New event request: ${request.trackingNumber}`,
+          body: `${request.eventName}\nRequester: ${requester}\nClient: ${clientName}`,
+          metadata: {
+            entityType: "EventServiceRequest",
+            requestId: request.id,
+            trackingNumber: request.trackingNumber
+          }
         })
       )
     );
@@ -284,6 +338,8 @@ export class NotificationsService {
       emailEventTaskAssignedToMe: false,
       emailEventTaskUpdated: false,
       emailEventCommentAdded: false,
+      inAppNewEventRequestCreated: true,
+      emailNewEventRequestCreated: false,
       dailyDigestEnabled: false,
       createdAt: null,
       updatedAt: null
@@ -573,6 +629,7 @@ export class NotificationsService {
       routingRuleMatched: "Routing rule matched",
       ticketReopened: "Ticket reopened",
       newTicketCreated: "New ticket created",
+      newEventRequestCreated: "New event request created",
       eventAssignedToMe: "Event assigned to me",
       eventRequestUpdated: "Event request updated",
       eventTaskAssignedToMe: "Event task assigned to me",

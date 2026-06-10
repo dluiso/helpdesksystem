@@ -135,6 +135,8 @@ interface AutoReplyTemplate {
   id: string;
   name: string;
   scope: "GLOBAL" | "CLIENT" | "MAILBOX" | "AFTER_HOURS" | "PRIORITY";
+  templateType: "TICKET" | "EVENT_SERVICE";
+  trigger: "TICKET_CREATED" | "EVENT_REQUEST_CREATED" | "EVENT_STATUS_CHANGED";
   clientId: string | null;
   mailboxId: string | null;
   subject: string;
@@ -184,6 +186,8 @@ interface NotificationPreference {
   emailEventTaskAssignedToMe: boolean;
   emailEventTaskUpdated: boolean;
   emailEventCommentAdded: boolean;
+  inAppNewEventRequestCreated: boolean;
+  emailNewEventRequestCreated: boolean;
   dailyDigestEnabled: boolean;
 }
 
@@ -349,7 +353,7 @@ const AI_PROVIDER_LABELS: Record<string, string> = {
   MOCK: "Mock"
 };
 
-const NOTIFICATION_FIELDS: Array<{ label: string; inAppKey: keyof NotificationPreference; emailKey: keyof NotificationPreference }> = [
+const TICKET_NOTIFICATION_FIELDS: Array<{ label: string; inAppKey: keyof NotificationPreference; emailKey: keyof NotificationPreference }> = [
   { label: "New ticket created", inAppKey: "inAppNewTicketCreated", emailKey: "emailNewTicketCreated" },
   { label: "Assigned to me", inAppKey: "inAppTicketAssignedToMe", emailKey: "emailTicketAssignedToMe" },
   { label: "Assigned to my team", inAppKey: "inAppTicketAssignedToMyTeam", emailKey: "emailTicketAssignedToMyTeam" },
@@ -357,7 +361,11 @@ const NOTIFICATION_FIELDS: Array<{ label: string; inAppKey: keyof NotificationPr
   { label: "Internal note on assigned ticket", inAppKey: "inAppInternalNoteOnAssignedTicket", emailKey: "emailInternalNoteOnAssignedTicket" },
   { label: "Mentioned on internal note", inAppKey: "inAppInternalNoteMention", emailKey: "emailInternalNoteMention" },
   { label: "Routing rule matched", inAppKey: "inAppRoutingRuleMatched", emailKey: "emailRoutingRuleMatched" },
-  { label: "Ticket reopened", inAppKey: "inAppTicketReopened", emailKey: "emailTicketReopened" },
+  { label: "Ticket reopened", inAppKey: "inAppTicketReopened", emailKey: "emailTicketReopened" }
+];
+
+const EVENT_NOTIFICATION_FIELDS: Array<{ label: string; inAppKey: keyof NotificationPreference; emailKey: keyof NotificationPreference }> = [
+  { label: "New event request created", inAppKey: "inAppNewEventRequestCreated", emailKey: "emailNewEventRequestCreated" },
   { label: "Event assigned to me", inAppKey: "inAppEventAssignedToMe", emailKey: "emailEventAssignedToMe" },
   { label: "Event request updated", inAppKey: "inAppEventRequestUpdated", emailKey: "emailEventRequestUpdated" },
   { label: "Event task assigned to me", inAppKey: "inAppEventTaskAssignedToMe", emailKey: "emailEventTaskAssignedToMe" },
@@ -478,6 +486,37 @@ function normalizeSyncIntervalSeconds(value: string, unit: "seconds" | "minutes"
   return Math.min(86400, Math.max(30, seconds));
 }
 
+function displayLabel(value: string) {
+  return value.toLowerCase().replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function NotificationPreferenceGroup({
+  row,
+  fields,
+  onChange
+}: {
+  row: UserNotificationPreferenceRow;
+  fields: Array<{ label: string; inAppKey: keyof NotificationPreference; emailKey: keyof NotificationPreference }>;
+  onChange: (userId: string, key: keyof NotificationPreference, value: boolean) => void;
+}) {
+  return (
+    <div className="notification-preference-group">
+      <div className="notification-preference-header">
+        <span>Event</span>
+        <span>In-app</span>
+        <span>Email</span>
+      </div>
+      {fields.map((field) => (
+        <div className="notification-preference-row" key={field.label}>
+          <span>{field.label}</span>
+          <input type="checkbox" checked={Boolean(row.notificationPreference[field.inAppKey])} onChange={(event) => onChange(row.id, field.inAppKey, event.target.checked)} aria-label={`${field.label} in-app`} />
+          <input type="checkbox" checked={Boolean(row.notificationPreference[field.emailKey])} onChange={(event) => onChange(row.id, field.emailKey, event.target.checked)} aria-label={`${field.label} email`} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function SettingsWorkspace() {
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -559,6 +598,8 @@ export function SettingsWorkspace() {
   const [autoReplyDraft, setAutoReplyDraft] = useState({
     name: "",
     scope: "GLOBAL" as "GLOBAL" | "CLIENT",
+    templateType: "TICKET" as "TICKET" | "EVENT_SERVICE",
+    trigger: "TICKET_CREATED" as "TICKET_CREATED" | "EVENT_REQUEST_CREATED" | "EVENT_STATUS_CHANGED",
     clientId: "",
     mailboxId: "",
     subject: "Re: {{ticket.subject}}",
@@ -1313,6 +1354,8 @@ export function SettingsWorkspace() {
     setAutoReplyDraft({
       name: "",
       scope: "GLOBAL",
+      templateType: "TICKET",
+      trigger: "TICKET_CREATED",
       clientId: "",
       mailboxId: "",
       subject: "Re: {{ticket.subject}}",
@@ -1330,6 +1373,8 @@ export function SettingsWorkspace() {
     setAutoReplyDraft({
       name: template.name,
       scope: template.scope === "CLIENT" ? "CLIENT" : "GLOBAL",
+      templateType: template.templateType ?? "TICKET",
+      trigger: template.trigger ?? "TICKET_CREATED",
       clientId: template.clientId ?? "",
       mailboxId: template.mailboxId ?? "",
       subject: template.subject,
@@ -1356,6 +1401,8 @@ export function SettingsWorkspace() {
       const payload = {
         name: autoReplyDraft.name,
         scope: autoReplyDraft.scope,
+        templateType: autoReplyDraft.templateType,
+        trigger: autoReplyDraft.trigger,
         clientId: autoReplyDraft.scope === "CLIENT" ? autoReplyDraft.clientId : null,
         mailboxId: autoReplyDraft.mailboxId || null,
         subject: autoReplyDraft.subject,
@@ -1458,6 +1505,8 @@ export function SettingsWorkspace() {
           emailEventTaskAssignedToMe: preference.emailEventTaskAssignedToMe,
           emailEventTaskUpdated: preference.emailEventTaskUpdated,
           emailEventCommentAdded: preference.emailEventCommentAdded,
+          inAppNewEventRequestCreated: preference.inAppNewEventRequestCreated,
+          emailNewEventRequestCreated: preference.emailNewEventRequestCreated,
           dailyDigestEnabled: preference.dailyDigestEnabled
         })
       });
@@ -2492,6 +2541,31 @@ export function SettingsWorkspace() {
                     </select>
                     <select
                       className="input"
+                      value={autoReplyDraft.templateType}
+                      onChange={(event) =>
+                        setAutoReplyDraft((current) => ({
+                          ...current,
+                          templateType: event.target.value as "TICKET" | "EVENT_SERVICE",
+                          trigger: event.target.value === "EVENT_SERVICE" ? "EVENT_REQUEST_CREATED" : "TICKET_CREATED",
+                          subject: event.target.value === "EVENT_SERVICE" ? "Event request received: {{event.trackingNumber}}" : "Re: {{ticket.subject}}"
+                        }))
+                      }
+                    >
+                      <option value="TICKET">Ticket auto-reply</option>
+                      <option value="EVENT_SERVICE">Event Services auto-reply</option>
+                    </select>
+                    <select className="input" value={autoReplyDraft.trigger} onChange={(event) => setAutoReplyDraft((current) => ({ ...current, trigger: event.target.value as typeof autoReplyDraft.trigger }))}>
+                      {autoReplyDraft.templateType === "EVENT_SERVICE" ? (
+                        <>
+                          <option value="EVENT_REQUEST_CREATED">New event request</option>
+                          <option value="EVENT_STATUS_CHANGED">Event status changed</option>
+                        </>
+                      ) : (
+                        <option value="TICKET_CREATED">New ticket created</option>
+                      )}
+                    </select>
+                    <select
+                      className="input"
                       value={autoReplyDraft.clientId}
                       onChange={(event) => setAutoReplyDraft((current) => ({ ...current, clientId: event.target.value }))}
                       disabled={autoReplyDraft.scope !== "CLIENT"}
@@ -2526,7 +2600,7 @@ export function SettingsWorkspace() {
                     <textarea className="input" rows={7} value={autoReplyDraft.bodyHtml} onChange={(event) => setAutoReplyDraft((current) => ({ ...current, bodyHtml: event.target.value }))} />
                   </label>
                   <p className="muted">
-                    Variables: {"{{ticket.number}}"}, {"{{ticket.subject}}"}, {"{{client.name}}"}, {"{{contact.firstName}}"}, {"{{contact.lastName}}"}, {"{{company.name}}"}, {"{{support.email}}"}
+                    Variables: {"{{ticket.number}}"}, {"{{ticket.subject}}"}, {"{{event.trackingNumber}}"}, {"{{event.name}}"}, {"{{event.date}}"}, {"{{event.time}}"}, {"{{event.services}}"}, {"{{event.url}}"}, {"{{requester.firstName}}"}, {"{{client.name}}"}, {"{{company.name}}"}, {"{{support.email}}"}
                   </p>
                   <div className="form-actions">
                     <button className="button" type="button" onClick={saveAutoReplyTemplate} disabled={busy === "auto-reply"}>
@@ -2551,6 +2625,7 @@ export function SettingsWorkspace() {
                   <thead>
                     <tr>
                       <th>Name</th>
+                      <th>Type</th>
                       <th>Scope</th>
                       <th>Client</th>
                       <th>Mailbox</th>
@@ -2562,13 +2637,17 @@ export function SettingsWorkspace() {
                   <tbody>
                     {autoReplyTemplates.length === 0 ? (
                       <tr>
-                        <td colSpan={7}>No auto-reply templates configured.</td>
+                        <td colSpan={8}>No auto-reply templates configured.</td>
                       </tr>
                     ) : null}
                     {autoReplyTemplates.map((template) => (
                       <tr key={template.id}>
                         <td>
                           <strong>{template.name}</strong>
+                        </td>
+                        <td>
+                          <span className="status-pill">{template.templateType === "EVENT_SERVICE" ? "Event Services" : "Tickets"}</span>
+                          <span className="muted">{displayLabel(template.trigger)}</span>
                         </td>
                         <td>{template.scope === "CLIENT" ? "Client" : "Global"}</td>
                         <td>{template.client?.name ?? "All clients"}</td>
@@ -2867,7 +2946,7 @@ export function SettingsWorkspace() {
               <div className="section-heading">
                 <div>
                   <h2>Notifications</h2>
-                  <p className="muted">Control which in-app and email notifications each specialist receives for ticket activity.</p>
+                  <p className="muted">Control ticket and Event Services notifications by user and delivery channel.</p>
                 </div>
                 <span className="status-pill">{notificationPreferenceRows.length} users</span>
               </div>
@@ -2877,8 +2956,8 @@ export function SettingsWorkspace() {
                     <tr>
                       <th>User</th>
                       <th>Channels</th>
-                      <th>In-app Events</th>
-                      <th>Email Events</th>
+                      <th>Ticket Notifications</th>
+                      <th>Event Service Notifications</th>
                       <th>Digest</th>
                       <th>Actions</th>
                     </tr>
@@ -2918,32 +2997,10 @@ export function SettingsWorkspace() {
                           </div>
                         </td>
                         <td>
-                          <div className="access-check-grid compact">
-                            {NOTIFICATION_FIELDS.map((field) => (
-                              <label className="checkbox-row" key={field.inAppKey}>
-                                <input
-                                  type="checkbox"
-                                  checked={Boolean(row.notificationPreference[field.inAppKey])}
-                                  onChange={(event) => updateNotificationPreferenceDraft(row.id, field.inAppKey, event.target.checked)}
-                                />
-                                {field.label}
-                              </label>
-                            ))}
-                          </div>
+                          <NotificationPreferenceGroup row={row} fields={TICKET_NOTIFICATION_FIELDS} onChange={updateNotificationPreferenceDraft} />
                         </td>
                         <td>
-                          <div className="access-check-grid compact">
-                            {NOTIFICATION_FIELDS.map((field) => (
-                              <label className="checkbox-row" key={field.emailKey}>
-                                <input
-                                  type="checkbox"
-                                  checked={Boolean(row.notificationPreference[field.emailKey])}
-                                  onChange={(event) => updateNotificationPreferenceDraft(row.id, field.emailKey, event.target.checked)}
-                                />
-                                {field.label}
-                              </label>
-                            ))}
-                          </div>
+                          <NotificationPreferenceGroup row={row} fields={EVENT_NOTIFICATION_FIELDS} onChange={updateNotificationPreferenceDraft} />
                         </td>
                         <td>
                           <label className="checkbox-row">

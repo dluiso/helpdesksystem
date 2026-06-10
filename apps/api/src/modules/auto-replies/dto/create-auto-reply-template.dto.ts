@@ -1,4 +1,4 @@
-import { AutoReplyScope } from "@prisma/client";
+import { AutoReplyScope, AutoReplyTemplateType, AutoReplyTrigger } from "@prisma/client";
 import { IsBoolean, IsEnum, IsOptional, IsString, IsUUID, MaxLength, MinLength } from "class-validator";
 
 export class CreateAutoReplyTemplateDto {
@@ -9,6 +9,14 @@ export class CreateAutoReplyTemplateDto {
 
   @IsEnum(AutoReplyScope)
   scope!: AutoReplyScope;
+
+  @IsOptional()
+  @IsEnum(AutoReplyTemplateType)
+  templateType?: AutoReplyTemplateType;
+
+  @IsOptional()
+  @IsEnum(AutoReplyTrigger)
+  trigger?: AutoReplyTrigger;
 
   @IsOptional()
   @IsUUID()

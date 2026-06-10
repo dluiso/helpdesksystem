@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Mailbox, MessageDirection } from "@prisma/client";
+import { Mailbox, MessageDirection, MessageVisibility } from "@prisma/client";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { SpamManagementService } from "../spam-management/spam-management.service";
@@ -175,6 +175,20 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
     const attachmentBackfillErrors: string[] = [];
 
     for (const message of syncResult.messages) {
+      const eventMessageExists = await this.prisma.eventServiceMessage.findFirst({
+        where: {
+          OR: [
+            { emailMessageId: message.providerMessageId },
+            ...(message.internetMessageId ? [{ emailInternetMessageId: message.internetMessageId }] : [])
+          ]
+        },
+        select: { id: true }
+      });
+      if (eventMessageExists) {
+        skippedDuplicates += 1;
+        continue;
+      }
+
       const exists = await this.prisma.ticketMessage.findFirst({
         where: {
           OR: [
@@ -192,6 +206,38 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
           attachmentBackfillFailures += stored.failed;
           attachmentBackfillErrors.push(...stored.errors);
         }
+        skippedDuplicates += 1;
+        continue;
+      }
+
+      const eventRequest = await this.findEventRequestForMessage(mailbox.organizationId, message.subject, message.conversationId ?? null);
+      if (eventRequest) {
+        await this.prisma.eventServiceMessage.create({
+          data: {
+            requestId: eventRequest.id,
+            direction: MessageDirection.INBOUND,
+            visibility: MessageVisibility.PUBLIC,
+            bodyText: message.bodyText ?? message.bodyHtml ?? "",
+            bodyHtml: message.bodyHtml ?? null,
+            sanitizedBodyHtml: message.bodyHtml ?? null,
+            senderEmail: message.from.email,
+            emailMessageId: message.providerMessageId,
+            emailInternetMessageId: message.internetMessageId ?? null,
+            emailConversationId: message.conversationId ?? null,
+            inReplyTo: message.inReplyTo ?? null,
+            emailReferences: message.references ?? null
+          }
+        });
+        await this.prisma.eventServiceActivity.create({
+          data: {
+            requestId: eventRequest.id,
+            action: "event_service_message.received",
+            metadata: {
+              senderEmail: message.from.email,
+              subject: message.subject
+            }
+          }
+        });
         skippedDuplicates += 1;
         continue;
       }
@@ -271,6 +317,34 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
       attachmentBackfillErrors: attachmentBackfillErrors.slice(0, 10),
       nextSyncCursor: syncResult.nextSyncCursor
     };
+  }
+
+  private async findEventRequestForMessage(organizationId: string, subject: string, conversationId: string | null) {
+    if (conversationId) {
+      const existingMessage = await this.prisma.eventServiceMessage.findFirst({
+        where: {
+          emailConversationId: conversationId,
+          request: { organizationId, deletedAt: null }
+        },
+        select: { requestId: true }
+      });
+      if (existingMessage) {
+        return this.prisma.eventServiceRequest.findFirst({
+          where: { id: existingMessage.requestId, organizationId, deletedAt: null },
+          select: { id: true }
+        });
+      }
+    }
+
+    const trackingNumber = subject.match(/\bEVT-\d+\b/i)?.[0]?.toUpperCase();
+    if (!trackingNumber) {
+      return null;
+    }
+
+    return this.prisma.eventServiceRequest.findFirst({
+      where: { organizationId, trackingNumber, deletedAt: null },
+      select: { id: true }
+    });
   }
 
   private async getMailboxForUser(mailboxId: string, user: AuthenticatedUser) {

@@ -47,11 +47,13 @@ interface NotificationPreferences {
   inAppEventTaskAssignedToMe: boolean;
   inAppEventTaskUpdated: boolean;
   inAppEventCommentAdded: boolean;
+  inAppNewEventRequestCreated: boolean;
   emailEventAssignedToMe: boolean;
   emailEventRequestUpdated: boolean;
   emailEventTaskAssignedToMe: boolean;
   emailEventTaskUpdated: boolean;
   emailEventCommentAdded: boolean;
+  emailNewEventRequestCreated: boolean;
   dailyDigestEnabled: boolean;
 }
 
@@ -66,6 +68,7 @@ const preferenceLabels: Array<{ key: keyof NotificationPreferences; label: strin
   { key: "inAppInternalNoteMention", label: "In-app: mentions" },
   { key: "inAppRoutingRuleMatched", label: "In-app: routing rules" },
   { key: "inAppTicketReopened", label: "In-app: reopened tickets" },
+  { key: "inAppNewEventRequestCreated", label: "In-app: new event requests" },
   { key: "inAppEventAssignedToMe", label: "In-app: event assignments" },
   { key: "inAppEventRequestUpdated", label: "In-app: event updates" },
   { key: "inAppEventTaskAssignedToMe", label: "In-app: event tasks" },
@@ -79,6 +82,7 @@ const preferenceLabels: Array<{ key: keyof NotificationPreferences; label: strin
   { key: "emailInternalNoteMention", label: "Email: mentions" },
   { key: "emailRoutingRuleMatched", label: "Email: routing rules" },
   { key: "emailTicketReopened", label: "Email: reopened tickets" },
+  { key: "emailNewEventRequestCreated", label: "Email: new event requests" },
   { key: "emailEventAssignedToMe", label: "Email: event assignments" },
   { key: "emailEventRequestUpdated", label: "Email: event updates" },
   { key: "emailEventTaskAssignedToMe", label: "Email: event tasks" },

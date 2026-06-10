@@ -113,6 +113,17 @@ enum AutoReplyScope {
   PRIORITY
 }
 
+enum AutoReplyTemplateType {
+  TICKET
+  EVENT_SERVICE
+}
+
+enum AutoReplyTrigger {
+  TICKET_CREATED
+  EVENT_REQUEST_CREATED
+  EVENT_STATUS_CHANGED
+}
+
 enum KnowledgeVisibility {
   INTERNAL
   PUBLIC
@@ -326,6 +337,11 @@ model SystemSetting {
   eventTurnstileEnabled      Boolean  @default(false)
   eventTurnstileSiteKey      String?
   eventTurnstileSecretReference String?
+  eventCalendarSyncEnabled   Boolean  @default(false)
+  eventCalendarTenantId      String?
+  eventCalendarClientId      String?
+  eventCalendarClientSecretReference String?
+  eventCalendarDefaultTimeZone String @default("America/Chicago")
   defaultTicketAutoReplyTemplate String?
   aiAssistantEnabled         Boolean  @default(true)
   remoteAccessProviderEnabled Boolean @default(false)
@@ -395,6 +411,7 @@ model User {
   assignedEventServiceTasks EventServiceTask[] @relation("EventServiceTaskAssignedUser")
   createdEventServiceComments EventServiceComment[]
   eventServiceActivity EventServiceActivity[]
+  eventServiceMessages EventServiceMessage[]
 
   @@index([organizationId])
   @@index([deletedAt])
@@ -1008,6 +1025,8 @@ model UserNotificationPreference {
   emailEventTaskAssignedToMe     Boolean  @default(false)
   emailEventTaskUpdated          Boolean  @default(false)
   emailEventCommentAdded         Boolean  @default(false)
+  inAppNewEventRequestCreated    Boolean  @default(true)
+  emailNewEventRequestCreated    Boolean  @default(false)
   dailyDigestEnabled             Boolean  @default(false)
   createdAt                      DateTime @default(now())
   updatedAt                      DateTime @updatedAt
@@ -1131,6 +1150,8 @@ model AutoReplyTemplate {
   clientId       String?        @db.Uuid
   mailboxId      String?        @db.Uuid
   scope          AutoReplyScope @default(GLOBAL)
+  templateType   AutoReplyTemplateType @default(TICKET)
+  trigger        AutoReplyTrigger @default(TICKET_CREATED)
   name           String
   subject        String
   bodyHtml       String
@@ -1144,6 +1165,7 @@ model AutoReplyTemplate {
   organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, scope])
+  @@index([organizationId, templateType, trigger])
   @@index([clientId])
   @@index([mailboxId])
   @@map("auto_reply_templates")
@@ -1153,12 +1175,14 @@ model AutoReplyHistory {
   id             String            @id @default(uuid()) @db.Uuid
   templateId     String            @db.Uuid
   ticketId       String?           @db.Uuid
+  eventServiceRequestId String?    @db.Uuid
   recipientEmail String
   threadKey      String?
   sentAt         DateTime          @default(now())
   metadata       Json?
   template       AutoReplyTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
+  @@index([eventServiceRequestId])
   @@index([recipientEmail, threadKey])
   @@map("auto_reply_histories")
 }
@@ -1579,6 +1603,7 @@ model EventServiceRequest {
   assignees          EventServiceAssignee[]
   tasks              EventServiceTask[]
   comments           EventServiceComment[]
+  messages           EventServiceMessage[]
   activity           EventServiceActivity[]
 
   @@index([organizationId, status, updatedAt])
@@ -1626,6 +1651,10 @@ model EventServiceTask {
   status          EventServiceTaskStatus @default(TODO)
   progressPercent Int                    @default(0)
   dueAt           DateTime?
+  calendarEventId String?
+  calendarUserEmail String?
+  calendarSyncedAt DateTime?
+  calendarSyncError String?
   sortOrder       Int                    @default(0)
   createdAt       DateTime               @default(now())
   updatedAt       DateTime               @updatedAt
@@ -1635,6 +1664,31 @@ model EventServiceTask {
   @@index([requestId, sortOrder])
   @@index([assignedUserId])
   @@map("event_service_tasks")
+}
+
+model EventServiceMessage {
+  id                     String            @id @default(uuid()) @db.Uuid
+  requestId              String            @db.Uuid
+  authorUserId           String?           @db.Uuid
+  direction              MessageDirection
+  visibility             MessageVisibility @default(PUBLIC)
+  bodyText               String
+  bodyHtml               String?
+  sanitizedBodyHtml      String?
+  senderEmail            String?
+  emailMessageId         String?
+  emailInternetMessageId String?
+  emailConversationId    String?
+  inReplyTo              String?
+  emailReferences        String?
+  createdAt              DateTime          @default(now())
+  request                EventServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  authorUser             User?             @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
+
+  @@index([requestId, createdAt])
+  @@index([authorUserId])
+  @@index([emailConversationId])
+  @@map("event_service_messages")
 }
 
 model EventServiceComment {

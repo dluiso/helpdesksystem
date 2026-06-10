@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, CheckCircle2, ChevronDown, ClipboardList, ExternalLink, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Trash2, UsersRound, X } from "lucide-react";
+import { CalendarDays, CalendarPlus, CheckCircle2, ChevronDown, ClipboardList, ExternalLink, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Send, Trash2, UsersRound, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
@@ -54,8 +54,9 @@ interface EventServiceRequest {
   assignedTeam: TicketTeam | null;
   services: Array<{ service: EventServiceCatalogItem }>;
   assignees: Array<{ user: UserOption; role: string | null }>;
-  tasks: Array<{ id: string; title: string; description: string | null; status: TaskStatus; progressPercent: number; assignedUser: UserOption | null }>;
+  tasks: Array<{ id: string; title: string; description: string | null; status: TaskStatus; progressPercent: number; dueAt: string | null; calendarEventId: string | null; calendarUserEmail: string | null; calendarSyncedAt: string | null; calendarSyncError: string | null; assignedUser: UserOption | null }>;
   comments?: Array<{ id: string; body: string; createdAt: string; user: UserOption | null }>;
+  messages?: Array<{ id: string; bodyText: string; bodyHtml: string | null; direction: "INBOUND" | "OUTBOUND" | "INTERNAL"; createdAt: string; senderEmail: string | null; authorUser: UserOption | null }>;
 }
 
 interface EventServiceTaskAssignment {
@@ -64,7 +65,12 @@ interface EventServiceTaskAssignment {
   description: string | null;
   status: TaskStatus;
   progressPercent: number;
+  dueAt: string | null;
   updatedAt: string;
+  calendarEventId: string | null;
+  calendarUserEmail: string | null;
+  calendarSyncedAt: string | null;
+  calendarSyncError: string | null;
   assignedUser: UserOption | null;
   request: EventServiceRequest;
 }
@@ -102,6 +108,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
   const [myTaskDrafts, setMyTaskDrafts] = useState<Record<string, { status: TaskStatus; progressPercent: number; comment: string }>>({});
   const [selectedId, setSelectedId] = useState<string | null>(detailTrackingNumber ?? null);
   const [selected, setSelected] = useState<EventServiceRequest | null>(null);
+  const [detailSection, setDetailSection] = useState<"overview" | "tasks" | "messages" | "activity">("overview");
   const [detailOpen, setDetailOpen] = useState(detailPage);
   const [selectedRequestIds, setSelectedRequestIds] = useState<string[]>([]);
   const [recycleBinOpen, setRecycleBinOpen] = useState(false);
@@ -111,8 +118,10 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
   const [teams, setTeams] = useState<TicketTeam[]>([]);
   const [filters, setFilters] = useState({ search: "", status: "", assignedUserId: "", assignedTeamId: "", serviceId: "" });
   const [draft, setDraft] = useState({ status: "NEW" as EventStatus, priority: "NORMAL" as Priority, progressPercent: 0, assignedTeamId: "", assignedUserIds: [] as string[], additionalInfo: "" });
-  const [taskDraft, setTaskDraft] = useState({ title: "", assignedUserId: "", description: "" });
+  const [taskDraft, setTaskDraft] = useState({ title: "", assignedUserId: "", description: "", dueAt: "" });
   const [commentDraft, setCommentDraft] = useState("");
+  const [messageDraft, setMessageDraft] = useState("");
+  const [calendarDrafts, setCalendarDrafts] = useState<Record<string, { startDate: string; startTime: string; endDate: string; endTime: string; location: string; notes: string }>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -343,9 +352,9 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
     try {
       await apiFetch(`/event-services/${selected.id}/tasks`, {
         method: "POST",
-        body: JSON.stringify({ ...taskDraft, assignedUserId: taskDraft.assignedUserId || null })
+        body: JSON.stringify({ ...taskDraft, assignedUserId: taskDraft.assignedUserId || null, dueAt: taskDraft.dueAt || null })
       });
-      setTaskDraft({ title: "", assignedUserId: "", description: "" });
+      setTaskDraft({ title: "", assignedUserId: "", description: "", dueAt: "" });
       await loadSelected(selected.id);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to create task.");
@@ -354,7 +363,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
     }
   }
 
-  async function updateTask(taskId: string, patch: Partial<{ status: TaskStatus; progressPercent: number; assignedUserId: string }>) {
+  async function updateTask(taskId: string, patch: Partial<{ status: TaskStatus; progressPercent: number; assignedUserId: string; dueAt: string | null }>) {
     if (!selected) return;
     await apiFetch(`/event-services/${selected.id}/tasks/${taskId}`, {
       method: "PATCH",
@@ -409,6 +418,53 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
       await loadSelected(selected.id);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to add comment.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function sendMessage() {
+    if (!selected || !messageDraft.trim()) return;
+    setBusy("message");
+    setError(null);
+    try {
+      await apiFetch(`/event-services/${selected.id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ body: messageDraft })
+      });
+      setMessageDraft("");
+      setNotice("Message sent to requester.");
+      await loadSelected(selected.id);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to send requester message.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function updateCalendarDraft(taskId: string, patch: Partial<{ startDate: string; startTime: string; endDate: string; endTime: string; location: string; notes: string }>) {
+    setCalendarDrafts((current) => ({
+      ...current,
+      [taskId]: {
+        ...(current[taskId] ?? { startDate: selected?.eventDate?.slice(0, 10) ?? "", startTime: selected?.startTime ?? "", endDate: selected?.eventDate?.slice(0, 10) ?? "", endTime: selected?.endTime ?? "", location: selected?.venue ?? "", notes: "" }),
+        ...patch
+      }
+    }));
+  }
+
+  async function syncTaskCalendar(taskId: string) {
+    if (!selected) return;
+    setBusy(`calendar-${taskId}`);
+    setError(null);
+    try {
+      await apiFetch(`/event-services/${selected.id}/tasks/${taskId}/calendar`, {
+        method: "POST",
+        body: JSON.stringify(calendarDrafts[taskId] ?? {})
+      });
+      setNotice("Task added to Microsoft Calendar.");
+      await loadSelected(selected.id);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to sync task to Microsoft Calendar.");
     } finally {
       setBusy(null);
     }
@@ -622,54 +678,131 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                 <div><span className="muted">Services</span><strong>{selected.services.map((item) => item.service.name).join(", ") || "None"}</strong></div>
               </div>
 
-              <div className="event-management-grid">
-                <label>Status<select className="input" value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as EventStatus }))}>{statuses.map((status) => <option key={status} value={status}>{label(status)}</option>)}</select></label>
-                <label>Priority<select className="input" value={draft.priority} onChange={(event) => setDraft((current) => ({ ...current, priority: event.target.value as Priority }))}>{priorities.map((priority) => <option key={priority} value={priority}>{label(priority)}</option>)}</select></label>
-                <label>Progress<input className="input" type="number" min={0} max={100} value={draft.progressPercent} onChange={(event) => setDraft((current) => ({ ...current, progressPercent: Number(event.target.value) }))} /></label>
-                <label>Team<select className="input" value={draft.assignedTeamId} onChange={(event) => setDraft((current) => ({ ...current, assignedTeamId: event.target.value }))}><option value="">No team</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
-              </div>
-              <div className="event-assignee-picker">
-                <strong>Technicians</strong>
-                {users.map((user) => (
-                  <label key={user.id}>
-                    <input
-                      type="checkbox"
-                      checked={draft.assignedUserIds.includes(user.id)}
-                      onChange={(event) => setDraft((current) => ({ ...current, assignedUserIds: event.target.checked ? [...current.assignedUserIds, user.id] : current.assignedUserIds.filter((id) => id !== user.id) }))}
-                    />
-                    {userName(user)}
-                  </label>
+              <div className="event-detail-tabs" role="tablist" aria-label="Event detail sections">
+                {(["overview", "tasks", "messages", "activity"] as const).map((section) => (
+                  <button className={detailSection === section ? "active" : ""} type="button" key={section} onClick={() => setDetailSection(section)}>
+                    {label(section)}
+                    {section === "tasks" ? <span>{selected.tasks.length}</span> : null}
+                    {section === "messages" ? <span>{selected.messages?.length ?? 0}</span> : null}
+                  </button>
                 ))}
               </div>
-              <label>Internal notes / additional info<textarea className="input" value={draft.additionalInfo} onChange={(event) => setDraft((current) => ({ ...current, additionalInfo: event.target.value }))} /></label>
-              <button className="button" type="button" onClick={saveRequest} disabled={busy === "request"}><Save size={16} />Save Request</button>
 
-              <div className="event-detail-columns">
+              {detailSection === "overview" ? (
                 <div className="nested-panel">
-                  <h3>Tasks</h3>
+                  <div className="section-heading compact-heading">
+                    <div>
+                      <h3>Request Management</h3>
+                      <p className="muted">Update assignment, status, priority, progress, and internal request notes.</p>
+                    </div>
+                    <button className="button" type="button" onClick={saveRequest} disabled={busy === "request"}><Save size={16} />Save Request</button>
+                  </div>
+                  <div className="event-management-grid">
+                    <label>Status<select className="input" value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as EventStatus }))}>{statuses.map((status) => <option key={status} value={status}>{label(status)}</option>)}</select></label>
+                    <label>Priority<select className="input" value={draft.priority} onChange={(event) => setDraft((current) => ({ ...current, priority: event.target.value as Priority }))}>{priorities.map((priority) => <option key={priority} value={priority}>{label(priority)}</option>)}</select></label>
+                    <label>Progress<input className="input" type="number" min={0} max={100} value={draft.progressPercent} onChange={(event) => setDraft((current) => ({ ...current, progressPercent: Number(event.target.value) }))} /></label>
+                    <label>Team<select className="input" value={draft.assignedTeamId} onChange={(event) => setDraft((current) => ({ ...current, assignedTeamId: event.target.value }))}><option value="">No team</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+                  </div>
+                  <div className="event-assignee-picker">
+                    <strong>Technicians</strong>
+                    {users.map((user) => (
+                      <label key={user.id}>
+                        <input
+                          type="checkbox"
+                          checked={draft.assignedUserIds.includes(user.id)}
+                          onChange={(event) => setDraft((current) => ({ ...current, assignedUserIds: event.target.checked ? [...current.assignedUserIds, user.id] : current.assignedUserIds.filter((id) => id !== user.id) }))}
+                        />
+                        {userName(user)}
+                      </label>
+                    ))}
+                  </div>
+                  <label>Internal notes / additional info<textarea className="input" value={draft.additionalInfo} onChange={(event) => setDraft((current) => ({ ...current, additionalInfo: event.target.value }))} /></label>
+                </div>
+              ) : null}
+
+              {detailSection === "tasks" ? (
+                <div className="nested-panel">
+                  <div className="section-heading compact-heading">
+                    <div>
+                      <h3>Task Flow</h3>
+                      <p className="muted">Track specialist work, due dates, progress, and optional calendar sync.</p>
+                    </div>
+                  </div>
                   <div className="event-task-create">
                     <input className="input" placeholder="Task title" value={taskDraft.title} onChange={(event) => setTaskDraft((current) => ({ ...current, title: event.target.value }))} />
                     <select className="input" value={taskDraft.assignedUserId} onChange={(event) => setTaskDraft((current) => ({ ...current, assignedUserId: event.target.value }))}><option value="">Unassigned</option>{users.map((user) => <option key={user.id} value={user.id}>{userName(user)}</option>)}</select>
+                    <input className="input" type="datetime-local" value={taskDraft.dueAt} onChange={(event) => setTaskDraft((current) => ({ ...current, dueAt: event.target.value }))} />
                     <button className="button secondary" type="button" onClick={createTask} disabled={busy === "task"}><Plus size={16} />Add</button>
                   </div>
-                  {selected.tasks.map((task) => (
-                    <div className="event-task-row" key={task.id}>
-                      <strong>{task.title}</strong>
-                      <select className="input" value={task.status} onChange={(event) => void updateTask(task.id, { status: event.target.value as TaskStatus })}>{taskStatuses.map((status) => <option key={status} value={status}>{label(status)}</option>)}</select>
-                      <input className="input" type="number" min={0} max={100} value={task.progressPercent} onChange={(event) => void updateTask(task.id, { progressPercent: Number(event.target.value) })} />
-                      <small>{userName(task.assignedUser)}</small>
-                    </div>
-                  ))}
+                  <div className="event-task-board">
+                    {taskStatuses.map((status) => (
+                      <div className="event-task-column" key={status}>
+                        <h4>{label(status)}</h4>
+                        {selected.tasks.filter((task) => task.status === status).map((task) => {
+                          const calendarDraft = calendarDrafts[task.id] ?? { startDate: selected.eventDate?.slice(0, 10) ?? "", startTime: selected.startTime ?? "", endDate: selected.eventDate?.slice(0, 10) ?? "", endTime: selected.endTime ?? "", location: selected.venue ?? "", notes: "" };
+                          return (
+                            <article className="event-task-card" key={task.id}>
+                              <strong>{task.title}</strong>
+                              {task.description ? <p className="muted">{task.description}</p> : null}
+                              <span className="muted">Assigned: {userName(task.assignedUser)}</span>
+                              <span className="muted">Due: {formatDateTime(task.dueAt)}</span>
+                              <div className="event-task-controls">
+                                <select className="input compact-select" value={task.status} onChange={(event) => void updateTask(task.id, { status: event.target.value as TaskStatus })}>{taskStatuses.map((item) => <option key={item} value={item}>{label(item)}</option>)}</select>
+                                <input className="input event-progress-input" type="number" min={0} max={100} value={task.progressPercent} onChange={(event) => void updateTask(task.id, { progressPercent: Number(event.target.value) })} />
+                              </div>
+                              <details className="event-calendar-sync">
+                                <summary><CalendarPlus size={14} /> Calendar</summary>
+                                <div className="event-calendar-grid">
+                                  <input className="input" type="date" value={calendarDraft.startDate} onChange={(event) => updateCalendarDraft(task.id, { startDate: event.target.value })} />
+                                  <input className="input" type="time" value={calendarDraft.startTime} onChange={(event) => updateCalendarDraft(task.id, { startTime: event.target.value })} />
+                                  <input className="input" type="date" value={calendarDraft.endDate} onChange={(event) => updateCalendarDraft(task.id, { endDate: event.target.value })} />
+                                  <input className="input" type="time" value={calendarDraft.endTime} onChange={(event) => updateCalendarDraft(task.id, { endTime: event.target.value })} />
+                                  <input className="input span-2" placeholder="Location" value={calendarDraft.location} onChange={(event) => updateCalendarDraft(task.id, { location: event.target.value })} />
+                                </div>
+                                {task.calendarSyncedAt ? <p className="muted">Synced to {task.calendarUserEmail} on {formatDateTime(task.calendarSyncedAt)}</p> : null}
+                                {task.calendarSyncError ? <p className="alert error">{task.calendarSyncError}</p> : null}
+                                <button className="button secondary" type="button" onClick={() => void syncTaskCalendar(task.id)} disabled={busy === `calendar-${task.id}`}>Add to Calendar</button>
+                              </details>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              ) : null}
+
+              {detailSection === "messages" ? (
                 <div className="nested-panel">
-                  <h3><MessageSquare size={16} />Comments</h3>
+                  <h3><MessageSquare size={16} />Requester Messages</h3>
+                  <textarea className="input" placeholder="Write a message to the requester..." value={messageDraft} onChange={(event) => setMessageDraft(event.target.value)} />
+                  <button className="button" type="button" onClick={sendMessage} disabled={busy === "message"}><Send size={16} />Send Message</button>
+                  <div className="event-message-list">
+                    {(selected.messages ?? []).map((message) => (
+                      <article className={`event-message ${message.direction.toLowerCase()}`} key={message.id}>
+                        <strong>{message.direction === "OUTBOUND" ? userName(message.authorUser) : message.senderEmail ?? selected.requesterEmail}</strong>
+                        <p>{message.bodyText}</p>
+                        <small>{formatDateTime(message.createdAt)}</small>
+                      </article>
+                    ))}
+                  </div>
+                  <h3>Internal Comments</h3>
                   <textarea className="input" placeholder="Add internal comment..." value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} />
                   <button className="button secondary" type="button" onClick={addComment} disabled={busy === "comment"}>Add Comment</button>
                   {selected.comments?.map((comment) => (
                     <div className="event-comment" key={comment.id}><strong>{userName(comment.user)}</strong><p>{comment.body}</p><small>{new Date(comment.createdAt).toLocaleString()}</small></div>
                   ))}
                 </div>
-              </div>
+              ) : null}
+
+              {detailSection === "activity" ? (
+                <div className="nested-panel">
+                  <h3>Activity Timeline</h3>
+                  {selected.comments?.length || selected.messages?.length ? null : <p className="muted">No visible activity yet.</p>}
+                  {selected.messages?.map((message) => <div className="event-comment" key={`message-${message.id}`}><strong>{label(message.direction)} message</strong><p>{message.bodyText}</p><small>{formatDateTime(message.createdAt)}</small></div>)}
+                  {selected.comments?.map((comment) => <div className="event-comment" key={`comment-${comment.id}`}><strong>{userName(comment.user)}</strong><p>{comment.body}</p><small>{formatDateTime(comment.createdAt)}</small></div>)}
+                </div>
+              ) : null}
             </>
             ) : <p className="muted">Loading request detail...</p>}
           </section>

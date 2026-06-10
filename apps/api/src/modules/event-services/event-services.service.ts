@@ -1,21 +1,27 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { EventServiceFieldType, EventServiceRequestStatus, EventServiceTaskStatus, Prisma, TicketPriority } from "@prisma/client";
+import { EventServiceFieldType, EventServiceRequestStatus, EventServiceTaskStatus, MessageDirection, MessageVisibility, Prisma, TicketPriority } from "@prisma/client";
+import { HtmlSanitizerService } from "../../common/html/html-sanitizer.service";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
+import { AutoRepliesService } from "../auto-replies/auto-replies.service";
 import { MailDeliveryService } from "../mailboxes/mail-delivery.service";
 import { NotificationsService, NotificationEventType } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateEventServiceCommentDto } from "./dto/create-event-service-comment.dto";
+import { CreateEventServiceMessageDto } from "./dto/create-event-service-message.dto";
 import { CreateEventServiceTaskDto } from "./dto/create-event-service-task.dto";
+import { SyncEventServiceTaskCalendarDto } from "./dto/sync-event-service-task-calendar.dto";
 import { CreatePublicEventServiceRequestDto } from "./dto/create-public-event-service-request.dto";
 import { ListEventServiceRequestsDto } from "./dto/list-event-service-requests.dto";
+import { UpdateEventServiceCalendarSettingsDto } from "./dto/update-event-service-calendar-settings.dto";
 import { UpdateEventServiceTurnstileDto } from "./dto/update-event-service-turnstile.dto";
 import { UpdateEventServiceRequestDto } from "./dto/update-event-service-request.dto";
 import { UpdateEventServiceTaskDto } from "./dto/update-event-service-task.dto";
 import { UpdateMyEventServiceTaskDto } from "./dto/update-my-event-service-task.dto";
 import { UpsertEventServiceFormFieldDto } from "./dto/upsert-event-service-form-field.dto";
 import { UpsertEventServiceServiceDto } from "./dto/upsert-event-service-service.dto";
+import { EventServicesCalendarService } from "./event-services-calendar.service";
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):(00|15|30|45)$/;
 const DEFAULT_EVENT_TURNSTILE_SECRET_REFERENCE = "env:EVENT_TURNSTILE_SECRET_KEY";
@@ -27,7 +33,10 @@ export class EventServicesService {
     private readonly config: ConfigService,
     private readonly mailDelivery: MailDeliveryService,
     private readonly auditLogs: AuditLogsService,
-    private readonly notifications: NotificationsService
+    private readonly notifications: NotificationsService,
+    private readonly autoReplies: AutoRepliesService,
+    private readonly htmlSanitizer: HtmlSanitizerService,
+    private readonly calendar: EventServicesCalendarService
   ) {}
 
   async getPublicForm() {
@@ -112,8 +121,9 @@ export class EventServicesService {
     });
 
     await Promise.all([
+      this.notifications.notifyNewEventRequestCreated({ requestId: request.id, organizationId: organization.id }),
       this.notifyAssignedUsers(request.id, "New event request assigned", `${request.trackingNumber}: ${request.eventName}`, "eventAssignedToMe"),
-      this.sendRequesterConfirmation(request).catch((error) =>
+      this.sendRequesterInitialResponse(request).catch((error) =>
         this.logActivity(request.id, null, "event_service_request.confirmation_email_failed", {
           message: error instanceof Error ? error.message : "Unknown email error"
         })
@@ -202,7 +212,7 @@ export class EventServicesService {
   }
 
   async update(requestId: string, user: AuthenticatedUser, input: UpdateEventServiceRequestDto) {
-    await this.get(requestId, user);
+    const existing = await this.get(requestId, user);
     const assignedUserIds = input.assignedUserIds === undefined ? null : await this.validUserIds(user.organizationId, input.assignedUserIds);
     if (input.assignedTeamId) {
       await this.ensureTeam(input.assignedTeamId, user.organizationId);
@@ -242,6 +252,20 @@ export class EventServicesService {
       assignedTeamId: input.assignedTeamId
     });
     await this.notifyAssignedUsers(requestId, "Event request updated", `${updated.trackingNumber}: ${updated.eventName}`, "eventRequestUpdated", user.id);
+    if (input.status && input.status !== existing.status) {
+      const autoReply = await this.autoReplies.sendForEventStatusChange({
+        organizationId: user.organizationId,
+        requestId,
+        status: input.status
+      });
+      if (autoReply.sent) {
+        await this.logActivity(requestId, user.id, "event_service_request.status_auto_reply_sent", {
+          status: input.status,
+          templateId: autoReply.templateId,
+          messageId: autoReply.messageId
+        });
+      }
+    }
 
     return updated;
   }
@@ -310,6 +334,7 @@ export class EventServicesService {
         title: input.title.trim(),
         description: this.optionalTrim(input.description),
         assignedUserId: input.assignedUserId ?? null,
+        dueAt: this.parseOptionalDate(input.dueAt),
         progressPercent: input.progressPercent ?? 0
       },
       include: { assignedUser: { select: this.userSelect() } }
@@ -333,6 +358,7 @@ export class EventServicesService {
         description: input.description === undefined ? undefined : this.optionalTrim(input.description),
         status: input.status,
         assignedUserId: input.assignedUserId === undefined ? undefined : input.assignedUserId,
+        dueAt: input.dueAt === undefined ? undefined : this.parseOptionalDate(input.dueAt),
         progressPercent: input.progressPercent
       },
       include: { assignedUser: { select: this.userSelect() } }
@@ -392,6 +418,141 @@ export class EventServicesService {
     await this.logActivity(requestId, user.id, "event_service_comment.created", { commentId: comment.id });
     await this.notifyAssignedUsers(requestId, "Event comment added", input.body.trim().slice(0, 240), "eventCommentAdded", user.id);
     return comment;
+  }
+
+  async sendMessage(requestId: string, user: AuthenticatedUser, input: CreateEventServiceMessageDto) {
+    const request = await this.get(requestId, user);
+    const bodyText = input.body.trim();
+    if (!bodyText) {
+      throw new BadRequestException("Message body is required.");
+    }
+    const bodyHtml = this.htmlSanitizer.sanitize(`<p>${this.escapeHtml(bodyText).replace(/\n/g, "<br>")}</p>`);
+    const subject = `Re: Event request ${request.trackingNumber} - ${request.eventName}`;
+    const sendResult = await this.mailDelivery.sendTicketReply({
+      organizationId: user.organizationId,
+      to: [request.requesterEmail],
+      subject,
+      bodyText,
+      bodyHtml
+    });
+    if (!sendResult) {
+      throw new BadRequestException("Outbound email is disabled for the active mailbox.");
+    }
+
+    const message = await this.prisma.eventServiceMessage.create({
+      data: {
+        requestId: request.id,
+        authorUserId: user.id,
+        direction: MessageDirection.OUTBOUND,
+        visibility: MessageVisibility.PUBLIC,
+        bodyText,
+        bodyHtml,
+        sanitizedBodyHtml: bodyHtml,
+        emailMessageId: sendResult.providerMessageId,
+        emailInternetMessageId: sendResult.internetMessageId ?? null,
+        emailConversationId: sendResult.conversationId ?? null
+      },
+      include: { authorUser: { select: this.userSelect() } }
+    });
+    await this.logActivity(request.id, user.id, "event_service_message.sent", { messageId: message.id });
+    await this.notifyAssignedUsers(request.id, "Event requester message sent", bodyText.slice(0, 240), "eventCommentAdded", user.id);
+    return message;
+  }
+
+  async getCalendarSettings(user: AuthenticatedUser) {
+    const settings = await this.prisma.systemSetting.findUnique({
+      where: { organizationId: user.organizationId },
+      select: {
+        eventCalendarSyncEnabled: true,
+        eventCalendarTenantId: true,
+        eventCalendarClientId: true,
+        eventCalendarClientSecretReference: true,
+        eventCalendarDefaultTimeZone: true
+      }
+    });
+    return {
+      eventCalendarSyncEnabled: settings?.eventCalendarSyncEnabled ?? false,
+      eventCalendarTenantId: settings?.eventCalendarTenantId ?? null,
+      eventCalendarClientId: settings?.eventCalendarClientId ?? null,
+      eventCalendarClientSecretReference: settings?.eventCalendarClientSecretReference ?? "env:MICROSOFT_CLIENT_SECRET",
+      eventCalendarDefaultTimeZone: settings?.eventCalendarDefaultTimeZone ?? "America/Chicago"
+    };
+  }
+
+  async updateCalendarSettings(user: AuthenticatedUser, input: UpdateEventServiceCalendarSettingsDto) {
+    return this.prisma.systemSetting.update({
+      where: { organizationId: user.organizationId },
+      data: {
+        eventCalendarSyncEnabled: input.eventCalendarSyncEnabled,
+        eventCalendarTenantId: this.optionalTrim(input.eventCalendarTenantId),
+        eventCalendarClientId: this.optionalTrim(input.eventCalendarClientId),
+        eventCalendarClientSecretReference: this.optionalTrim(input.eventCalendarClientSecretReference),
+        eventCalendarDefaultTimeZone: this.optionalTrim(input.eventCalendarDefaultTimeZone) ?? "America/Chicago"
+      },
+      select: {
+        eventCalendarSyncEnabled: true,
+        eventCalendarTenantId: true,
+        eventCalendarClientId: true,
+        eventCalendarClientSecretReference: true,
+        eventCalendarDefaultTimeZone: true
+      }
+    });
+  }
+
+  async syncTaskToCalendar(requestId: string, taskId: string, user: AuthenticatedUser, input: SyncEventServiceTaskCalendarDto) {
+    const request = await this.get(requestId, user);
+    const task = await this.prisma.eventServiceTask.findFirst({
+      where: { id: taskId, requestId },
+      include: { assignedUser: { select: this.userSelect() } }
+    });
+    if (!task) {
+      throw new NotFoundException("Event task was not found.");
+    }
+    if (!task.assignedUser) {
+      throw new BadRequestException("Assign the task to a specialist before syncing it to a calendar.");
+    }
+    const settings = await this.getCalendarSettings(user);
+    if (!settings.eventCalendarSyncEnabled) {
+      throw new BadRequestException("Event task calendar sync is disabled.");
+    }
+
+    const timeZone = settings.eventCalendarDefaultTimeZone || "America/Chicago";
+    const { startDateTime, endDateTime } = this.resolveCalendarWindow(request, input);
+    try {
+      const event = await this.calendar.createEvent({
+        tenantId: settings.eventCalendarTenantId,
+        clientId: settings.eventCalendarClientId,
+        clientSecretReference: settings.eventCalendarClientSecretReference,
+        userEmail: task.assignedUser.email,
+        subject: `${request.trackingNumber}: ${task.title}`,
+        bodyHtml: this.htmlSanitizer.sanitize(
+          `<p>${this.escapeHtml(task.description ?? input.notes ?? request.additionalInfo ?? request.eventName).replace(/\n/g, "<br>")}</p><p><strong>Event:</strong> ${this.escapeHtml(request.eventName)}<br><strong>Requester:</strong> ${this.escapeHtml(`${request.requesterFirstName} ${request.requesterLastName}`.trim())}<br><strong>Tracking:</strong> ${this.escapeHtml(request.trackingNumber)}</p>`
+        ),
+        startDateTime,
+        endDateTime,
+        timeZone,
+        location: this.optionalTrim(input.location) ?? request.venue
+      });
+      const updated = await this.prisma.eventServiceTask.update({
+        where: { id: task.id },
+        data: {
+          calendarEventId: event.id,
+          calendarUserEmail: task.assignedUser.email,
+          calendarSyncedAt: new Date(),
+          calendarSyncError: null
+        },
+        include: { assignedUser: { select: this.userSelect() } }
+      });
+      await this.logActivity(request.id, user.id, "event_service_task.calendar_synced", { taskId: task.id, calendarEventId: event.id, calendarUserEmail: task.assignedUser.email });
+      return updated;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to sync task to Microsoft Calendar.";
+      await this.prisma.eventServiceTask.update({
+        where: { id: task.id },
+        data: { calendarSyncError: message }
+      });
+      throw error;
+    }
   }
 
   async listServices(user: AuthenticatedUser) {
@@ -520,6 +681,7 @@ export class EventServicesService {
       ...(includeDetail
         ? {
             comments: { include: { user: { select: this.userSelect() } }, orderBy: { createdAt: "desc" } },
+            messages: { include: { authorUser: { select: this.userSelect() } }, orderBy: { createdAt: "desc" } },
             activity: { include: { user: { select: this.userSelect() } }, orderBy: { createdAt: "desc" }, take: 50 }
           }
         : {})
@@ -794,6 +956,22 @@ export class EventServicesService {
     });
   }
 
+  private async sendRequesterInitialResponse(request: { id: string; organizationId: string; trackingNumber: string; eventName: string; requesterEmail: string; requesterFirstName: string; eventDate: Date | null; startTime: string | null; endTime: string | null }) {
+    const autoReply = await this.autoReplies.sendForNewEventRequest({
+      organizationId: request.organizationId,
+      requestId: request.id
+    });
+    if (autoReply.sent) {
+      await this.logActivity(request.id, null, "event_service_request.auto_reply_sent", {
+        templateId: autoReply.templateId,
+        messageId: autoReply.messageId
+      });
+      return;
+    }
+
+    await this.sendRequesterConfirmation(request);
+  }
+
   private async sendRequesterConfirmation(request: { organizationId: string; trackingNumber: string; eventName: string; requesterEmail: string; requesterFirstName: string; eventDate: Date | null; startTime: string | null; endTime: string | null }) {
     const settings = await this.prisma.systemSetting.findUnique({
       where: { organizationId: request.organizationId },
@@ -824,6 +1002,34 @@ export class EventServicesService {
   private optionalTrim(value: string | null | undefined) {
     const trimmed = value?.trim();
     return trimmed ? trimmed : null;
+  }
+
+  private parseOptionalDate(value: string | null | undefined) {
+    const trimmed = this.optionalTrim(value);
+    if (!trimmed) return null;
+    const parsed = new Date(trimmed);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  private resolveCalendarWindow(request: { eventDate: Date | null; startTime: string | null; endTime: string | null }, input: SyncEventServiceTaskCalendarDto) {
+    const baseDate = input.startDate ?? input.endDate ?? (request.eventDate ? request.eventDate.toISOString().slice(0, 10) : null);
+    if (!baseDate) {
+      throw new BadRequestException("Select a calendar date for this task.");
+    }
+    const startTime = input.startTime ?? request.startTime ?? "09:00";
+    const endTime = input.endTime ?? request.endTime ?? this.addOneHour(startTime);
+    const endDate = input.endDate ?? baseDate;
+    return {
+      startDateTime: `${baseDate}T${startTime}:00`,
+      endDateTime: `${endDate}T${endTime}:00`
+    };
+  }
+
+  private addOneHour(time: string) {
+    const [hourValue, minuteValue] = time.split(":").map((part) => Number(part));
+    const hour = Number.isFinite(hourValue) ? hourValue : 9;
+    const minute = Number.isFinite(minuteValue) ? minuteValue : 0;
+    return `${String((hour + 1) % 24).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
   }
 
   private escapeHtml(value: string) {

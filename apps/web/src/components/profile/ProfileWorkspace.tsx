@@ -84,6 +84,8 @@ interface NotificationPreference {
   emailEventTaskAssignedToMe: boolean;
   emailEventTaskUpdated: boolean;
   emailEventCommentAdded: boolean;
+  inAppNewEventRequestCreated: boolean;
+  emailNewEventRequestCreated: boolean;
   dailyDigestEnabled: boolean;
 }
 
@@ -99,7 +101,7 @@ interface ProfileResponse {
   signature: UserSignature;
 }
 
-const NOTIFICATION_FIELDS: Array<{ label: string; inAppKey: keyof NotificationPreference; emailKey: keyof NotificationPreference }> = [
+const TICKET_NOTIFICATION_FIELDS: Array<{ label: string; inAppKey: keyof NotificationPreference; emailKey: keyof NotificationPreference }> = [
   { label: "New ticket created", inAppKey: "inAppNewTicketCreated", emailKey: "emailNewTicketCreated" },
   { label: "Assigned to me", inAppKey: "inAppTicketAssignedToMe", emailKey: "emailTicketAssignedToMe" },
   { label: "Assigned to my team", inAppKey: "inAppTicketAssignedToMyTeam", emailKey: "emailTicketAssignedToMyTeam" },
@@ -107,7 +109,11 @@ const NOTIFICATION_FIELDS: Array<{ label: string; inAppKey: keyof NotificationPr
   { label: "Internal note on assigned ticket", inAppKey: "inAppInternalNoteOnAssignedTicket", emailKey: "emailInternalNoteOnAssignedTicket" },
   { label: "Mentioned on internal note", inAppKey: "inAppInternalNoteMention", emailKey: "emailInternalNoteMention" },
   { label: "Routing rule matched", inAppKey: "inAppRoutingRuleMatched", emailKey: "emailRoutingRuleMatched" },
-  { label: "Ticket reopened", inAppKey: "inAppTicketReopened", emailKey: "emailTicketReopened" },
+  { label: "Ticket reopened", inAppKey: "inAppTicketReopened", emailKey: "emailTicketReopened" }
+];
+
+const EVENT_NOTIFICATION_FIELDS: Array<{ label: string; inAppKey: keyof NotificationPreference; emailKey: keyof NotificationPreference }> = [
+  { label: "New event request created", inAppKey: "inAppNewEventRequestCreated", emailKey: "emailNewEventRequestCreated" },
   { label: "Event assigned to me", inAppKey: "inAppEventAssignedToMe", emailKey: "emailEventAssignedToMe" },
   { label: "Event request updated", inAppKey: "inAppEventRequestUpdated", emailKey: "emailEventRequestUpdated" },
   { label: "Event task assigned to me", inAppKey: "inAppEventTaskAssignedToMe", emailKey: "emailEventTaskAssignedToMe" },
@@ -586,7 +592,7 @@ export function ProfileWorkspace() {
               <div className="section-heading">
                 <div>
                   <h2>Notifications</h2>
-                  <p className="muted">Choose which ticket events can reach you and through which channels.</p>
+                  <p className="muted">Choose which ticket and Event Services notifications can reach you.</p>
                 </div>
               </div>
               <div className="profile-card-grid">
@@ -607,31 +613,43 @@ export function ProfileWorkspace() {
               </div>
               <div className="notification-channel-grid settings-section">
                 <div className="notification-channel-card">
-                  <h3>In-app events</h3>
+                  <h3>Ticket Notifications</h3>
                   <div className="profile-check-grid compact">
-                    {NOTIFICATION_FIELDS.map((field) => (
+                    {TICKET_NOTIFICATION_FIELDS.map((field) => (
                       <label className="profile-check-card" key={field.inAppKey}>
                         <input
                           type="checkbox"
                           checked={Boolean(notificationDraft[field.inAppKey])}
                           onChange={(event) => updateNotificationDraft(field.inAppKey, event.target.checked)}
                         />
-                        <span>{field.label}</span>
+                        <span>{field.label} <small className="muted">In-app</small></span>
+                      </label>
+                    ))}
+                    {TICKET_NOTIFICATION_FIELDS.map((field) => (
+                      <label className="profile-check-card" key={field.emailKey}>
+                        <input type="checkbox" checked={Boolean(notificationDraft[field.emailKey])} onChange={(event) => updateNotificationDraft(field.emailKey, event.target.checked)} />
+                        <span>{field.label} <small className="muted">Email</small></span>
                       </label>
                     ))}
                   </div>
                 </div>
                 <div className="notification-channel-card">
-                  <h3>Email events</h3>
+                  <h3>Event Service Notifications</h3>
                   <div className="profile-check-grid compact">
-                    {NOTIFICATION_FIELDS.map((field) => (
+                    {EVENT_NOTIFICATION_FIELDS.map((field) => (
                       <label className="profile-check-card" key={field.emailKey}>
                         <input
                           type="checkbox"
-                          checked={Boolean(notificationDraft[field.emailKey])}
-                          onChange={(event) => updateNotificationDraft(field.emailKey, event.target.checked)}
+                          checked={Boolean(notificationDraft[field.inAppKey])}
+                          onChange={(event) => updateNotificationDraft(field.inAppKey, event.target.checked)}
                         />
-                        <span>{field.label}</span>
+                        <span>{field.label} <small className="muted">In-app</small></span>
+                      </label>
+                    ))}
+                    {EVENT_NOTIFICATION_FIELDS.map((field) => (
+                      <label className="profile-check-card" key={field.emailKey}>
+                        <input type="checkbox" checked={Boolean(notificationDraft[field.emailKey])} onChange={(event) => updateNotificationDraft(field.emailKey, event.target.checked)} />
+                        <span>{field.label} <small className="muted">Email</small></span>
                       </label>
                     ))}
                   </div>
