@@ -765,6 +765,27 @@ select.compact-select {
   font-weight: 700;
 }
 
+.grammar-suggestion {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.grammar-suggestion > div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.grammar-suggestion span {
+  color: var(--muted);
+}
+
 .info-banner {
   margin-bottom: 16px;
   padding: 12px 14px;
