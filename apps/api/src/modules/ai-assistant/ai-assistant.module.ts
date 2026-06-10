@@ -1,7 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module";
 import { AuditLogsModule } from "../audit-logs/audit-logs.module";
-import { AiAssistantController, AiConfigurationController } from "./ai-assistant.controller";
+import { AiAssistantController, AiConfigurationController, EventServicesAiAssistantController } from "./ai-assistant.controller";
 import { AiAssistantService } from "./ai-assistant.service";
 import { AnthropicProvider } from "./providers/anthropic.provider";
 import { CustomHttpProvider } from "./providers/custom-http.provider";
@@ -13,7 +13,7 @@ import { TicketPromptBuilder } from "./prompts/ticket-prompt-builder";
 
 @Module({
   imports: [AuthModule, AuditLogsModule],
-  controllers: [AiAssistantController, AiConfigurationController],
+  controllers: [AiAssistantController, EventServicesAiAssistantController, AiConfigurationController],
   providers: [
     AiAssistantService,
     MockAiProvider,

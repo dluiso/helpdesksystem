@@ -396,6 +396,7 @@ model User {
   notifications       Notification[]
   ticketViews         UserTicketView[]
   uploadedAttachments TicketAttachment[]
+  uploadedEventServiceAttachments EventServiceAttachment[]
   signature           UserSignature?
   auditLogs           AuditLog[]
   aiRequestLogs       AiRequestLog[]
@@ -1102,6 +1103,7 @@ model StoredFile {
   createdAt        DateTime            @default(now())
   deletedAt        DateTime?
   ticketAttachment TicketAttachment?
+  eventServiceAttachment EventServiceAttachment?
   knowledgeArticleAttachment KnowledgeArticleAttachment?
 
   @@index([sha256Hash])
@@ -1142,6 +1144,41 @@ model TicketAttachment {
   @@index([scanStatus])
   @@index([deletedAt])
   @@map("ticket_attachments")
+}
+
+model EventServiceAttachment {
+  id               String                @id @default(uuid()) @db.Uuid
+  requestId        String                @db.Uuid
+  messageId        String?               @db.Uuid
+  uploadedByUserId String?               @db.Uuid
+  storedFileId     String                @unique @db.Uuid
+  source           AttachmentSource
+  originalFilename String
+  storedFilename   String
+  storageProvider  FileStorageProvider   @default(LOCAL)
+  storageKey       String
+  mimeType         String
+  fileExtension    String?
+  fileSize         Int
+  sha256Hash       String                @db.VarChar(64)
+  isInline         Boolean               @default(false)
+  contentId        String?
+  emailAttachmentId String?
+  scanStatus       AttachmentScanStatus  @default(PENDING)
+  scanResult       AttachmentScanResult  @default(NOT_SCANNED)
+  createdAt        DateTime              @default(now())
+  deletedAt        DateTime?
+  request          EventServiceRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  message          EventServiceMessage?  @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  uploadedByUser   User?                 @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  storedFile       StoredFile            @relation(fields: [storedFileId], references: [id], onDelete: Restrict)
+
+  @@index([requestId])
+  @@index([messageId])
+  @@index([uploadedByUserId])
+  @@index([scanStatus])
+  @@index([deletedAt])
+  @@map("event_service_attachments")
 }
 
 model AutoReplyTemplate {
@@ -1203,7 +1240,8 @@ model UserSignature {
 model AiRequestLog {
   id                    String     @id @default(uuid()) @db.Uuid
   userId                String     @db.Uuid
-  ticketId              String     @db.Uuid
+  ticketId              String?    @db.Uuid
+  eventServiceRequestId String?    @db.Uuid
   actionType            String
   provider              AiProvider @default(MOCK)
   model                 String
@@ -1212,10 +1250,12 @@ model AiRequestLog {
   metadata              Json?
   createdAt             DateTime   @default(now())
   user                  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ticket                Ticket     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticket                Ticket?    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  eventServiceRequest   EventServiceRequest? @relation(fields: [eventServiceRequestId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
   @@index([ticketId, createdAt])
+  @@index([eventServiceRequestId, createdAt])
   @@map("ai_request_logs")
 }
 
@@ -1604,7 +1644,9 @@ model EventServiceRequest {
   tasks              EventServiceTask[]
   comments           EventServiceComment[]
   messages           EventServiceMessage[]
+  attachments         EventServiceAttachment[]
   activity           EventServiceActivity[]
+  aiRequestLogs      AiRequestLog[]
 
   @@index([organizationId, status, updatedAt])
   @@index([clientId])
@@ -1681,9 +1723,13 @@ model EventServiceMessage {
   emailConversationId    String?
   inReplyTo              String?
   emailReferences        String?
+  ccEmails               String[]          @default([])
+  notifiedUserIds        String[]          @default([])
+  hasAttachments         Boolean           @default(false)
   createdAt              DateTime          @default(now())
   request                EventServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
   authorUser             User?             @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
+  attachments            EventServiceAttachment[]
 
   @@index([requestId, createdAt])
   @@index([authorUserId])

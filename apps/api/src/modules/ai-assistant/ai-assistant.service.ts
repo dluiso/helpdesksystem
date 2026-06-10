@@ -262,6 +262,74 @@ export class AiAssistantService {
     return result;
   }
 
+  async runForEvent(requestId: string, action: AiTicketAction, user: AuthenticatedUser, draft?: string) {
+    const request = await this.prisma.eventServiceRequest.findFirst({
+      where: this.eventRequestReferenceWhere(requestId, user.organizationId),
+      include: {
+        services: { include: { service: { select: { name: true } } } },
+        messages: {
+          orderBy: { createdAt: "asc" },
+          take: 20
+        }
+      }
+    });
+
+    if (!request) {
+      throw new NotFoundException("Event service request was not found.");
+    }
+
+    const eventContext = this.promptBuilder.buildEventContext({
+      trackingNumber: request.trackingNumber,
+      eventName: request.eventName,
+      requesterName: `${request.requesterFirstName} ${request.requesterLastName}`.trim(),
+      requesterEmail: request.requesterEmail,
+      eventDate: request.eventDate,
+      startTime: request.startTime,
+      endTime: request.endTime,
+      services: request.services.map((item) => item.service.name),
+      messages: request.messages.map((message) => ({
+        bodyText: message.bodyText,
+        visibility: message.visibility
+      }))
+    });
+    const resolved = await this.resolveProviderForAction(user.organizationId, action);
+    const runtimePrompt = this.systemPromptForEventAction(action, resolved.systemPrompt);
+    const result = await resolved.provider.complete(
+      {
+        action,
+        draft,
+        ticketContext: eventContext,
+        model: resolved.model,
+        systemPrompt: runtimePrompt,
+        temperature: action === "complete_draft" ? resolved.temperature ?? 0.2 : resolved.temperature,
+        maxOutputTokens: action === "complete_draft" ? resolved.maxOutputTokens ?? 80 : resolved.maxOutputTokens
+      },
+      resolved.config
+    );
+
+    await this.prisma.aiRequestLog.create({
+      data: {
+        userId: user.id,
+        eventServiceRequestId: request.id,
+        actionType: `event_${action}`,
+        provider: resolved.config.provider,
+        model: result.model,
+        approximateInputSize: eventContext.length + (draft?.length ?? 0),
+        approximateOutputSize: result.text.length
+      }
+    });
+
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "EventServiceRequest",
+      entityId: request.id,
+      action: "ai_assistant.used",
+      metadata: { action, provider: resolved.config.provider, model: result.model }
+    });
+
+    return result;
+  }
+
   private systemPromptForAction(action: AiTicketAction, configuredPrompt?: string | null) {
     if (action !== "complete_draft") {
       return configuredPrompt;
@@ -270,6 +338,18 @@ export class AiAssistantService {
     const autocompletePrompt =
       "You are an inline autocomplete assistant for IT support ticket replies. Continue the technician draft with only the next short phrase or sentence. Do not repeat the draft. Do not add greetings, signatures, explanations, markdown, or quoted labels.";
     return configuredPrompt ? `${configuredPrompt}\n\n${autocompletePrompt}` : autocompletePrompt;
+  }
+
+  private systemPromptForEventAction(action: AiTicketAction, configuredPrompt?: string | null) {
+    const eventPrompt =
+      "You are helping an event services coordinator write clear, professional customer messages about event service planning. Keep wording concise, helpful, and specific to the event request context.";
+    if (action !== "complete_draft") {
+      return configuredPrompt ? `${configuredPrompt}\n\n${eventPrompt}` : eventPrompt;
+    }
+
+    const autocompletePrompt =
+      "You are an inline autocomplete assistant for event services requester messages. Continue the draft with only the next short phrase or sentence. Do not repeat the draft. Do not add greetings, signatures, explanations, markdown, or quoted labels.";
+    return configuredPrompt ? `${configuredPrompt}\n\n${eventPrompt}\n\n${autocompletePrompt}` : `${eventPrompt}\n\n${autocompletePrompt}`;
   }
 
   private async resolveProviderForAction(organizationId: string, action: AiTicketAction) {
@@ -335,6 +415,20 @@ export class AiAssistantService {
   private ticketReferenceWhere(ticketRef: string, organizationId: string): Prisma.TicketWhereInput {
     const normalized = ticketRef.trim();
     const matchers: Prisma.TicketWhereInput[] = [{ ticketNumber: normalized.toUpperCase() }];
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)) {
+      matchers.push({ id: normalized });
+    }
+
+    return {
+      organizationId,
+      deletedAt: null,
+      OR: matchers
+    };
+  }
+
+  private eventRequestReferenceWhere(requestRef: string, organizationId: string): Prisma.EventServiceRequestWhereInput {
+    const normalized = requestRef.trim();
+    const matchers: Prisma.EventServiceRequestWhereInput[] = [{ trackingNumber: normalized.toUpperCase() }];
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)) {
       matchers.push({ id: normalized });
     }

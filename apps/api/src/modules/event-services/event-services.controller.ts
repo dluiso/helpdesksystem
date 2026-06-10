@@ -1,5 +1,24 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  Res,
+  StreamableFile,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { Request } from "express";
+import { Response } from "express";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
@@ -20,10 +39,17 @@ import { UpsertEventServiceFormFieldDto } from "./dto/upsert-event-service-form-
 import { UpsertEventServiceServiceDto } from "./dto/upsert-event-service-service.dto";
 import { EventServicesService } from "./event-services.service";
 import { BulkEventServiceRequestIdsDto } from "./dto/bulk-event-service-request-ids.dto";
+import { EventServicesAttachmentsService } from "./event-services-attachments.service";
+
+const uploadLimitMb = Number(process.env.MAX_UPLOAD_SIZE_MB ?? 25);
+const uploadLimitBytes = uploadLimitMb * 1024 * 1024;
 
 @Controller()
 export class EventServicesController {
-  constructor(private readonly eventServices: EventServicesService) {}
+  constructor(
+    private readonly eventServices: EventServicesService,
+    private readonly eventAttachments: EventServicesAttachmentsService
+  ) {}
 
   @Get("public/event-services/form")
   publicForm() {
@@ -197,5 +223,66 @@ export class EventServicesController {
   @RequirePermissions("event_services.update")
   sendMessage(@Param("requestId") requestId: string, @CurrentUser() user: AuthenticatedUser, @Body() body: CreateEventServiceMessageDto) {
     return this.eventServices.sendMessage(requestId, user, body);
+  }
+
+  @Post("event-services/:requestId/attachments")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.update")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: uploadLimitBytes } }))
+  uploadAttachment(
+    @Param("requestId") requestId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @UploadedFile() file?: { originalname: string; mimetype: string; size: number; buffer: Buffer }
+  ) {
+    if (!file) {
+      throw new BadRequestException("Attachment file is required.");
+    }
+    return this.eventAttachments.uploadForRequest(requestId, user, file);
+  }
+
+  @Get("event-services/:requestId/attachments/:attachmentId/download")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.view")
+  async downloadAttachment(
+    @Param("requestId") requestId: string,
+    @Param("attachmentId") attachmentId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    const result = await this.eventAttachments.getDownload(requestId, attachmentId, user, false);
+    response.set({
+      "Content-Type": result.attachment.mimeType,
+      "Content-Disposition": `attachment; filename="${encodeURIComponent(result.attachment.originalFilename)}"`,
+      "Cross-Origin-Resource-Policy": "cross-origin",
+      "Cache-Control": "private, no-store"
+    });
+    return new StreamableFile(result.stream);
+  }
+
+  @Get("event-services/:requestId/attachments/:attachmentId/preview")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.view")
+  async previewAttachment(
+    @Param("requestId") requestId: string,
+    @Param("attachmentId") attachmentId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    const result = await this.eventAttachments.getDownload(requestId, attachmentId, user, true);
+    response.set({
+      "Content-Type": result.attachment.mimeType,
+      "Content-Disposition": `inline; filename="${encodeURIComponent(result.attachment.originalFilename)}"`,
+      "Cross-Origin-Resource-Policy": "cross-origin",
+      "Cache-Control": "private, no-store"
+    });
+    return new StreamableFile(result.stream);
+  }
+
+  @Delete("event-services/:requestId/attachments/:attachmentId")
+  @HttpCode(204)
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.update")
+  async deleteAttachment(@Param("requestId") requestId: string, @Param("attachmentId") attachmentId: string, @CurrentUser() user: AuthenticatedUser) {
+    await this.eventAttachments.softDelete(requestId, attachmentId, user);
   }
 }

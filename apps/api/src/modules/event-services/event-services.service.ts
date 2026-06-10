@@ -21,6 +21,7 @@ import { UpdateEventServiceTaskDto } from "./dto/update-event-service-task.dto";
 import { UpdateMyEventServiceTaskDto } from "./dto/update-my-event-service-task.dto";
 import { UpsertEventServiceFormFieldDto } from "./dto/upsert-event-service-form-field.dto";
 import { UpsertEventServiceServiceDto } from "./dto/upsert-event-service-service.dto";
+import { EventServicesAttachmentsService } from "./event-services-attachments.service";
 import { EventServicesCalendarService } from "./event-services-calendar.service";
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):(00|15|30|45)$/;
@@ -36,6 +37,7 @@ export class EventServicesService {
     private readonly notifications: NotificationsService,
     private readonly autoReplies: AutoRepliesService,
     private readonly htmlSanitizer: HtmlSanitizerService,
+    private readonly attachments: EventServicesAttachmentsService,
     private readonly calendar: EventServicesCalendarService
   ) {}
 
@@ -422,40 +424,93 @@ export class EventServicesService {
 
   async sendMessage(requestId: string, user: AuthenticatedUser, input: CreateEventServiceMessageDto) {
     const request = await this.get(requestId, user);
-    const bodyText = input.body.trim();
+    const bodyText = input.bodyText.trim();
     if (!bodyText) {
       throw new BadRequestException("Message body is required.");
     }
-    const bodyHtml = this.htmlSanitizer.sanitize(`<p>${this.escapeHtml(bodyText).replace(/\n/g, "<br>")}</p>`);
-    const subject = `Re: Event request ${request.trackingNumber} - ${request.eventName}`;
-    const sendResult = await this.mailDelivery.sendTicketReply({
-      organizationId: user.organizationId,
-      to: [request.requesterEmail],
-      subject,
-      bodyText,
-      bodyHtml
-    });
-    if (!sendResult) {
-      throw new BadRequestException("Outbound email is disabled for the active mailbox.");
+    const isInternal = input.visibility === "internal";
+    const sanitizedBodyHtml = input.bodyHtml ? this.htmlSanitizer.sanitize(input.bodyHtml) : `<p>${this.escapeHtml(bodyText).replace(/\n/g, "<br>")}</p>`;
+    const ccEmails = isInternal ? [] : await this.resolveCcEmails(input.ccEmails ?? [], input.ccUserIds ?? [], user.organizationId);
+    const notifiedUserIds = [...new Set(input.notifyUserIds ?? [])];
+    const attachmentIds = [...new Set(input.attachmentIds ?? [])];
+    const rawAttachments = isInternal ? [] : await this.attachments.loadOutboundAttachments(request.id, attachmentIds);
+    let sendResult = null;
+    if (!isInternal) {
+      const latestInboundMessage = await this.prisma.eventServiceMessage.findFirst({
+        where: {
+          requestId: request.id,
+          direction: MessageDirection.INBOUND,
+          visibility: MessageVisibility.PUBLIC,
+          senderEmail: { not: null }
+        },
+        orderBy: { createdAt: "desc" }
+      });
+      const subject = `Re: Event request ${request.trackingNumber} - ${request.eventName}`;
+      sendResult = await this.mailDelivery.sendTicketReply({
+        organizationId: user.organizationId,
+        to: [request.requesterEmail],
+        cc: ccEmails,
+        subject,
+        bodyText,
+        bodyHtml: sanitizedBodyHtml,
+        inReplyTo: latestInboundMessage?.emailInternetMessageId ?? latestInboundMessage?.emailMessageId ?? null,
+        references: latestInboundMessage?.emailReferences ?? latestInboundMessage?.emailInternetMessageId ?? null,
+        replyToProviderMessageId: latestInboundMessage?.emailMessageId ?? undefined,
+        rawAttachments
+      });
+      if (!sendResult) {
+        throw new BadRequestException("Outbound email is disabled for the active mailbox.");
+      }
     }
 
     const message = await this.prisma.eventServiceMessage.create({
       data: {
         requestId: request.id,
         authorUserId: user.id,
-        direction: MessageDirection.OUTBOUND,
-        visibility: MessageVisibility.PUBLIC,
+        direction: isInternal ? MessageDirection.INTERNAL : MessageDirection.OUTBOUND,
+        visibility: isInternal ? MessageVisibility.INTERNAL : MessageVisibility.PUBLIC,
         bodyText,
-        bodyHtml,
-        sanitizedBodyHtml: bodyHtml,
-        emailMessageId: sendResult.providerMessageId,
-        emailInternetMessageId: sendResult.internetMessageId ?? null,
-        emailConversationId: sendResult.conversationId ?? null
+        bodyHtml: input.bodyHtml ?? null,
+        sanitizedBodyHtml,
+        emailMessageId: sendResult?.providerMessageId ?? null,
+        emailInternetMessageId: sendResult?.internetMessageId ?? null,
+        emailConversationId: sendResult?.conversationId ?? null,
+        ccEmails,
+        notifiedUserIds,
+        hasAttachments: Boolean(attachmentIds.length)
       },
-      include: { authorUser: { select: this.userSelect() } }
+      include: { authorUser: { select: this.userSelect() }, attachments: true }
     });
+
+    if (attachmentIds.length) {
+      await this.prisma.eventServiceAttachment.updateMany({
+        where: {
+          id: { in: attachmentIds },
+          requestId: request.id,
+          messageId: null,
+          deletedAt: null
+        },
+        data: { messageId: message.id }
+      });
+    }
+
     await this.logActivity(request.id, user.id, "event_service_message.sent", { messageId: message.id });
-    await this.notifyAssignedUsers(request.id, "Event requester message sent", bodyText.slice(0, 240), "eventCommentAdded", user.id);
+    await Promise.all([
+      this.notifyAssignedUsers(request.id, isInternal ? "Event internal note added" : "Event requester message sent", bodyText.slice(0, 240), "eventCommentAdded", user.id),
+      ...notifiedUserIds
+        .filter((userId) => userId !== user.id)
+        .map((userId) =>
+          this.notifyTaskAssignee(
+            userId,
+            request.id,
+            null,
+            isInternal ? "Event internal note added" : "Event requester message sent",
+            bodyText.slice(0, 240),
+            "eventCommentAdded",
+            request.trackingNumber
+          )
+        )
+    ]);
     return message;
   }
 
@@ -681,7 +736,13 @@ export class EventServicesService {
       ...(includeDetail
         ? {
             comments: { include: { user: { select: this.userSelect() } }, orderBy: { createdAt: "desc" } },
-            messages: { include: { authorUser: { select: this.userSelect() } }, orderBy: { createdAt: "desc" } },
+            messages: {
+              include: {
+                authorUser: { select: this.userSelect() },
+                attachments: { where: { deletedAt: null }, orderBy: { createdAt: "asc" } }
+              },
+              orderBy: { createdAt: "desc" }
+            },
             activity: { include: { user: { select: this.userSelect() } }, orderBy: { createdAt: "desc" }, take: 50 }
           }
         : {})
@@ -954,6 +1015,25 @@ export class EventServicesService {
         ...(taskId ? { taskId } : {})
       }
     });
+  }
+
+  private async resolveCcEmails(ccEmails: string[], ccUserIds: string[], organizationId: string) {
+    const manualEmails = ccEmails.map((email) => email.trim().toLowerCase()).filter(Boolean);
+    if (!ccUserIds.length) {
+      return [...new Set(manualEmails)];
+    }
+
+    const users = await this.prisma.user.findMany({
+      where: {
+        id: { in: [...new Set(ccUserIds)] },
+        organizationId,
+        isActive: true,
+        deletedAt: null
+      },
+      select: { email: true }
+    });
+
+    return [...new Set([...manualEmails, ...users.map((item) => item.email.toLowerCase())])];
   }
 
   private async sendRequesterInitialResponse(request: { id: string; organizationId: string; trackingNumber: string; eventName: string; requesterEmail: string; requesterFirstName: string; eventDate: Date | null; startTime: string | null; endTime: string | null }) {

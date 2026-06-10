@@ -57,6 +57,38 @@ export class AiAssistantController {
   }
 }
 
+@Controller("event-services/:requestId/ai")
+@UseGuards(SessionAuthGuard, PermissionsGuard)
+@RequirePermissions("ai_assistant.use")
+export class EventServicesAiAssistantController {
+  constructor(private readonly aiAssistantService: AiAssistantService) {}
+
+  @Post("improve-reply")
+  improveReply(@Param("requestId") requestId: string, @CurrentUser() user: AuthenticatedUser, @Body("draft") draft?: string) {
+    return this.aiAssistantService.runForEvent(requestId, "improve_reply", user, draft);
+  }
+
+  @Post("fix-grammar")
+  fixGrammar(@Param("requestId") requestId: string, @CurrentUser() user: AuthenticatedUser, @Body("draft") draft?: string) {
+    return this.aiAssistantService.runForEvent(requestId, "fix_grammar", user, draft);
+  }
+
+  @Post("suggest-reply")
+  suggestReply(@Param("requestId") requestId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.aiAssistantService.runForEvent(requestId, "suggest_reply", user);
+  }
+
+  @Post("complete-draft")
+  completeDraft(@Param("requestId") requestId: string, @CurrentUser() user: AuthenticatedUser, @Body("draft") draft?: string) {
+    return this.aiAssistantService.runForEvent(requestId, "complete_draft", user, draft);
+  }
+
+  @Post("paraphrase")
+  paraphrase(@Param("requestId") requestId: string, @CurrentUser() user: AuthenticatedUser, @Body("draft") draft?: string) {
+    return this.aiAssistantService.runForEvent(requestId, "paraphrase", user, draft);
+  }
+}
+
 @Controller("ai")
 @UseGuards(SessionAuthGuard, PermissionsGuard)
 export class AiConfigurationController {

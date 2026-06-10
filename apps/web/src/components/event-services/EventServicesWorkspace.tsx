@@ -1,8 +1,10 @@
 "use client";
 
-import { CalendarDays, CalendarPlus, CheckCircle2, ChevronDown, ClipboardList, ExternalLink, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Send, Trash2, UsersRound, X } from "lucide-react";
+import { CalendarDays, CalendarPlus, CheckCircle2, ChevronDown, ClipboardList, ExternalLink, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Trash2, UsersRound, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { AttachmentPreviewList } from "../tickets/AttachmentPreviewList";
+import { EventMessageComposer } from "./EventMessageComposer";
 
 type EventStatus = "NEW" | "UNDER_REVIEW" | "SCHEDULED" | "ASSIGNED" | "IN_PROGRESS" | "WAITING_ON_CLIENT" | "WAITING_ON_INTERNAL_TEAM" | "COMPLETED" | "CANCELLED" | "CONVERTED_TO_TICKET";
 type TaskStatus = "TODO" | "IN_PROGRESS" | "BLOCKED" | "DONE" | "CANCELLED";
@@ -56,7 +58,18 @@ interface EventServiceRequest {
   assignees: Array<{ user: UserOption; role: string | null }>;
   tasks: Array<{ id: string; title: string; description: string | null; status: TaskStatus; progressPercent: number; dueAt: string | null; calendarEventId: string | null; calendarUserEmail: string | null; calendarSyncedAt: string | null; calendarSyncError: string | null; assignedUser: UserOption | null }>;
   comments?: Array<{ id: string; body: string; createdAt: string; user: UserOption | null }>;
-  messages?: Array<{ id: string; bodyText: string; bodyHtml: string | null; direction: "INBOUND" | "OUTBOUND" | "INTERNAL"; createdAt: string; senderEmail: string | null; authorUser: UserOption | null }>;
+  messages?: Array<{
+    id: string;
+    bodyText: string;
+    bodyHtml: string | null;
+    sanitizedBodyHtml: string | null;
+    direction: "INBOUND" | "OUTBOUND" | "INTERNAL";
+    visibility: "PUBLIC" | "INTERNAL";
+    createdAt: string;
+    senderEmail: string | null;
+    authorUser: UserOption | null;
+    attachments: Array<{ id: string; originalFilename: string; mimeType: string; fileSize: number; isInline?: boolean }>;
+  }>;
 }
 
 interface EventServiceTaskAssignment {
@@ -100,6 +113,24 @@ function formatDateTime(value: string | null) {
   return value ? new Date(value).toLocaleString(undefined, { month: "short", day: "2-digit", hour: "numeric", minute: "2-digit" }) : "No date";
 }
 
+function escapeHtml(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function textToHtml(value: string) {
+  return escapeHtml(value).replace(/\n/g, "<br />");
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${Math.round(bytes / 102.4) / 10} KB`;
+  }
+  return `${Math.round((bytes / 1024 / 1024) * 10) / 10} MB`;
+}
+
 export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWorkspaceProps = {}) {
   const detailPage = Boolean(detailTrackingNumber);
   const [activeTab, setActiveTab] = useState<"requests" | "myTasks">("requests");
@@ -120,7 +151,6 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
   const [draft, setDraft] = useState({ status: "NEW" as EventStatus, priority: "NORMAL" as Priority, progressPercent: 0, assignedTeamId: "", assignedUserIds: [] as string[], additionalInfo: "" });
   const [taskDraft, setTaskDraft] = useState({ title: "", assignedUserId: "", description: "", dueAt: "" });
   const [commentDraft, setCommentDraft] = useState("");
-  const [messageDraft, setMessageDraft] = useState("");
   const [calendarDrafts, setCalendarDrafts] = useState<Record<string, { startDate: string; startTime: string; endDate: string; endTime: string; location: string; notes: string }>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -418,25 +448,6 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
       await loadSelected(selected.id);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to add comment.");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function sendMessage() {
-    if (!selected || !messageDraft.trim()) return;
-    setBusy("message");
-    setError(null);
-    try {
-      await apiFetch(`/event-services/${selected.id}/messages`, {
-        method: "POST",
-        body: JSON.stringify({ body: messageDraft })
-      });
-      setMessageDraft("");
-      setNotice("Message sent to requester.");
-      await loadSelected(selected.id);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to send requester message.");
     } finally {
       setBusy(null);
     }
@@ -774,14 +785,30 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
 
               {detailSection === "messages" ? (
                 <div className="nested-panel">
-                  <h3><MessageSquare size={16} />Requester Messages</h3>
-                  <textarea className="input" placeholder="Write a message to the requester..." value={messageDraft} onChange={(event) => setMessageDraft(event.target.value)} />
-                  <button className="button" type="button" onClick={sendMessage} disabled={busy === "message"}><Send size={16} />Send Message</button>
+                  <div className="section-heading compact-heading">
+                    <div>
+                      <h3><MessageSquare size={16} />Requester Messages</h3>
+                      <p className="muted">Send polished requester updates, save internal notes, attach files, and use AI writing tools.</p>
+                    </div>
+                  </div>
+                  <EventMessageComposer requestId={selected.id} users={users} onSaved={async () => {
+                    setNotice("Event message saved.");
+                    await loadSelected(selected.id);
+                  }} />
                   <div className="event-message-list">
                     {(selected.messages ?? []).map((message) => (
                       <article className={`event-message ${message.direction.toLowerCase()}`} key={message.id}>
-                        <strong>{message.direction === "OUTBOUND" ? userName(message.authorUser) : message.senderEmail ?? selected.requesterEmail}</strong>
-                        <p>{message.bodyText}</p>
+                        <strong>{message.direction === "OUTBOUND" || message.direction === "INTERNAL" ? userName(message.authorUser) : message.senderEmail ?? selected.requesterEmail}</strong>
+                        <div className="message-body signature-render" dangerouslySetInnerHTML={{ __html: message.sanitizedBodyHtml ?? textToHtml(message.bodyText) }} />
+                        {message.attachments?.length ? (
+                          <AttachmentPreviewList attachments={message.attachments.map((attachment) => ({
+                            id: attachment.id,
+                            originalFilename: attachment.originalFilename,
+                            mimeType: attachment.mimeType,
+                            sizeLabel: formatBytes(attachment.fileSize),
+                            isInline: attachment.isInline
+                          }))} />
+                        ) : null}
                         <small>{formatDateTime(message.createdAt)}</small>
                       </article>
                     ))}
