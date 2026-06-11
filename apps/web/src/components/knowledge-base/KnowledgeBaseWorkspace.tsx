@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, Bold, Edit3, Eye, FileUp, ImagePlus, Italic, List, ListOrdered, Plus, Save, Search, Trash2, Underline, UploadCloud, X } from "lucide-react";
+import { Archive, Bold, BookOpen, Edit3, Eye, FileUp, ImagePlus, Italic, List, ListOrdered, Plus, Save, Search, Trash2, Underline, UploadCloud, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
@@ -58,6 +58,33 @@ interface ImportItem {
   tags: string[];
   status: KnowledgeStatus;
   sensitiveWarnings: string[];
+  sourceType?: string | null;
+  sourceExternalId?: string | null;
+  sourceUrl?: string | null;
+  alreadyImported?: boolean;
+}
+
+interface OneNoteStatus {
+  enabled: boolean;
+  configured: boolean;
+  defaultCategoryId: string | null;
+}
+
+interface OneNoteNotebook {
+  id: string;
+  displayName: string;
+  isDefault?: boolean;
+}
+
+interface OneNoteSection {
+  id: string;
+  displayName: string;
+}
+
+interface OneNotePage {
+  id: string;
+  title: string;
+  lastModifiedDateTime?: string;
 }
 
 function label(value: string) {
@@ -108,6 +135,16 @@ export function KnowledgeBaseWorkspace() {
   const [error, setError] = useState<string | null>(null);
   const [importItems, setImportItems] = useState<ImportItem[]>([]);
   const [showImportReview, setShowImportReview] = useState(false);
+  const [importSource, setImportSource] = useState<"PDF" | "OneNote">("PDF");
+  const [oneNoteStatus, setOneNoteStatus] = useState<OneNoteStatus>({ enabled: false, configured: false, defaultCategoryId: null });
+  const [showOneNoteImport, setShowOneNoteImport] = useState(false);
+  const [oneNoteNotebooks, setOneNoteNotebooks] = useState<OneNoteNotebook[]>([]);
+  const [oneNoteSections, setOneNoteSections] = useState<OneNoteSection[]>([]);
+  const [oneNotePages, setOneNotePages] = useState<OneNotePage[]>([]);
+  const [selectedNotebookId, setSelectedNotebookId] = useState("");
+  const [selectedSectionId, setSelectedSectionId] = useState("");
+  const [selectedOneNotePageIds, setSelectedOneNotePageIds] = useState<string[]>([]);
+  const [oneNoteCategoryId, setOneNoteCategoryId] = useState("");
 
   const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? articles[0] ?? null;
   const allTags = useMemo(() => [...new Set(articles.flatMap((article) => article.tags))].sort(), [articles]);
@@ -117,6 +154,10 @@ export function KnowledgeBaseWorkspace() {
     void loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, categoryId, status, tag]);
+
+  useEffect(() => {
+    void loadOneNoteStatus();
+  }, []);
 
   useEffect(() => {
     const articleId = searchParams.get("articleId");
@@ -153,6 +194,16 @@ export function KnowledgeBaseWorkspace() {
       setError(err instanceof Error ? err.message : "Unable to load Knowledge Base.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadOneNoteStatus() {
+    try {
+      const result = await apiFetch<OneNoteStatus>("/knowledge-base/import/onenote/status");
+      setOneNoteStatus(result);
+      setOneNoteCategoryId(result.defaultCategoryId ?? "");
+    } catch {
+      setOneNoteStatus({ enabled: false, configured: false, defaultCategoryId: null });
     }
   }
 
@@ -295,6 +346,7 @@ export function KnowledgeBaseWorkspace() {
         body: formData
       });
       setImportItems(result.items);
+      setImportSource("PDF");
       setShowImportReview(true);
       setNotice(`${result.itemCount} import candidates detected.`);
     } catch (err) {
@@ -325,6 +377,92 @@ export function KnowledgeBaseWorkspace() {
 
   function updateImportItem(id: string, patch: Partial<ImportItem>) {
     setImportItems((current) => current.map((item) => (item.temporaryId === id ? { ...item, ...patch } : item)));
+  }
+
+  async function openOneNoteImport() {
+    setShowOneNoteImport(true);
+    setError(null);
+    setNotice(null);
+    if (!oneNoteNotebooks.length) {
+      await loadOneNoteNotebooks();
+    }
+  }
+
+  async function loadOneNoteNotebooks() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await apiFetch<OneNoteNotebook[]>("/knowledge-base/import/onenote/notebooks");
+      setOneNoteNotebooks(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load OneNote notebooks.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function selectOneNoteNotebook(notebookId: string) {
+    setSelectedNotebookId(notebookId);
+    setSelectedSectionId("");
+    setOneNoteSections([]);
+    setOneNotePages([]);
+    setSelectedOneNotePageIds([]);
+    if (!notebookId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await apiFetch<OneNoteSection[]>(`/knowledge-base/import/onenote/sections?notebookId=${encodeURIComponent(notebookId)}`);
+      setOneNoteSections(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load OneNote sections.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function selectOneNoteSection(sectionId: string) {
+    setSelectedSectionId(sectionId);
+    setOneNotePages([]);
+    setSelectedOneNotePageIds([]);
+    if (!sectionId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await apiFetch<OneNotePage[]>(`/knowledge-base/import/onenote/pages?sectionId=${encodeURIComponent(sectionId)}`);
+      setOneNotePages(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load OneNote pages.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleOneNotePage(pageId: string, checked: boolean) {
+    setSelectedOneNotePageIds((current) => (checked ? [...new Set([...current, pageId])] : current.filter((id) => id !== pageId)));
+  }
+
+  async function previewOneNoteImport() {
+    if (!selectedOneNotePageIds.length) {
+      setError("Select at least one OneNote page to import.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await apiFetch<{ items: ImportItem[]; itemCount: number }>("/knowledge-base/import/onenote/preview", {
+        method: "POST",
+        body: JSON.stringify({ pageIds: selectedOneNotePageIds, categoryId: oneNoteCategoryId || null })
+      });
+      setImportItems(result.items);
+      setImportSource("OneNote");
+      setShowOneNoteImport(false);
+      setShowImportReview(true);
+      setNotice(`${result.itemCount} OneNote pages ready for review.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to preview OneNote import.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -362,6 +500,12 @@ export function KnowledgeBaseWorkspace() {
             <span>Import PDF</span>
           </button>
           <input ref={pdfInputRef} type="file" accept="application/pdf,.pdf" hidden onChange={(event) => event.target.files?.[0] && void previewPdf(event.target.files[0])} />
+          {oneNoteStatus.enabled ? (
+            <button className="button secondary" type="button" onClick={() => void openOneNoteImport()} disabled={!oneNoteStatus.configured || busy}>
+              <BookOpen size={16} aria-hidden="true" />
+              <span>Import OneNote</span>
+            </button>
+          ) : null}
         </div>
       </section>
 
@@ -492,7 +636,7 @@ export function KnowledgeBaseWorkspace() {
           <section className="modal-panel knowledge-import-modal" role="dialog" aria-modal="true" aria-labelledby="kb-import-title">
             <div className="modal-header">
               <div>
-                <h2 id="kb-import-title">Review PDF Import</h2>
+                <h2 id="kb-import-title">Review {importSource} Import</h2>
                 <p className="muted">Edit, deselect, or remove candidates before creating draft articles.</p>
               </div>
               <button className="icon-button" type="button" onClick={() => setShowImportReview(false)} aria-label="Close import review">
@@ -504,7 +648,7 @@ export function KnowledgeBaseWorkspace() {
                 <div className={`knowledge-import-card ${item.selected === false ? "muted-import" : ""}`} key={item.temporaryId}>
                   <label className="checkbox-card">
                     <input type="checkbox" checked={item.selected !== false} onChange={(event) => updateImportItem(item.temporaryId, { selected: event.target.checked })} />
-                    <span>Import this article</span>
+                    <span>{item.alreadyImported ? "Already imported" : "Import this article"}</span>
                   </label>
                   <input className="input" value={item.title} onChange={(event) => updateImportItem(item.temporaryId, { title: event.target.value })} />
                   <div className="knowledge-editor-grid">
@@ -512,6 +656,7 @@ export function KnowledgeBaseWorkspace() {
                     <input className="input" value={item.tags.join(", ")} onChange={(event) => updateImportItem(item.temporaryId, { tags: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })} placeholder="Tags" />
                   </div>
                   {item.sensitiveWarnings.length ? <p className="warning-text">Review sensitive content: {item.sensitiveWarnings.map(label).join(", ")}</p> : null}
+                  {item.sourceUrl ? <a className="muted" href={item.sourceUrl} target="_blank" rel="noreferrer">Open original source</a> : null}
                   <textarea className="input" rows={6} value={stripHtml(item.content)} onChange={(event) => updateImportItem(item.temporaryId, { content: `<pre>${escapeHtml(event.target.value)}</pre>` })} />
                 </div>
               ))}
@@ -521,6 +666,71 @@ export function KnowledgeBaseWorkspace() {
               <button className="button" type="button" onClick={() => void commitImport()} disabled={busy}>
                 <UploadCloud size={16} aria-hidden="true" />
                 <span>Import Selected Drafts</span>
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {showOneNoteImport ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-panel knowledge-import-modal" role="dialog" aria-modal="true" aria-labelledby="kb-onenote-title">
+            <div className="modal-header">
+              <div>
+                <h2 id="kb-onenote-title">Import OneNote Pages</h2>
+                <p className="muted">Select pages from the configured Microsoft OneNote account. Imported pages become draft articles.</p>
+              </div>
+              <button className="icon-button" type="button" onClick={() => setShowOneNoteImport(false)} aria-label="Close OneNote import">
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="onenote-import-grid">
+              <label className="field">
+                <span>Notebook</span>
+                <select className="input" value={selectedNotebookId} onChange={(event) => void selectOneNoteNotebook(event.target.value)}>
+                  <option value="">Select notebook</option>
+                  {oneNoteNotebooks.map((notebook) => (
+                    <option key={notebook.id} value={notebook.id}>{notebook.displayName}{notebook.isDefault ? " (Default)" : ""}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Section</span>
+                <select className="input" value={selectedSectionId} onChange={(event) => void selectOneNoteSection(event.target.value)} disabled={!selectedNotebookId}>
+                  <option value="">Select section</option>
+                  {oneNoteSections.map((section) => (
+                    <option key={section.id} value={section.id}>{section.displayName}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Import category</span>
+                <select className="input" value={oneNoteCategoryId} onChange={(event) => setOneNoteCategoryId(event.target.value)}>
+                  <option value="">Imported</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>{category.name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="onenote-page-list">
+              {!selectedSectionId ? <p className="muted">Choose a notebook and section to list pages.</p> : null}
+              {selectedSectionId && oneNotePages.length === 0 ? <p className="muted">No pages found in this section.</p> : null}
+              {oneNotePages.map((page) => (
+                <label className="onenote-page-row" key={page.id}>
+                  <input type="checkbox" checked={selectedOneNotePageIds.includes(page.id)} onChange={(event) => toggleOneNotePage(page.id, event.target.checked)} />
+                  <span>
+                    <strong>{page.title || "Untitled page"}</strong>
+                    {page.lastModifiedDateTime ? <small>Modified {new Date(page.lastModifiedDateTime).toLocaleString()}</small> : null}
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div className="modal-actions">
+              <button className="button secondary" type="button" onClick={() => setShowOneNoteImport(false)}>Cancel</button>
+              <button className="button" type="button" onClick={() => void previewOneNoteImport()} disabled={busy || selectedOneNotePageIds.length === 0}>
+                <UploadCloud size={16} aria-hidden="true" />
+                <span>Review Selected Pages</span>
               </button>
             </div>
           </section>

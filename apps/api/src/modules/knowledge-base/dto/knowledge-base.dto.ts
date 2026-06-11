@@ -132,9 +132,63 @@ export class KnowledgeImportItemDto {
   @IsArray()
   @IsString({ each: true })
   tags?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  sourceType?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  sourceExternalId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  sourceUrl?: string | null;
 }
 
 export class CommitKnowledgeImportDto {
   @IsArray()
   items!: KnowledgeImportItemDto[];
+}
+
+export class UpdateKnowledgeOneNoteSettingsDto {
+  @IsBoolean()
+  knowledgeOneNoteImportEnabled!: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  knowledgeOneNoteTenantId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  knowledgeOneNoteClientId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  knowledgeOneNoteClientSecretReference?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  knowledgeOneNoteSourceUserPrincipalName?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  knowledgeOneNoteDefaultCategoryId?: string | null;
+}
+
+export class PreviewOneNoteImportDto {
+  @IsArray()
+  @IsString({ each: true })
+  pageIds!: string[];
+
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string | null;
 }

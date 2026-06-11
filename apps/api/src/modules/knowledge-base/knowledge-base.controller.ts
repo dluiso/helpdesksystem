@@ -27,10 +27,13 @@ import {
   CreateKnowledgeArticleDto,
   CreateKnowledgeCategoryDto,
   ListKnowledgeArticlesQueryDto,
+  PreviewOneNoteImportDto,
+  UpdateKnowledgeOneNoteSettingsDto,
   UpdateKnowledgeArticleDto,
   UpdateKnowledgeCategoryDto
 } from "./dto/knowledge-base.dto";
 import { KnowledgeBaseService } from "./knowledge-base.service";
+import { KnowledgeOneNoteImportService } from "./knowledge-onenote-import.service";
 
 const uploadLimitMb = Number(process.env.MAX_UPLOAD_SIZE_MB ?? 25);
 const uploadLimitBytes = uploadLimitMb * 1024 * 1024;
@@ -38,7 +41,10 @@ const uploadLimitBytes = uploadLimitMb * 1024 * 1024;
 @Controller("knowledge-base")
 @UseGuards(SessionAuthGuard, PermissionsGuard)
 export class KnowledgeBaseController {
-  constructor(private readonly knowledgeBaseService: KnowledgeBaseService) {}
+  constructor(
+    private readonly knowledgeBaseService: KnowledgeBaseService,
+    private readonly oneNoteImportService: KnowledgeOneNoteImportService
+  ) {}
 
   @Get("categories")
   @RequirePermissions("knowledge_base.view")
@@ -139,6 +145,54 @@ export class KnowledgeBaseController {
       throw new BadRequestException("PDF file is required.");
     }
     return this.knowledgeBaseService.previewPdfImport(user, file);
+  }
+
+  @Get("config/onenote")
+  @RequirePermissions("system_settings.view")
+  getOneNoteConfig(@CurrentUser() user: AuthenticatedUser) {
+    return this.oneNoteImportService.getSettings(user);
+  }
+
+  @Patch("config/onenote")
+  @RequirePermissions("system_settings.update")
+  updateOneNoteConfig(@CurrentUser() user: AuthenticatedUser, @Body() body: UpdateKnowledgeOneNoteSettingsDto) {
+    return this.oneNoteImportService.updateSettings(user, body);
+  }
+
+  @Post("config/onenote/test")
+  @RequirePermissions("system_settings.update")
+  testOneNoteConfig(@CurrentUser() user: AuthenticatedUser) {
+    return this.oneNoteImportService.testConnection(user);
+  }
+
+  @Get("import/onenote/status")
+  @RequirePermissions("knowledge_base.create")
+  getOneNoteImportStatus(@CurrentUser() user: AuthenticatedUser) {
+    return this.oneNoteImportService.getStatus(user);
+  }
+
+  @Get("import/onenote/notebooks")
+  @RequirePermissions("knowledge_base.create")
+  listOneNoteNotebooks(@CurrentUser() user: AuthenticatedUser) {
+    return this.oneNoteImportService.listNotebooks(user);
+  }
+
+  @Get("import/onenote/sections")
+  @RequirePermissions("knowledge_base.create")
+  listOneNoteSections(@CurrentUser() user: AuthenticatedUser, @Query("notebookId") notebookId: string) {
+    return this.oneNoteImportService.listSections(user, notebookId);
+  }
+
+  @Get("import/onenote/pages")
+  @RequirePermissions("knowledge_base.create")
+  listOneNotePages(@CurrentUser() user: AuthenticatedUser, @Query("sectionId") sectionId: string) {
+    return this.oneNoteImportService.listPages(user, sectionId);
+  }
+
+  @Post("import/onenote/preview")
+  @RequirePermissions("knowledge_base.create")
+  previewOneNoteImport(@CurrentUser() user: AuthenticatedUser, @Body() body: PreviewOneNoteImportDto) {
+    return this.oneNoteImportService.previewImport(user, body);
   }
 
   @Post("import/commit")

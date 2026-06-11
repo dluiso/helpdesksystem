@@ -5004,6 +5004,41 @@ a.dashboard-list-row:hover {
   opacity: 0.62;
 }
 
+.onenote-import-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.onenote-page-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(460px, calc(100vh - 360px));
+  margin-top: 14px;
+  overflow: auto;
+}
+
+.onenote-page-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.onenote-page-row span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.onenote-page-row small {
+  color: var(--muted);
+}
+
 .warning-text {
   margin: 0;
   color: var(--warning);
@@ -5068,7 +5103,8 @@ a.dashboard-list-row:hover {
   .report-admin-row.compact,
   .knowledge-toolbar,
   .knowledge-layout,
-  .knowledge-editor-grid {
+  .knowledge-editor-grid,
+  .onenote-import-grid {
     grid-template-columns: 1fr;
   }
 

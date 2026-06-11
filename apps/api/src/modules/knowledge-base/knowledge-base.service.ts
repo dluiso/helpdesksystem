@@ -287,20 +287,70 @@ export class KnowledgeBaseService {
     const selected = input.items.filter((item) => item.selected !== false && item.title.trim() && item.content.trim());
     const results = [];
     for (const item of selected) {
+      if (item.sourceType && item.sourceExternalId) {
+        const existing = await this.prisma.knowledgeArticle.findFirst({
+          where: {
+            organizationId: user.organizationId,
+            sourceType: item.sourceType,
+            sourceExternalId: item.sourceExternalId,
+            deletedAt: null
+          },
+          include: this.articleInclude()
+        });
+        if (existing) {
+          continue;
+        }
+      }
       const categoryId = item.categoryId ?? (item.categoryName ? (await this.findOrCreateCategory(user, item.categoryName)).id : null);
       results.push(
-        await this.createArticle(user, {
+        await this.createImportedArticle(user, {
           title: item.title,
           content: item.content,
           categoryId,
           tags: item.tags,
-          status: KnowledgeStatus.DRAFT,
-          visibility: KnowledgeVisibility.INTERNAL
+          sourceType: item.sourceType,
+          sourceExternalId: item.sourceExternalId,
+          sourceUrl: item.sourceUrl
         })
       );
     }
 
     return { imported: results.length, articles: results };
+  }
+
+  private async createImportedArticle(
+    user: AuthenticatedUser,
+    input: {
+      title: string;
+      content: string;
+      categoryId: string | null;
+      tags?: string[];
+      sourceType?: string | null;
+      sourceExternalId?: string | null;
+      sourceUrl?: string | null;
+    }
+  ) {
+    await this.validateCategory(user.organizationId, input.categoryId ?? null);
+    const title = input.title.trim();
+    return this.prisma.knowledgeArticle.create({
+      data: {
+        organizationId: user.organizationId,
+        categoryId: input.categoryId ?? null,
+        title,
+        slug: await this.uniqueArticleSlug(user.organizationId, title),
+        content: this.sanitizer.sanitize(input.content),
+        tags: this.normalizeTags(input.tags),
+        status: KnowledgeStatus.DRAFT,
+        visibility: KnowledgeVisibility.INTERNAL,
+        createdById: user.id,
+        updatedById: user.id,
+        sourceType: this.optionalTrim(input.sourceType),
+        sourceExternalId: this.optionalTrim(input.sourceExternalId),
+        sourceUrl: this.optionalTrim(input.sourceUrl),
+        sourceSyncedAt: input.sourceType && input.sourceExternalId ? new Date() : null
+      },
+      include: this.articleInclude()
+    });
   }
 
   private articleInclude() {
