@@ -1,6 +1,6 @@
 import { KnowledgeStatus, KnowledgeVisibility } from "@prisma/client";
 import { Type } from "class-transformer";
-import { IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength, ValidateNested } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength, ValidateNested } from "class-validator";
 
 export class ListKnowledgeArticlesQueryDto {
   @IsOptional()
@@ -18,6 +18,25 @@ export class ListKnowledgeArticlesQueryDto {
   @IsOptional()
   @IsEnum(KnowledgeStatus)
   status?: KnowledgeStatus;
+}
+
+export class BulkKnowledgeArticleStatusDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsUUID(undefined, { each: true })
+  articleIds!: string[];
+
+  @IsEnum(KnowledgeStatus)
+  status!: KnowledgeStatus;
+}
+
+export class BulkKnowledgeArticleDeleteDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsUUID(undefined, { each: true })
+  articleIds!: string[];
 }
 
 export class CreateKnowledgeCategoryDto {

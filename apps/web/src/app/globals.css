@@ -4828,14 +4828,26 @@ a.dashboard-list-row:hover {
 
 .knowledge-toolbar {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) minmax(150px, 200px) minmax(130px, 160px) minmax(120px, 160px) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
+}
+
+.knowledge-toolbar-main {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(150px, 200px) minmax(130px, 160px) minmax(120px, 160px) auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
 }
 
 .knowledge-actions {
   justify-content: flex-end;
   flex-wrap: nowrap;
+}
+
+.knowledge-detail-nav {
+  justify-content: flex-start;
 }
 
 .knowledge-layout {
@@ -4917,6 +4929,64 @@ a.dashboard-list-row:hover {
   gap: 16px;
 }
 
+.knowledge-search-results {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+
+.knowledge-search-result {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(0, 1.6fr);
+  gap: 14px;
+  align-items: start;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.knowledge-search-result:hover {
+  border-color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 7%, var(--surface));
+}
+
+.knowledge-search-result span {
+  min-width: 0;
+}
+
+.knowledge-search-result strong,
+.knowledge-search-result small {
+  display: block;
+}
+
+.knowledge-search-result small,
+.knowledge-search-snippet {
+  color: var(--muted);
+}
+
+.knowledge-search-snippet {
+  line-height: 1.45;
+}
+
+.knowledge-bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--brand-primary) 8%, var(--surface));
+}
+
 .knowledge-view-toggle {
   display: inline-flex;
   gap: 6px;
@@ -4938,7 +5008,7 @@ a.dashboard-list-row:hover {
 
 .knowledge-table-row {
   display: grid;
-  grid-template-columns: minmax(220px, 2fr) minmax(140px, 1fr) minmax(90px, 0.6fr) minmax(70px, 0.4fr) minmax(110px, 0.7fr);
+  grid-template-columns: 28px minmax(0, 1fr);
   gap: 12px;
   align-items: center;
   width: 100%;
@@ -4951,11 +5021,26 @@ a.dashboard-list-row:hover {
   cursor: pointer;
 }
 
+.knowledge-row-open {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) minmax(140px, 1fr) minmax(90px, 0.6fr) minmax(70px, 0.4fr) minmax(110px, 0.7fr);
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .knowledge-table-row:last-child {
   border-bottom: 0;
 }
 
 .knowledge-table-row.header {
+  grid-template-columns: 28px minmax(220px, 2fr) minmax(140px, 1fr) minmax(90px, 0.6fr) minmax(70px, 0.4fr) minmax(110px, 0.7fr);
   background: var(--surface-raised);
   color: var(--muted);
   font-size: 12px;
@@ -4993,7 +5078,7 @@ a.dashboard-list-row:hover {
 
 .knowledge-card {
   display: grid;
-  gap: 9px;
+  gap: 8px;
   min-height: 152px;
   padding: 14px;
   border: 1px solid var(--line);
@@ -5002,13 +5087,34 @@ a.dashboard-list-row:hover {
   background: var(--surface);
   color: var(--text);
   text-align: left;
-  cursor: pointer;
 }
 
 .knowledge-card.active,
 .knowledge-card:hover {
   border-color: var(--brand-primary);
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.knowledge-card-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.knowledge-card-open {
+  display: grid;
+  gap: 9px;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .knowledge-card strong {
@@ -5312,6 +5418,7 @@ a.dashboard-list-row:hover {
   .report-admin-row,
   .report-admin-row.compact,
   .knowledge-toolbar,
+  .knowledge-toolbar-main,
   .knowledge-layout,
   .knowledge-editor-grid,
   .knowledge-editor-top,
@@ -5319,6 +5426,9 @@ a.dashboard-list-row:hover {
   .knowledge-readable-layout,
   .knowledge-card-grid,
   .knowledge-table-row,
+  .knowledge-table-row.header,
+  .knowledge-row-open,
+  .knowledge-search-result,
   .onenote-import-grid {
     grid-template-columns: 1fr;
   }
@@ -5328,7 +5438,8 @@ a.dashboard-list-row:hover {
   }
 
   .knowledge-actions,
-  .knowledge-detail-header {
+  .knowledge-detail-header,
+  .knowledge-bulk-bar {
     align-items: stretch;
     flex-direction: column;
   }

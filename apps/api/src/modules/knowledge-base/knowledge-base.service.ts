@@ -7,6 +7,8 @@ import { AuthenticatedUser } from "../auth/auth.types";
 import { FileStorageService } from "../file-storage/file-storage.service";
 import { PrismaService } from "../prisma/prisma.service";
 import {
+  BulkKnowledgeArticleDeleteDto,
+  BulkKnowledgeArticleStatusDto,
   CommitKnowledgeImportDto,
   CreateKnowledgeArticleDto,
   CreateKnowledgeCategoryDto,
@@ -32,29 +34,80 @@ export class KnowledgeBaseService {
   ) {}
 
   async listArticles(user: AuthenticatedUser, query: ListKnowledgeArticlesQueryDto) {
-    const where: Prisma.KnowledgeArticleWhereInput = {
-      organizationId: user.organizationId,
-      deletedAt: null,
-      ...(query.categoryId ? { categoryId: query.categoryId } : {}),
-      ...(query.status ? { status: query.status } : {}),
-      ...(query.tag ? { tags: { has: query.tag.trim().toLowerCase() } } : {})
-    };
-    const search = query.search?.trim();
-    if (search) {
-      where.OR = [
-        { title: { contains: search, mode: "insensitive" } },
-        { content: { contains: search, mode: "insensitive" } },
-        { pages: { some: { title: { contains: search, mode: "insensitive" } } } },
-        { pages: { some: { content: { contains: search, mode: "insensitive" } } } },
-        { tags: { has: search.toLowerCase() } }
-      ];
-    }
+    const where = this.buildArticleWhere(user.organizationId, query);
 
     return this.prisma.knowledgeArticle.findMany({
       where,
       include: this.articleInclude(),
       orderBy: [{ updatedAt: "desc" }, { title: "asc" }]
     });
+  }
+
+  async searchArticles(user: AuthenticatedUser, query: ListKnowledgeArticlesQueryDto) {
+    const search = query.search?.trim();
+    if (!search) {
+      return [];
+    }
+
+    const articles = await this.prisma.knowledgeArticle.findMany({
+      where: this.buildArticleWhere(user.organizationId, query),
+      include: this.articleInclude(),
+      orderBy: [{ updatedAt: "desc" }, { title: "asc" }],
+      take: 60
+    });
+
+    const results: Array<{
+      articleId: string;
+      articleTitle: string;
+      articleStatus: KnowledgeStatus;
+      categoryName: string | null;
+      pageId: string | null;
+      pageTitle: string | null;
+      matchType: "article" | "page" | "tag";
+      snippet: string;
+      updatedAt: Date;
+    }> = [];
+
+    for (const article of articles) {
+      if (this.containsTerm(article.title, search)) {
+        results.push(this.toSearchResult(article, null, "article", article.title, search));
+      }
+
+      if (article.tags.some((tag) => this.containsTerm(tag, search))) {
+        results.push(this.toSearchResult(article, null, "tag", article.tags.join(", "), search));
+      }
+
+      const pages = article.pages.length ? article.pages : [{ id: null, title: "Content", content: article.content }];
+      for (const page of pages) {
+        if (this.containsTerm(page.title, search) || this.containsTerm(this.stripHtml(page.content), search)) {
+          results.push(this.toSearchResult(article, page, "page", `${page.title} ${this.stripHtml(page.content)}`, search));
+        }
+      }
+    }
+
+    return results.slice(0, 80);
+  }
+
+  async bulkUpdateStatus(user: AuthenticatedUser, input: BulkKnowledgeArticleStatusDto) {
+    const articleIds = [...new Set(input.articleIds)];
+    const result = await this.prisma.knowledgeArticle.updateMany({
+      where: { id: { in: articleIds }, organizationId: user.organizationId, deletedAt: null },
+      data: {
+        status: input.status,
+        publishedAt: input.status === KnowledgeStatus.PUBLISHED ? new Date() : null,
+        updatedById: user.id
+      }
+    });
+    return { updated: result.count };
+  }
+
+  async bulkDeleteArticles(user: AuthenticatedUser, input: BulkKnowledgeArticleDeleteDto) {
+    const articleIds = [...new Set(input.articleIds)];
+    const result = await this.prisma.knowledgeArticle.updateMany({
+      where: { id: { in: articleIds }, organizationId: user.organizationId, deletedAt: null },
+      data: { deletedAt: new Date(), status: KnowledgeStatus.ARCHIVED, updatedById: user.id }
+    });
+    return { deleted: result.count };
   }
 
   getArticle(articleId: string, user: AuthenticatedUser) {
@@ -373,6 +426,64 @@ export class KnowledgeBaseService {
       },
       include: this.articleInclude()
     });
+  }
+
+  private buildArticleWhere(organizationId: string, query: ListKnowledgeArticlesQueryDto) {
+    const where: Prisma.KnowledgeArticleWhereInput = {
+      organizationId,
+      deletedAt: null,
+      ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.tag ? { tags: { has: query.tag.trim().toLowerCase() } } : {})
+    };
+    const search = query.search?.trim();
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: "insensitive" } },
+        { content: { contains: search, mode: "insensitive" } },
+        { pages: { some: { title: { contains: search, mode: "insensitive" } } } },
+        { pages: { some: { content: { contains: search, mode: "insensitive" } } } },
+        { tags: { has: search.toLowerCase() } }
+      ];
+    }
+    return where;
+  }
+
+  private toSearchResult(
+    article: { id: string; title: string; status: KnowledgeStatus; category: { name: string } | null; updatedAt: Date },
+    page: { id: string | null; title: string; content: string } | null,
+    matchType: "article" | "page" | "tag",
+    source: string,
+    search: string
+  ) {
+    return {
+      articleId: article.id,
+      articleTitle: article.title,
+      articleStatus: article.status,
+      categoryName: article.category?.name ?? null,
+      pageId: page?.id ?? null,
+      pageTitle: page?.title ?? null,
+      matchType,
+      snippet: this.makeSnippet(this.stripHtml(source), search),
+      updatedAt: article.updatedAt
+    };
+  }
+
+  private containsTerm(value: string, search: string) {
+    return value.toLowerCase().includes(search.toLowerCase());
+  }
+
+  private makeSnippet(value: string, search: string) {
+    const normalized = value.replace(/\s+/g, " ").trim();
+    const index = normalized.toLowerCase().indexOf(search.toLowerCase());
+    if (index < 0) return normalized.slice(0, 180);
+    const start = Math.max(0, index - 70);
+    const end = Math.min(normalized.length, index + search.length + 90);
+    return `${start > 0 ? "... " : ""}${normalized.slice(start, end)}${end < normalized.length ? " ..." : ""}`;
+  }
+
+  private stripHtml(value: string) {
+    return value.replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ");
   }
 
   private articleInclude() {

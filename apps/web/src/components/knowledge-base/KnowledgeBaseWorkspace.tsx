@@ -1,7 +1,7 @@
 "use client";
 
-import { Archive, Bold, BookOpen, Edit3, Eye, FileUp, Grid3X3, ImagePlus, Italic, List, ListOrdered, Plus, Save, Search, Table2, Trash2, Underline, UploadCloud, X } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { Archive, ArrowLeft, Bold, BookOpen, Edit3, Eye, FileUp, Grid3X3, ImagePlus, Italic, List, ListOrdered, Plus, Save, Search, Table2, Trash2, Underline, UploadCloud, X } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
 
@@ -59,6 +59,18 @@ interface KnowledgeArticle {
   updatedBy: UserRef | null;
   attachments: KnowledgeAttachment[];
   pages: KnowledgeArticlePage[];
+}
+
+interface KnowledgeSearchResult {
+  articleId: string;
+  articleTitle: string;
+  articleStatus: KnowledgeStatus;
+  categoryName: string | null;
+  pageId: string | null;
+  pageTitle: string | null;
+  matchType: "article" | "page" | "tag";
+  snippet: string;
+  updatedAt: string;
 }
 
 interface ImportPage {
@@ -148,13 +160,21 @@ function emptyDraft(): Partial<KnowledgeArticle> {
   };
 }
 
-export function KnowledgeBaseWorkspace() {
+interface KnowledgeBaseWorkspaceProps {
+  articleId?: string;
+}
+
+export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProps = {}) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const editorRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const [articles, setArticles] = useState<KnowledgeArticle[]>([]);
+  const [detailArticle, setDetailArticle] = useState<KnowledgeArticle | null>(null);
   const [categories, setCategories] = useState<KnowledgeCategory[]>([]);
+  const [searchResults, setSearchResults] = useState<KnowledgeSearchResult[]>([]);
+  const [selectedArticleIds, setSelectedArticleIds] = useState<string[]>([]);
   const [selectedArticleId, setSelectedArticleId] = useState("");
   const [draft, setDraft] = useState<Partial<KnowledgeArticle>>(emptyDraft());
   const [editing, setEditing] = useState(false);
@@ -183,7 +203,8 @@ export function KnowledgeBaseWorkspace() {
   const [oneNoteImportError, setOneNoteImportError] = useState<string | null>(null);
   const [oneNoteImportProgress, setOneNoteImportProgress] = useState<string | null>(null);
 
-  const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? articles[0] ?? null;
+  const isDetailMode = Boolean(articleId);
+  const selectedArticle = isDetailMode ? detailArticle : articles.find((article) => article.id === selectedArticleId) ?? null;
   const selectedArticlePages = selectedArticle?.pages?.length ? selectedArticle.pages : selectedArticle ? [legacyPage(selectedArticle)] : [];
   const activeViewPage = selectedArticlePages.find((page) => page.id === activeViewPageId) ?? selectedArticlePages[0] ?? null;
   const draftPages = draft.pages?.length ? draft.pages : [newPage(draft.title || "Content", draft.content ?? "<p></p>")];
@@ -194,23 +215,24 @@ export function KnowledgeBaseWorkspace() {
   useEffect(() => {
     void loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, categoryId, status, tag]);
+  }, [articleId, search, categoryId, status, tag]);
 
   useEffect(() => {
     void loadOneNoteStatus();
   }, []);
 
   useEffect(() => {
+    if (isDetailMode) return;
     const articleId = searchParams.get("articleId");
     if (articleId) setSelectedArticleId(articleId);
-  }, [searchParams]);
+  }, [isDetailMode, searchParams]);
 
   useEffect(() => {
     if (selectedArticle && !editing) {
       setDraft(selectedArticle);
-      setActiveViewPageId(selectedArticle.pages?.[0]?.id ?? "");
+      setActiveViewPageId(searchParams.get("page") ?? selectedArticle.pages?.[0]?.id ?? "");
     }
-  }, [selectedArticle, editing]);
+  }, [searchParams, selectedArticle, editing]);
 
   useEffect(() => {
     if (editing && draftPages.length && !draftPages.some((page) => page.id === activeDraftPageId)) {
@@ -222,23 +244,41 @@ export function KnowledgeBaseWorkspace() {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams();
-      if (search.trim()) params.set("search", search.trim());
-      if (categoryId) params.set("categoryId", categoryId);
-      if (status) params.set("status", status);
-      if (tag) params.set("tag", tag);
-      const [articleResult, categoryResult] = await Promise.all([
-        apiFetch<KnowledgeArticle[]>(`/knowledge-base/articles?${params.toString()}`),
-        apiFetch<KnowledgeCategory[]>("/knowledge-base/categories")
-      ]);
-      setArticles(articleResult);
-      if (!selectedArticleId && articleResult[0]) setSelectedArticleId(articleResult[0].id);
-      setCategories(categoryResult);
+      if (articleId) {
+        const [articleResult, categoryResult] = await Promise.all([
+          apiFetch<KnowledgeArticle>(`/knowledge-base/articles/${articleId}`),
+          apiFetch<KnowledgeCategory[]>("/knowledge-base/categories")
+        ]);
+        setDetailArticle(articleResult);
+        setSelectedArticleId(articleResult.id);
+        setCategories(categoryResult);
+        setSearchResults([]);
+      } else {
+        const params = knowledgeQueryParams();
+        const [articleResult, categoryResult, searchResult] = await Promise.all([
+          apiFetch<KnowledgeArticle[]>(`/knowledge-base/articles?${params.toString()}`),
+          apiFetch<KnowledgeCategory[]>("/knowledge-base/categories"),
+          search.trim() ? apiFetch<KnowledgeSearchResult[]>(`/knowledge-base/articles/search?${params.toString()}`) : Promise.resolve([])
+        ]);
+        setArticles(articleResult);
+        setSelectedArticleIds((current) => current.filter((id) => articleResult.some((article) => article.id === id)));
+        setSearchResults(searchResult);
+        setCategories(categoryResult);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load Knowledge Base.");
     } finally {
       setLoading(false);
     }
+  }
+
+  function knowledgeQueryParams() {
+    const params = new URLSearchParams();
+    if (search.trim()) params.set("search", search.trim());
+    if (categoryId) params.set("categoryId", categoryId);
+    if (status) params.set("status", status);
+    if (tag) params.set("tag", tag);
+    return params;
   }
 
   async function loadOneNoteStatus() {
@@ -331,10 +371,15 @@ export function KnowledgeBaseWorkspace() {
         : await apiFetch<KnowledgeArticle>("/knowledge-base/articles", { method: "POST", body: JSON.stringify(payload) });
       setSelectedArticleId(saved.id);
       setDraft(saved);
+      setDetailArticle(saved);
       setActiveViewPageId(saved.pages?.[0]?.id ?? "");
       setEditing(false);
       setNotice("Article saved.");
-      await loadData();
+      if (!isDetailMode) {
+        router.push(`/knowledge-base/${saved.id}`);
+      } else {
+        await loadData();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save article.");
     } finally {
@@ -352,6 +397,7 @@ export function KnowledgeBaseWorkspace() {
         body: JSON.stringify({ status: nextStatus })
       });
       setDraft(updated);
+      setDetailArticle(updated);
       setNotice(`Article moved to ${label(nextStatus)}.`);
       await loadData();
     } catch (err) {
@@ -368,9 +414,14 @@ export function KnowledgeBaseWorkspace() {
     try {
       await apiFetch(`/knowledge-base/articles/${selectedArticle.id}`, { method: "DELETE" });
       setSelectedArticleId("");
+      setDetailArticle(null);
       setDraft(emptyDraft());
       setNotice("Article deleted.");
-      await loadData();
+      if (isDetailMode) {
+        router.push("/knowledge-base");
+      } else {
+        await loadData();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to delete article.");
     } finally {
@@ -393,6 +444,60 @@ export function KnowledgeBaseWorkspace() {
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create category.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openArticle(targetArticleId: string, pageId?: string | null) {
+    const params = new URLSearchParams();
+    if (pageId) params.set("page", pageId);
+    if (search.trim()) params.set("q", search.trim());
+    router.push(`/knowledge-base/${targetArticleId}${params.toString() ? `?${params.toString()}` : ""}`);
+  }
+
+  function toggleSelectedArticle(articleId: string, checked: boolean) {
+    setSelectedArticleIds((current) => (checked ? [...new Set([...current, articleId])] : current.filter((id) => id !== articleId)));
+  }
+
+  function toggleAllVisibleArticles(checked: boolean) {
+    setSelectedArticleIds(checked ? articles.map((article) => article.id) : []);
+  }
+
+  async function bulkUpdateStatus(nextStatus: KnowledgeStatus) {
+    if (!selectedArticleIds.length) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await apiFetch<{ updated: number }>("/knowledge-base/articles/bulk-status", {
+        method: "POST",
+        body: JSON.stringify({ articleIds: selectedArticleIds, status: nextStatus })
+      });
+      setSelectedArticleIds([]);
+      setNotice(`${result.updated} article${result.updated === 1 ? "" : "s"} moved to ${label(nextStatus)}.`);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update selected articles.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function bulkDeleteArticles() {
+    if (!selectedArticleIds.length) return;
+    if (!window.confirm(`Delete ${selectedArticleIds.length} selected article${selectedArticleIds.length === 1 ? "" : "s"} from the active Knowledge Base?`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await apiFetch<{ deleted: number }>("/knowledge-base/articles/bulk-delete", {
+        method: "POST",
+        body: JSON.stringify({ articleIds: selectedArticleIds })
+      });
+      setSelectedArticleIds([]);
+      setNotice(`${result.deleted} article${result.deleted === 1 ? "" : "s"} deleted.`);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete selected articles.");
     } finally {
       setBusy(false);
     }
@@ -554,54 +659,67 @@ export function KnowledgeBaseWorkspace() {
 
   return (
     <div className="knowledge-workspace">
+      {isDetailMode ? (
+        <div className="form-actions knowledge-detail-nav">
+          <button className="button secondary" type="button" onClick={() => router.push("/knowledge-base")}>
+            <ArrowLeft size={16} aria-hidden="true" />
+            <span>Back to Knowledge Base</span>
+          </button>
+        </div>
+      ) : null}
       {notice ? <div className="success-banner">{notice}</div> : null}
       {error ? <div className="error-banner">{error}</div> : null}
-      <section className="knowledge-toolbar panel">
-        <label className="input-with-icon">
-          <Search size={16} aria-hidden="true" />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search articles, pages, or tags" />
-        </label>
-        <select className="input" value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
-          <option value="">All categories</option>
-          {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-        </select>
-        <select className="input" value={status} onChange={(event) => setStatus(event.target.value)}>
-          <option value="">All statuses</option>
-          <option value="DRAFT">Draft</option>
-          <option value="PUBLISHED">Published</option>
-          <option value="ARCHIVED">Archived</option>
-        </select>
-        <select className="input" value={tag} onChange={(event) => setTag(event.target.value)}>
-          <option value="">All tags</option>
-          {allTags.map((item) => <option key={item} value={item}>{item}</option>)}
-        </select>
-        <div className="knowledge-view-toggle" aria-label="Knowledge Base view mode">
-          <button className={`icon-button ${viewMode === "list" ? "active" : ""}`} type="button" onClick={() => setViewMode("list")} aria-label="List view">
-            <Table2 size={16} aria-hidden="true" />
-          </button>
-          <button className={`icon-button ${viewMode === "cards" ? "active" : ""}`} type="button" onClick={() => setViewMode("cards")} aria-label="Card view">
-            <Grid3X3 size={16} aria-hidden="true" />
-          </button>
-        </div>
-        <div className="form-actions knowledge-actions">
-          <button className="button" type="button" onClick={startNewArticle}>
-            <Plus size={16} aria-hidden="true" />
-            <span>New Article</span>
-          </button>
-          <button className="button secondary" type="button" onClick={() => pdfInputRef.current?.click()}>
-            <FileUp size={16} aria-hidden="true" />
-            <span>Import PDF</span>
-          </button>
-          <input ref={pdfInputRef} type="file" accept="application/pdf,.pdf" hidden onChange={(event) => event.target.files?.[0] && void previewPdf(event.target.files[0])} />
-          {oneNoteStatus.enabled ? (
-            <button className="button secondary" type="button" onClick={() => void openOneNoteImport()} disabled={!oneNoteStatus.configured || busy}>
-              <BookOpen size={16} aria-hidden="true" />
-              <span>Import OneNote</span>
+      {!isDetailMode ? (
+        <section className="knowledge-toolbar panel">
+          <div className="knowledge-toolbar-main">
+            <label className="input-with-icon">
+              <Search size={16} aria-hidden="true" />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search articles, pages, or tags" />
+            </label>
+            <select className="input" value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+              <option value="">All categories</option>
+              {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+            </select>
+            <select className="input" value={status} onChange={(event) => setStatus(event.target.value)}>
+              <option value="">All statuses</option>
+              <option value="DRAFT">Draft</option>
+              <option value="PUBLISHED">Published</option>
+              <option value="ARCHIVED">Archived</option>
+            </select>
+            <select className="input" value={tag} onChange={(event) => setTag(event.target.value)}>
+              <option value="">All tags</option>
+              {allTags.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+            <div className="knowledge-view-toggle" aria-label="Knowledge Base view mode">
+              <button className={`icon-button ${viewMode === "list" ? "active" : ""}`} type="button" onClick={() => setViewMode("list")} aria-label="List view">
+                <Table2 size={16} aria-hidden="true" />
+              </button>
+              <button className={`icon-button ${viewMode === "cards" ? "active" : ""}`} type="button" onClick={() => setViewMode("cards")} aria-label="Card view">
+                <Grid3X3 size={16} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+          <div className="form-actions knowledge-actions">
+            <button className="button" type="button" onClick={startNewArticle}>
+              <Plus size={16} aria-hidden="true" />
+              <span>New Article</span>
             </button>
-          ) : null}
-        </div>
-      </section>
+            <button className="button secondary" type="button" onClick={() => pdfInputRef.current?.click()}>
+              <FileUp size={16} aria-hidden="true" />
+              <span>Import PDF</span>
+            </button>
+            <input ref={pdfInputRef} type="file" accept="application/pdf,.pdf" hidden onChange={(event) => event.target.files?.[0] && void previewPdf(event.target.files[0])} />
+            {oneNoteStatus.enabled ? (
+              <button className="button secondary" type="button" onClick={() => void openOneNoteImport()} disabled={!oneNoteStatus.configured || busy}>
+                <BookOpen size={16} aria-hidden="true" />
+                <span>Import OneNote</span>
+              </button>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
+      {!isDetailMode ? (
       <section className="panel knowledge-catalog-panel">
         <div className="section-heading compact-heading">
           <div>
@@ -613,11 +731,48 @@ export function KnowledgeBaseWorkspace() {
             <button className="button secondary" type="button" onClick={createCategory} disabled={busy}>Add</button>
           </div>
         </div>
+        {search.trim() ? (
+          <div className="knowledge-search-results">
+            <div className="section-heading compact-heading">
+              <div>
+                <h3>Search Results</h3>
+                <p className="muted">{searchResults.length} match{searchResults.length === 1 ? "" : "es"} for "{search.trim()}"</p>
+              </div>
+            </div>
+            {searchResults.length === 0 && !loading ? <p className="muted">No matching article pages found.</p> : null}
+            {searchResults.slice(0, 8).map((result) => (
+              <button className="knowledge-search-result" type="button" key={`${result.articleId}-${result.pageId ?? result.matchType}`} onClick={() => openArticle(result.articleId, result.pageId)}>
+                <span>
+                  <strong>{result.articleTitle}</strong>
+                  <small>{result.pageTitle ? `${result.pageTitle} page` : label(result.matchType)} - {result.categoryName ?? "Uncategorized"} - {label(result.articleStatus)}</small>
+                </span>
+                <span className="knowledge-search-snippet">{result.snippet}</span>
+              </button>
+            ))}
+            {searchResults.length > 8 ? <p className="muted">Showing the first 8 matches. Refine the search to narrow results.</p> : null}
+          </div>
+        ) : null}
+        {selectedArticleIds.length ? (
+          <div className="knowledge-bulk-bar">
+            <strong>{selectedArticleIds.length} selected</strong>
+            <div className="form-actions">
+              <button className="button secondary" type="button" onClick={() => void bulkUpdateStatus("PUBLISHED")} disabled={busy}>Publish</button>
+              <button className="button secondary" type="button" onClick={() => void bulkUpdateStatus("DRAFT")} disabled={busy}>Unpublish</button>
+              <button className="button danger" type="button" onClick={() => void bulkDeleteArticles()} disabled={busy}>
+                <Trash2 size={16} aria-hidden="true" />
+                <span>Delete</span>
+              </button>
+            </div>
+          </div>
+        ) : null}
         {loading ? <p className="muted">Loading articles...</p> : null}
         {!loading && articles.length === 0 ? <p className="muted">No articles match the current filters.</p> : null}
         {viewMode === "list" ? (
           <div className="knowledge-table" role="table" aria-label="Knowledge articles">
             <div className="knowledge-table-row header" role="row">
+              <span>
+                <input type="checkbox" checked={articles.length > 0 && selectedArticleIds.length === articles.length} onChange={(event) => toggleAllVisibleArticles(event.target.checked)} aria-label="Select all visible articles" />
+              </span>
               <span>Article</span>
               <span>Category</span>
               <span>Status</span>
@@ -625,29 +780,42 @@ export function KnowledgeBaseWorkspace() {
               <span>Updated</span>
             </div>
             {articles.map((article) => (
-              <button className={`knowledge-table-row ${selectedArticle?.id === article.id ? "active" : ""}`} type="button" key={article.id} onClick={() => { setSelectedArticleId(article.id); setEditing(false); }}>
+              <div className={`knowledge-table-row ${selectedArticleIds.includes(article.id) ? "active" : ""}`} role="row" key={article.id}>
+                <span>
+                  <input type="checkbox" checked={selectedArticleIds.includes(article.id)} onChange={(event) => toggleSelectedArticle(article.id, event.target.checked)} aria-label={`Select ${article.title}`} />
+                </span>
+                <button className="knowledge-row-open" type="button" onClick={() => openArticle(article.id)}>
                 <span className="knowledge-title-cell"><i style={{ backgroundColor: article.accentColor ?? accentPalette[0] }} />{article.title}</span>
                 <span>{article.category?.name ?? "Uncategorized"}</span>
                 <span>{label(article.status)}</span>
                 <span>{article.pages?.length ?? 1}</span>
                 <span>{new Date(article.updatedAt).toLocaleDateString()}</span>
-              </button>
+                </button>
+              </div>
             ))}
           </div>
         ) : (
           <div className="knowledge-card-grid">
             {articles.map((article) => (
-              <button className={`knowledge-card ${selectedArticle?.id === article.id ? "active" : ""}`} style={{ borderTopColor: article.accentColor ?? accentPalette[0] }} type="button" key={article.id} onClick={() => { setSelectedArticleId(article.id); setEditing(false); }}>
-                <span className={`status-pill ${article.status === "PUBLISHED" ? "success" : article.status === "ARCHIVED" ? "muted-pill" : ""}`}>{label(article.status)}</span>
-                <strong>{article.title}</strong>
-                <small>{article.category?.name ?? "Uncategorized"} - {article.pages?.length ?? 1} page{(article.pages?.length ?? 1) === 1 ? "" : "s"}</small>
-                <span className="knowledge-tag-line">{article.tags.slice(0, 3).map((item) => <span className="tag-chip" key={item}>{item}</span>)}</span>
-              </button>
+              <article className={`knowledge-card ${selectedArticleIds.includes(article.id) ? "active" : ""}`} style={{ borderTopColor: article.accentColor ?? accentPalette[0] }} key={article.id}>
+                <label className="knowledge-card-check">
+                  <input type="checkbox" checked={selectedArticleIds.includes(article.id)} onChange={(event) => toggleSelectedArticle(article.id, event.target.checked)} />
+                  <span>Select</span>
+                </label>
+                <button className="knowledge-card-open" type="button" onClick={() => openArticle(article.id)}>
+                  <span className={`status-pill ${article.status === "PUBLISHED" ? "success" : article.status === "ARCHIVED" ? "muted-pill" : ""}`}>{label(article.status)}</span>
+                  <strong>{article.title}</strong>
+                  <small>{article.category?.name ?? "Uncategorized"} - {article.pages?.length ?? 1} page{(article.pages?.length ?? 1) === 1 ? "" : "s"}</small>
+                  <span className="knowledge-tag-line">{article.tags.slice(0, 3).map((item) => <span className="tag-chip" key={item}>{item}</span>)}</span>
+                </button>
+              </article>
             ))}
           </div>
         )}
       </section>
+      ) : null}
 
+      {(isDetailMode || editing) ? (
       <main className="panel knowledge-detail-panel">
         {editing ? (
           <form className="knowledge-editor" onSubmit={saveArticle}>
@@ -781,6 +949,11 @@ export function KnowledgeBaseWorkspace() {
               </div>
             ) : null}
           </article>
+        ) : loading ? (
+          <div className="empty-state-panel">
+            <h2>Loading article...</h2>
+            <p className="muted">Preparing article content.</p>
+          </div>
         ) : (
           <div className="empty-state-panel">
             <h2>No article selected</h2>
@@ -788,6 +961,7 @@ export function KnowledgeBaseWorkspace() {
           </div>
         )}
       </main>
+      ) : null}
 
       {showImportReview ? (
         <div className="modal-backdrop" role="presentation">

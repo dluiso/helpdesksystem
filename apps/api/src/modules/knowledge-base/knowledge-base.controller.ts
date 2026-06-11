@@ -23,6 +23,8 @@ import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
 import { RequirePermissions } from "../permissions/decorators/require-permissions.decorator";
 import { PermissionsGuard } from "../permissions/guards/permissions.guard";
 import {
+  BulkKnowledgeArticleDeleteDto,
+  BulkKnowledgeArticleStatusDto,
   CommitKnowledgeImportDto,
   CreateKnowledgeArticleDto,
   CreateKnowledgeCategoryDto,
@@ -68,6 +70,24 @@ export class KnowledgeBaseController {
   @RequirePermissions("knowledge_base.view")
   listArticles(@CurrentUser() user: AuthenticatedUser, @Query() query: ListKnowledgeArticlesQueryDto) {
     return this.knowledgeBaseService.listArticles(user, query);
+  }
+
+  @Get("articles/search")
+  @RequirePermissions("knowledge_base.view")
+  searchArticles(@CurrentUser() user: AuthenticatedUser, @Query() query: ListKnowledgeArticlesQueryDto) {
+    return this.knowledgeBaseService.searchArticles(user, query);
+  }
+
+  @Post("articles/bulk-status")
+  @RequirePermissions("knowledge_base.update")
+  bulkUpdateStatus(@CurrentUser() user: AuthenticatedUser, @Body() body: BulkKnowledgeArticleStatusDto) {
+    return this.knowledgeBaseService.bulkUpdateStatus(user, body);
+  }
+
+  @Post("articles/bulk-delete")
+  @RequirePermissions("knowledge_base.delete")
+  bulkDeleteArticles(@CurrentUser() user: AuthenticatedUser, @Body() body: BulkKnowledgeArticleDeleteDto) {
+    return this.knowledgeBaseService.bulkDeleteArticles(user, body);
   }
 
   @Post("articles")
