@@ -74,6 +74,8 @@ interface OneNoteNotebook {
   id: string;
   displayName: string;
   isDefault?: boolean;
+  isShared?: boolean;
+  userRole?: string;
 }
 
 interface OneNoteSection {
@@ -145,6 +147,7 @@ export function KnowledgeBaseWorkspace() {
   const [selectedSectionId, setSelectedSectionId] = useState("");
   const [selectedOneNotePageIds, setSelectedOneNotePageIds] = useState<string[]>([]);
   const [oneNoteCategoryId, setOneNoteCategoryId] = useState("");
+  const [oneNoteImportError, setOneNoteImportError] = useState<string | null>(null);
 
   const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? articles[0] ?? null;
   const allTags = useMemo(() => [...new Set(articles.flatMap((article) => article.tags))].sort(), [articles]);
@@ -383,6 +386,7 @@ export function KnowledgeBaseWorkspace() {
     setShowOneNoteImport(true);
     setError(null);
     setNotice(null);
+    setOneNoteImportError(null);
     if (!oneNoteNotebooks.length) {
       await loadOneNoteNotebooks();
     }
@@ -395,7 +399,7 @@ export function KnowledgeBaseWorkspace() {
       const result = await apiFetch<OneNoteNotebook[]>("/knowledge-base/import/onenote/notebooks");
       setOneNoteNotebooks(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load OneNote notebooks.");
+      setOneNoteImportError(err instanceof Error ? err.message : "Unable to load OneNote notebooks.");
     } finally {
       setBusy(false);
     }
@@ -409,12 +413,12 @@ export function KnowledgeBaseWorkspace() {
     setSelectedOneNotePageIds([]);
     if (!notebookId) return;
     setBusy(true);
-    setError(null);
+    setOneNoteImportError(null);
     try {
       const result = await apiFetch<OneNoteSection[]>(`/knowledge-base/import/onenote/sections?notebookId=${encodeURIComponent(notebookId)}`);
       setOneNoteSections(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load OneNote sections.");
+      setOneNoteImportError(err instanceof Error ? err.message : "Unable to load OneNote sections.");
     } finally {
       setBusy(false);
     }
@@ -426,12 +430,12 @@ export function KnowledgeBaseWorkspace() {
     setSelectedOneNotePageIds([]);
     if (!sectionId) return;
     setBusy(true);
-    setError(null);
+    setOneNoteImportError(null);
     try {
       const result = await apiFetch<OneNotePage[]>(`/knowledge-base/import/onenote/pages?sectionId=${encodeURIComponent(sectionId)}`);
       setOneNotePages(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load OneNote pages.");
+      setOneNoteImportError(err instanceof Error ? err.message : "Unable to load OneNote pages.");
     } finally {
       setBusy(false);
     }
@@ -443,11 +447,11 @@ export function KnowledgeBaseWorkspace() {
 
   async function previewOneNoteImport() {
     if (!selectedOneNotePageIds.length) {
-      setError("Select at least one OneNote page to import.");
+      setOneNoteImportError("Select at least one OneNote page to import.");
       return;
     }
     setBusy(true);
-    setError(null);
+    setOneNoteImportError(null);
     try {
       const result = await apiFetch<{ items: ImportItem[]; itemCount: number }>("/knowledge-base/import/onenote/preview", {
         method: "POST",
@@ -459,7 +463,7 @@ export function KnowledgeBaseWorkspace() {
       setShowImportReview(true);
       setNotice(`${result.itemCount} OneNote pages ready for review.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to preview OneNote import.");
+      setOneNoteImportError(err instanceof Error ? err.message : "Unable to preview OneNote import.");
     } finally {
       setBusy(false);
     }
@@ -684,13 +688,14 @@ export function KnowledgeBaseWorkspace() {
                 <X size={16} aria-hidden="true" />
               </button>
             </div>
+            {oneNoteImportError ? <div className="error-banner">{oneNoteImportError}</div> : null}
             <div className="onenote-import-grid">
               <label className="field">
                 <span>Notebook</span>
                 <select className="input" value={selectedNotebookId} onChange={(event) => void selectOneNoteNotebook(event.target.value)}>
                   <option value="">Select notebook</option>
                   {oneNoteNotebooks.map((notebook) => (
-                    <option key={notebook.id} value={notebook.id}>{notebook.displayName}{notebook.isDefault ? " (Default)" : ""}</option>
+                    <option key={notebook.id} value={notebook.id}>{formatOneNoteNotebookLabel(notebook)}</option>
                   ))}
                 </select>
               </label>
@@ -746,6 +751,11 @@ function normalizeTags(tags: string[] | undefined) {
 
 function stripHtml(value: string) {
   return value.replace(/^<pre>/, "").replace(/<\/pre>$/, "").replace(/<br\s*\/?>/g, "\n").replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+}
+
+function formatOneNoteNotebookLabel(notebook: OneNoteNotebook) {
+  const labels = [notebook.isDefault ? "Default" : null, notebook.isShared ? "Shared" : null, notebook.userRole ?? null].filter(Boolean);
+  return labels.length ? `${notebook.displayName} (${labels.join(", ")})` : notebook.displayName;
 }
 
 function escapeHtml(value: string) {

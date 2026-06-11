@@ -30,6 +30,14 @@ export interface GraphNotebook {
   id: string;
   displayName: string;
   isDefault?: boolean;
+  isShared?: boolean;
+  userRole?: string;
+  sectionsUrl?: string;
+  links?: { oneNoteWebUrl?: { href?: string } };
+}
+
+interface GraphRecentNotebook {
+  displayName: string;
   links?: { oneNoteWebUrl?: { href?: string } };
 }
 
@@ -37,6 +45,7 @@ export interface GraphSection {
   id: string;
   displayName: string;
   pagesUrl?: string;
+  parentNotebook?: { id?: string; displayName?: string };
 }
 
 export interface GraphPage {
@@ -212,10 +221,12 @@ export class KnowledgeOneNoteImportService {
 
   async listNotebooks(user: AuthenticatedUser) {
     const token = await this.getAccessToken(user);
-    return this.graphGetCollection<GraphNotebook>(
-      "https://graph.microsoft.com/v1.0/me/onenote/notebooks?$select=id,displayName,isDefault,links",
-      token
-    );
+    const notebooks = await this.listNotebooksWithToken(token);
+    return notebooks.sort((first, second) => {
+      if (first.isDefault && !second.isDefault) return -1;
+      if (!first.isDefault && second.isDefault) return 1;
+      return first.displayName.localeCompare(second.displayName);
+    });
   }
 
   async listSections(user: AuthenticatedUser, notebookId: string) {
@@ -223,10 +234,33 @@ export class KnowledgeOneNoteImportService {
       throw new BadRequestException("Notebook ID is required.");
     }
     const token = await this.getAccessToken(user);
-    return this.graphGetCollection<GraphSection>(
-      `https://graph.microsoft.com/v1.0/me/onenote/notebooks/${encodeURIComponent(notebookId)}/sections?$select=id,displayName,pagesUrl`,
-      token
-    );
+    const notebooks = await this.listNotebooksWithToken(token);
+    const notebook = notebooks.find((item) => item.id === notebookId);
+    const sectionUrls = [
+      notebook?.sectionsUrl ? this.withQuery(notebook.sectionsUrl, { $select: "id,displayName,pagesUrl,parentNotebook" }) : null,
+      `https://graph.microsoft.com/v1.0/me/onenote/notebooks/${encodeURIComponent(notebookId)}/sections?$select=id,displayName,pagesUrl,parentNotebook`
+    ].filter(Boolean) as string[];
+
+    let lastError: unknown;
+    for (const sectionUrl of sectionUrls) {
+      try {
+        return await this.graphGetCollection<GraphSection>(sectionUrl, token);
+      } catch (caught) {
+        lastError = caught;
+      }
+    }
+
+    try {
+      const sections = await this.graphGetCollection<GraphSection>(
+        "https://graph.microsoft.com/v1.0/me/onenote/sections?$top=100&$select=id,displayName,pagesUrl,parentNotebook",
+        token
+      );
+      return sections.filter((section) => section.parentNotebook?.id === notebookId);
+    } catch (caught) {
+      lastError = caught;
+    }
+
+    throw lastError instanceof Error ? lastError : new InternalServerErrorException("Unable to load OneNote notebook sections.");
   }
 
   async listPages(user: AuthenticatedUser, sectionId: string) {
@@ -369,6 +403,49 @@ export class KnowledgeOneNoteImportService {
     return results;
   }
 
+  private async listNotebooksWithToken(token: string) {
+    const notebooks = await this.graphGetCollection<GraphNotebook>(
+      "https://graph.microsoft.com/v1.0/me/onenote/notebooks?$select=id,displayName,isDefault,isShared,userRole,sectionsUrl,links",
+      token
+    );
+    const byId = new Map(notebooks.map((notebook) => [notebook.id, notebook]));
+    const knownWebUrls = new Set(notebooks.map((notebook) => notebook.links?.oneNoteWebUrl?.href).filter(Boolean));
+    const recentNotebooks = await this.listRecentNotebooksWithToken(token);
+
+    for (const recentNotebook of recentNotebooks) {
+      const webUrl = recentNotebook.links?.oneNoteWebUrl?.href;
+      if (!webUrl || knownWebUrls.has(webUrl)) continue;
+      const notebook = await this.getNotebookFromWebUrl(webUrl, token);
+      if (notebook?.id && !byId.has(notebook.id)) {
+        byId.set(notebook.id, { ...notebook, isShared: notebook.isShared ?? true });
+      }
+    }
+
+    return [...byId.values()];
+  }
+
+  private async listRecentNotebooksWithToken(token: string) {
+    try {
+      return await this.graphGetCollection<GraphRecentNotebook>(
+        "https://graph.microsoft.com/v1.0/me/onenote/notebooks/getRecentNotebooks(includePersonalNotebooks=true)",
+        token
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  private async getNotebookFromWebUrl(webUrl: string, token: string) {
+    try {
+      return await this.graphGet<GraphNotebook>(
+        `https://graph.microsoft.com/v1.0/me/onenote/notebooks/getNotebookFromWebUrl(webUrl='${encodeURIComponent(webUrl.replace(/'/g, "''"))}')?$select=id,displayName,isDefault,isShared,userRole,sectionsUrl,links`,
+        token
+      );
+    } catch {
+      return null;
+    }
+  }
+
   private async graphGet<T>(url: string, token: string) {
     const response = await fetch(url, {
       headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }
@@ -402,6 +479,12 @@ export class KnowledgeOneNoteImportService {
 
   private cleanTitle(value: string) {
     return value.trim().replace(/\s+/g, " ").slice(0, 180) || "Imported OneNote page";
+  }
+
+  private withQuery(url: string, params: Record<string, string>) {
+    const parsed = new URL(url);
+    Object.entries(params).forEach(([key, value]) => parsed.searchParams.set(key, value));
+    return parsed.toString();
   }
 
   private resolveSecret(reference: string | null | undefined) {
