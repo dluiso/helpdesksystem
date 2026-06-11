@@ -8,7 +8,7 @@ import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { PreviewOneNoteImportDto, UpdateKnowledgeOneNoteSettingsDto } from "./dto/knowledge-base.dto";
 
-const ONENOTE_SCOPES = ["offline_access", "User.Read", "Notes.Read"];
+const ONENOTE_SCOPES = ["offline_access", "User.Read", "Notes.Read.All"];
 
 interface GraphCollection<T> {
   value: T[];

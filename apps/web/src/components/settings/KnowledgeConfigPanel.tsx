@@ -86,7 +86,7 @@ export function KnowledgeConfigPanel() {
     const saved = await apiFetch<OneNoteSettings>("/knowledge-base/config/onenote", {
       method: "PATCH",
       body: JSON.stringify({
-        ...settings,
+        knowledgeOneNoteImportEnabled: settings.knowledgeOneNoteImportEnabled,
         knowledgeOneNoteTenantId: settings.knowledgeOneNoteTenantId || null,
         knowledgeOneNoteClientId: settings.knowledgeOneNoteClientId || null,
         knowledgeOneNoteClientSecretReference: settings.knowledgeOneNoteClientSecretReference || "env:MICROSOFT_CLIENT_SECRET",
