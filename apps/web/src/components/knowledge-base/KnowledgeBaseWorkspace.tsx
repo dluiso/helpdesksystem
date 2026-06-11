@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ArrowLeft, Bold, BookOpen, Edit3, Eye, FileUp, Grid3X3, ImagePlus, Italic, List, ListOrdered, Plus, RefreshCw, Save, Search, Table2, Trash2, Underline, UploadCloud, X } from "lucide-react";
+import { Archive, ArrowLeft, Bold, BookOpen, Edit3, Eye, FileUp, Grid3X3, ImagePlus, Italic, List, ListOrdered, Plus, RefreshCw, Save, Search, SlidersHorizontal, Table2, Trash2, Underline, UploadCloud, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
@@ -706,17 +706,17 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
               <Search size={16} aria-hidden="true" />
               <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search articles, pages, or tags" />
             </label>
-            <select className="input" value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+            <select className="input knowledge-filter-select" value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
               <option value="">All categories</option>
               {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
             </select>
-            <select className="input" value={status} onChange={(event) => setStatus(event.target.value)}>
+            <select className="input knowledge-filter-select" value={status} onChange={(event) => setStatus(event.target.value)}>
               <option value="">All statuses</option>
               <option value="DRAFT">Draft</option>
               <option value="PUBLISHED">Published</option>
               <option value="ARCHIVED">Archived</option>
             </select>
-            <select className="input" value={tag} onChange={(event) => setTag(event.target.value)}>
+            <select className="input knowledge-filter-select" value={tag} onChange={(event) => setTag(event.target.value)}>
               <option value="">All tags</option>
               {allTags.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
@@ -728,19 +728,40 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
                 <Grid3X3 size={16} aria-hidden="true" />
               </button>
             </div>
+            <details className="knowledge-mobile-filters">
+              <summary className="icon-button" aria-label="Show filters" title="Filters">
+                <SlidersHorizontal size={16} aria-hidden="true" />
+              </summary>
+              <div className="knowledge-mobile-filter-menu">
+                <select className="input" value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+                  <option value="">All categories</option>
+                  {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                </select>
+                <select className="input" value={status} onChange={(event) => setStatus(event.target.value)}>
+                  <option value="">All statuses</option>
+                  <option value="DRAFT">Draft</option>
+                  <option value="PUBLISHED">Published</option>
+                  <option value="ARCHIVED">Archived</option>
+                </select>
+                <select className="input" value={tag} onChange={(event) => setTag(event.target.value)}>
+                  <option value="">All tags</option>
+                  {allTags.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </div>
+            </details>
           </div>
           <div className="form-actions knowledge-actions">
-            <button className="button" type="button" onClick={startNewArticle}>
+            <button className="button" type="button" onClick={startNewArticle} aria-label="New Article" title="New Article">
               <Plus size={16} aria-hidden="true" />
               <span>New Article</span>
             </button>
-            <button className="button secondary" type="button" onClick={() => pdfInputRef.current?.click()}>
+            <button className="button secondary" type="button" onClick={() => pdfInputRef.current?.click()} aria-label="Import PDF" title="Import PDF">
               <FileUp size={16} aria-hidden="true" />
               <span>Import PDF</span>
             </button>
             <input ref={pdfInputRef} type="file" accept="application/pdf,.pdf" hidden onChange={(event) => event.target.files?.[0] && void previewPdf(event.target.files[0])} />
             {oneNoteStatus.enabled ? (
-              <button className="button secondary" type="button" onClick={() => void openOneNoteImport()} disabled={!oneNoteStatus.configured || busy}>
+              <button className="button secondary" type="button" onClick={() => void openOneNoteImport()} disabled={!oneNoteStatus.configured || busy} aria-label="Import OneNote" title="Import OneNote">
                 <BookOpen size={16} aria-hidden="true" />
                 <span>Import OneNote</span>
               </button>
