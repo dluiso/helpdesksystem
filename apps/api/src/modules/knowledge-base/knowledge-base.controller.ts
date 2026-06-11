@@ -165,6 +165,18 @@ export class KnowledgeBaseController {
     return this.oneNoteImportService.testConnection(user);
   }
 
+  @Post("config/onenote/connect-url")
+  @RequirePermissions("system_settings.update")
+  createOneNoteConnectUrl(@CurrentUser() user: AuthenticatedUser) {
+    return this.oneNoteImportService.createConnectUrl(user);
+  }
+
+  @Delete("config/onenote/connection")
+  @RequirePermissions("system_settings.update")
+  disconnectOneNote(@CurrentUser() user: AuthenticatedUser) {
+    return this.oneNoteImportService.disconnect(user);
+  }
+
   @Get("import/onenote/status")
   @RequirePermissions("knowledge_base.create")
   getOneNoteImportStatus(@CurrentUser() user: AuthenticatedUser) {
@@ -199,5 +211,26 @@ export class KnowledgeBaseController {
   @RequirePermissions("knowledge_base.create")
   commitImport(@CurrentUser() user: AuthenticatedUser, @Body() body: CommitKnowledgeImportDto) {
     return this.knowledgeBaseService.commitImport(user, body);
+  }
+}
+
+@Controller("knowledge-base")
+export class KnowledgeBaseOneNoteOAuthController {
+  constructor(private readonly oneNoteImportService: KnowledgeOneNoteImportService) {}
+
+  @Get("config/onenote/callback")
+  async callback(
+    @Query("code") code: string | undefined,
+    @Query("state") state: string | undefined,
+    @Query("error") error: string | undefined,
+    @Query("error_description") errorDescription: string | undefined,
+    @Res() response: Response
+  ) {
+    try {
+      await this.oneNoteImportService.completeOAuthCallback({ code, state, error, errorDescription });
+      response.redirect("/settings?onenote=connected");
+    } catch {
+      response.redirect("/settings?onenote=error");
+    }
   }
 }

@@ -1,14 +1,29 @@
 import { BadRequestException, Injectable, InternalServerErrorException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { KnowledgeStatus } from "@prisma/client";
+import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { HtmlSanitizerService } from "../../common/html/html-sanitizer.service";
+import { decryptSecret, encryptSecret } from "../auth/auth-security.util";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { PreviewOneNoteImportDto, UpdateKnowledgeOneNoteSettingsDto } from "./dto/knowledge-base.dto";
 
+const ONENOTE_SCOPES = ["offline_access", "User.Read", "Notes.Read"];
+
 interface GraphCollection<T> {
   value: T[];
   "@odata.nextLink"?: string;
+}
+
+interface OneNoteGraphSettings {
+  knowledgeOneNoteTenantId?: string | null;
+  knowledgeOneNoteClientId?: string | null;
+  knowledgeOneNoteClientSecretReference?: string | null;
+}
+
+interface OneNoteTokenResponse {
+  access_token: string;
+  refresh_token?: string;
 }
 
 export interface GraphNotebook {
@@ -50,7 +65,10 @@ export class KnowledgeOneNoteImportService {
         knowledgeOneNoteClientId: true,
         knowledgeOneNoteClientSecretReference: true,
         knowledgeOneNoteSourceUserPrincipalName: true,
-        knowledgeOneNoteDefaultCategoryId: true
+        knowledgeOneNoteDefaultCategoryId: true,
+        knowledgeOneNoteRefreshTokenEncrypted: true,
+        knowledgeOneNoteConnectedUserEmail: true,
+        knowledgeOneNoteConnectedAt: true
       }
     });
 
@@ -60,7 +78,10 @@ export class KnowledgeOneNoteImportService {
       knowledgeOneNoteClientId: settings?.knowledgeOneNoteClientId ?? null,
       knowledgeOneNoteClientSecretReference: settings?.knowledgeOneNoteClientSecretReference ?? "env:MICROSOFT_CLIENT_SECRET",
       knowledgeOneNoteSourceUserPrincipalName: settings?.knowledgeOneNoteSourceUserPrincipalName ?? null,
-      knowledgeOneNoteDefaultCategoryId: settings?.knowledgeOneNoteDefaultCategoryId ?? null
+      knowledgeOneNoteDefaultCategoryId: settings?.knowledgeOneNoteDefaultCategoryId ?? null,
+      knowledgeOneNoteConnectedUserEmail: settings?.knowledgeOneNoteConnectedUserEmail ?? null,
+      knowledgeOneNoteConnectedAt: settings?.knowledgeOneNoteConnectedAt ?? null,
+      knowledgeOneNoteConnected: Boolean(settings?.knowledgeOneNoteRefreshTokenEncrypted)
     };
   }
 
@@ -68,7 +89,7 @@ export class KnowledgeOneNoteImportService {
     const settings = await this.getSettings(user);
     return {
       enabled: settings.knowledgeOneNoteImportEnabled,
-      configured: Boolean(settings.knowledgeOneNoteImportEnabled && settings.knowledgeOneNoteSourceUserPrincipalName),
+      configured: Boolean(settings.knowledgeOneNoteImportEnabled && settings.knowledgeOneNoteConnected),
       defaultCategoryId: settings.knowledgeOneNoteDefaultCategoryId
     };
   }
@@ -103,23 +124,96 @@ export class KnowledgeOneNoteImportService {
         knowledgeOneNoteClientId: true,
         knowledgeOneNoteClientSecretReference: true,
         knowledgeOneNoteSourceUserPrincipalName: true,
-        knowledgeOneNoteDefaultCategoryId: true
+        knowledgeOneNoteDefaultCategoryId: true,
+        knowledgeOneNoteConnectedUserEmail: true,
+        knowledgeOneNoteConnectedAt: true
       }
     });
 
     return updated;
   }
 
+  async createConnectUrl(user: AuthenticatedUser) {
+    const settings = await this.getSettings(user);
+    const { tenantId, clientId } = this.graphConfig(settings);
+    if (!settings.knowledgeOneNoteImportEnabled) {
+      throw new BadRequestException("Enable OneNote import before connecting Microsoft OneNote.");
+    }
+    if (!tenantId || !clientId) {
+      throw new InternalServerErrorException("Microsoft Graph OneNote tenant and client ID are not configured.");
+    }
+
+    const authorizationUrl = new URL(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize`);
+    authorizationUrl.searchParams.set("client_id", clientId);
+    authorizationUrl.searchParams.set("response_type", "code");
+    authorizationUrl.searchParams.set("redirect_uri", this.redirectUri());
+    authorizationUrl.searchParams.set("response_mode", "query");
+    authorizationUrl.searchParams.set("scope", ONENOTE_SCOPES.join(" "));
+    authorizationUrl.searchParams.set("state", this.signState({ organizationId: user.organizationId, userId: user.id, nonce: randomBytes(16).toString("base64url"), expiresAt: Date.now() + 10 * 60 * 1000 }));
+    if (settings.knowledgeOneNoteSourceUserPrincipalName) {
+      authorizationUrl.searchParams.set("login_hint", settings.knowledgeOneNoteSourceUserPrincipalName);
+    }
+    return { authorizationUrl: authorizationUrl.toString(), redirectUri: this.redirectUri() };
+  }
+
+  async completeOAuthCallback(input: { code?: string; state?: string; error?: string; errorDescription?: string }) {
+    if (input.error) {
+      throw new BadRequestException(input.errorDescription || input.error);
+    }
+    if (!input.code || !input.state) {
+      throw new BadRequestException("Microsoft OneNote callback is missing code or state.");
+    }
+    const state = this.verifyState(input.state);
+    const settings = await this.prisma.systemSetting.findUnique({
+      where: { organizationId: state.organizationId },
+      select: {
+        knowledgeOneNoteImportEnabled: true,
+        knowledgeOneNoteTenantId: true,
+        knowledgeOneNoteClientId: true,
+        knowledgeOneNoteClientSecretReference: true
+      }
+    });
+    if (!settings?.knowledgeOneNoteImportEnabled) {
+      throw new BadRequestException("OneNote import is disabled.");
+    }
+
+    const token = await this.exchangeCodeForToken(settings, input.code);
+    if (!token.refresh_token) {
+      throw new InternalServerErrorException("Microsoft did not return a refresh token. Confirm offline_access delegated permission is configured.");
+    }
+    const profile = await this.graphGet<{ userPrincipalName?: string; mail?: string }>("https://graph.microsoft.com/v1.0/me?$select=userPrincipalName,mail", token.access_token);
+    await this.prisma.systemSetting.update({
+      where: { organizationId: state.organizationId },
+      data: {
+        knowledgeOneNoteRefreshTokenEncrypted: encryptSecret(token.refresh_token, this.secretEncryptionKey()),
+        knowledgeOneNoteConnectedUserEmail: profile.mail || profile.userPrincipalName || null,
+        knowledgeOneNoteConnectedAt: new Date()
+      }
+    });
+  }
+
+  async disconnect(user: AuthenticatedUser) {
+    await this.prisma.systemSetting.update({
+      where: { organizationId: user.organizationId },
+      data: {
+        knowledgeOneNoteRefreshTokenEncrypted: null,
+        knowledgeOneNoteConnectedUserEmail: null,
+        knowledgeOneNoteConnectedAt: null
+      }
+    });
+    return { disconnected: true };
+  }
+
   async testConnection(user: AuthenticatedUser) {
     const token = await this.getAccessToken(user);
-    const notebooks = await this.graphGetCollection<GraphNotebook>(await this.userUrl(user, "/onenote/notebooks?$top=1"), token);
+    const notebooks = await this.graphGetCollection<GraphNotebook>("https://graph.microsoft.com/v1.0/me/onenote/notebooks?$top=1", token);
     return { ok: true, notebooks: notebooks.length };
   }
 
   async listNotebooks(user: AuthenticatedUser) {
     const token = await this.getAccessToken(user);
     return this.graphGetCollection<GraphNotebook>(
-      await this.userUrl(user, "/onenote/notebooks?$select=id,displayName,isDefault,links"),
+      "https://graph.microsoft.com/v1.0/me/onenote/notebooks?$select=id,displayName,isDefault,links",
       token
     );
   }
@@ -130,7 +224,7 @@ export class KnowledgeOneNoteImportService {
     }
     const token = await this.getAccessToken(user);
     return this.graphGetCollection<GraphSection>(
-      await this.userUrl(user, `/onenote/notebooks/${encodeURIComponent(notebookId)}/sections?$select=id,displayName,pagesUrl`),
+      `https://graph.microsoft.com/v1.0/me/onenote/notebooks/${encodeURIComponent(notebookId)}/sections?$select=id,displayName,pagesUrl`,
       token
     );
   }
@@ -141,10 +235,7 @@ export class KnowledgeOneNoteImportService {
     }
     const token = await this.getAccessToken(user);
     return this.graphGetCollection<GraphPage>(
-      await this.userUrl(
-        user,
-        `/onenote/sections/${encodeURIComponent(sectionId)}/pages?$top=100&$select=id,title,createdDateTime,lastModifiedDateTime,links,contentUrl`
-      ),
+      `https://graph.microsoft.com/v1.0/me/onenote/sections/${encodeURIComponent(sectionId)}/pages?$top=100&$select=id,title,createdDateTime,lastModifiedDateTime,links,contentUrl`,
       token
     );
   }
@@ -155,7 +246,6 @@ export class KnowledgeOneNoteImportService {
       throw new BadRequestException("Select at least one OneNote page to import.");
     }
     const token = await this.getAccessToken(user);
-    const sourceUser = await this.sourceUser(user);
     const existing = await this.prisma.knowledgeArticle.findMany({
       where: { organizationId: user.organizationId, sourceType: "ONENOTE", sourceExternalId: { in: pageIds }, deletedAt: null },
       select: { sourceExternalId: true }
@@ -164,8 +254,8 @@ export class KnowledgeOneNoteImportService {
 
     const items = [];
     for (const pageId of pageIds) {
-      const page = await this.graphGet<GraphPage>(`https://graph.microsoft.com/v1.0/users/${sourceUser}/onenote/pages/${encodeURIComponent(pageId)}?$select=id,title,links`, token);
-      const html = await this.graphGetText(`https://graph.microsoft.com/v1.0/users/${sourceUser}/onenote/pages/${encodeURIComponent(pageId)}/content?includeIDs=true`, token);
+      const page = await this.graphGet<GraphPage>(`https://graph.microsoft.com/v1.0/me/onenote/pages/${encodeURIComponent(pageId)}?$select=id,title,links`, token);
+      const html = await this.graphGetText(`https://graph.microsoft.com/v1.0/me/onenote/pages/${encodeURIComponent(pageId)}/content?includeIDs=true`, token);
       const title = this.cleanTitle(page.title || "Imported OneNote page");
       const sourceUrl = page.links?.oneNoteWebUrl?.href ?? null;
       const alreadyImported = existingIds.has(pageId);
@@ -189,38 +279,67 @@ export class KnowledgeOneNoteImportService {
     return { source: "onenote", itemCount: items.length, items };
   }
 
-  private async userUrl(user: AuthenticatedUser, path: string) {
-    return `https://graph.microsoft.com/v1.0/users/${await this.sourceUser(user)}${path}`;
-  }
-
-  private async sourceUser(user: AuthenticatedUser) {
-    const settings = await this.getSettings(user);
-    const value = settings.knowledgeOneNoteSourceUserPrincipalName?.trim();
-    if (!settings.knowledgeOneNoteImportEnabled || !value) {
-      throw new BadRequestException("OneNote import is not enabled or no source user is configured.");
-    }
-    return encodeURIComponent(value);
-  }
-
   private async getAccessToken(user: AuthenticatedUser) {
-    const settings = await this.getSettings(user);
-    const tenantId = settings.knowledgeOneNoteTenantId || this.config.get<string>("MICROSOFT_TENANT_ID");
-    const clientId = settings.knowledgeOneNoteClientId || this.config.get<string>("MICROSOFT_CLIENT_ID");
-    const clientSecret = this.resolveSecret(settings.knowledgeOneNoteClientSecretReference) || this.config.get<string>("MICROSOFT_CLIENT_SECRET");
+    const settings = await this.prisma.systemSetting.findUnique({
+      where: { organizationId: user.organizationId },
+      select: {
+        knowledgeOneNoteImportEnabled: true,
+        knowledgeOneNoteTenantId: true,
+        knowledgeOneNoteClientId: true,
+        knowledgeOneNoteClientSecretReference: true,
+        knowledgeOneNoteRefreshTokenEncrypted: true
+      }
+    });
 
-    if (!settings.knowledgeOneNoteImportEnabled) {
+    if (!settings?.knowledgeOneNoteImportEnabled) {
       throw new BadRequestException("OneNote import is disabled.");
     }
+    if (!settings.knowledgeOneNoteRefreshTokenEncrypted) {
+      throw new BadRequestException("Microsoft OneNote is not connected. Connect a Microsoft account before importing.");
+    }
+    const refreshToken = decryptSecret(settings.knowledgeOneNoteRefreshTokenEncrypted, this.secretEncryptionKey());
+    const token = await this.refreshAccessToken(settings, refreshToken);
+    if (token.refresh_token && token.refresh_token !== refreshToken) {
+      await this.prisma.systemSetting.update({
+        where: { organizationId: user.organizationId },
+        data: { knowledgeOneNoteRefreshTokenEncrypted: encryptSecret(token.refresh_token, this.secretEncryptionKey()) }
+      });
+    }
+    return token.access_token;
+  }
+
+  private async exchangeCodeForToken(settings: OneNoteGraphSettings, code: string) {
+    const { tenantId, clientId, clientSecret } = this.graphConfig(settings);
     if (!tenantId || !clientId || !clientSecret) {
       throw new InternalServerErrorException("Microsoft Graph OneNote credentials are not configured.");
     }
-
     const body = new URLSearchParams({
       client_id: clientId,
       client_secret: clientSecret,
-      scope: "https://graph.microsoft.com/.default",
-      grant_type: "client_credentials"
+      code,
+      redirect_uri: this.redirectUri(),
+      scope: ONENOTE_SCOPES.join(" "),
+      grant_type: "authorization_code"
     });
+    return this.tokenRequest(tenantId, body);
+  }
+
+  private async refreshAccessToken(settings: OneNoteGraphSettings, refreshToken: string) {
+    const { tenantId, clientId, clientSecret } = this.graphConfig(settings);
+    if (!tenantId || !clientId || !clientSecret) {
+      throw new InternalServerErrorException("Microsoft Graph OneNote credentials are not configured.");
+    }
+    const body = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      scope: ONENOTE_SCOPES.join(" "),
+      grant_type: "refresh_token"
+    });
+    return this.tokenRequest(tenantId, body);
+  }
+
+  private async tokenRequest(tenantId: string, body: URLSearchParams): Promise<OneNoteTokenResponse> {
     const response = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -228,14 +347,15 @@ export class KnowledgeOneNoteImportService {
     });
 
     if (!response.ok) {
-      throw new InternalServerErrorException("Unable to authenticate with Microsoft Graph OneNote.");
+      const details = await response.text();
+      throw new InternalServerErrorException(`Unable to authenticate with Microsoft Graph OneNote${details ? `: ${details.slice(0, 500)}` : "."}`);
     }
 
-    const token = (await response.json()) as { access_token?: string };
+    const token = (await response.json()) as { access_token?: string; refresh_token?: string };
     if (!token.access_token) {
       throw new InternalServerErrorException("Microsoft Graph token response did not include an access token.");
     }
-    return token.access_token;
+    return { access_token: token.access_token, refresh_token: token.refresh_token };
   }
 
   private async graphGetCollection<T>(url: string, token: string) {
@@ -290,6 +410,47 @@ export class KnowledgeOneNoteImportService {
       return this.config.get<string>(reference.slice(4)) ?? null;
     }
     return null;
+  }
+
+  private graphConfig(settings: OneNoteGraphSettings) {
+    return {
+      tenantId: settings.knowledgeOneNoteTenantId || this.config.get<string>("MICROSOFT_TENANT_ID"),
+      clientId: settings.knowledgeOneNoteClientId || this.config.get<string>("MICROSOFT_CLIENT_ID"),
+      clientSecret: this.resolveSecret(settings.knowledgeOneNoteClientSecretReference) || this.config.get<string>("MICROSOFT_CLIENT_SECRET")
+    };
+  }
+
+  private redirectUri() {
+    const appUrl = (this.config.get<string>("APP_URL") ?? "http://localhost:3000").replace(/\/+$/, "");
+    return `${appUrl}/api/knowledge-base/config/onenote/callback`;
+  }
+
+  private signState(payload: { organizationId: string; userId: string; nonce: string; expiresAt: number }) {
+    const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+    const signature = createHmac("sha256", this.secretEncryptionKey()).update(encoded).digest("base64url");
+    return `${encoded}.${signature}`;
+  }
+
+  private verifyState(value: string) {
+    const [encoded, signature] = value.split(".");
+    if (!encoded || !signature) {
+      throw new BadRequestException("Microsoft OneNote callback state is invalid.");
+    }
+    const expected = createHmac("sha256", this.secretEncryptionKey()).update(encoded).digest("base64url");
+    const left = Buffer.from(signature);
+    const right = Buffer.from(expected);
+    if (left.length !== right.length || !timingSafeEqual(left, right)) {
+      throw new BadRequestException("Microsoft OneNote callback state is invalid.");
+    }
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as { organizationId?: string; userId?: string; expiresAt?: number };
+    if (!payload.organizationId || !payload.userId || !payload.expiresAt || payload.expiresAt < Date.now()) {
+      throw new BadRequestException("Microsoft OneNote callback state expired or is invalid.");
+    }
+    return { organizationId: payload.organizationId, userId: payload.userId };
+  }
+
+  private secretEncryptionKey() {
+    return this.config.get<string>("SESSION_SECRET") ?? "";
   }
 
   private optionalTrim(value: string | null | undefined) {

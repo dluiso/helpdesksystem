@@ -348,6 +348,9 @@ model SystemSetting {
   knowledgeOneNoteClientSecretReference String?
   knowledgeOneNoteSourceUserPrincipalName String?
   knowledgeOneNoteDefaultCategoryId String? @db.Uuid
+  knowledgeOneNoteRefreshTokenEncrypted String?
+  knowledgeOneNoteConnectedUserEmail String?
+  knowledgeOneNoteConnectedAt DateTime?
   defaultTicketAutoReplyTemplate String?
   aiAssistantEnabled         Boolean  @default(true)
   remoteAccessProviderEnabled Boolean @default(false)

@@ -1,6 +1,6 @@
 "use client";
 
-import { Save, TestTube2 } from "lucide-react";
+import { Link2, Save, TestTube2, Unlink } from "lucide-react";
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
@@ -16,6 +16,9 @@ interface OneNoteSettings {
   knowledgeOneNoteClientSecretReference: string | null;
   knowledgeOneNoteSourceUserPrincipalName: string | null;
   knowledgeOneNoteDefaultCategoryId: string | null;
+  knowledgeOneNoteConnectedUserEmail: string | null;
+  knowledgeOneNoteConnectedAt: string | null;
+  knowledgeOneNoteConnected: boolean;
 }
 
 const defaultSettings: OneNoteSettings = {
@@ -24,7 +27,10 @@ const defaultSettings: OneNoteSettings = {
   knowledgeOneNoteClientId: "",
   knowledgeOneNoteClientSecretReference: "env:MICROSOFT_CLIENT_SECRET",
   knowledgeOneNoteSourceUserPrincipalName: "",
-  knowledgeOneNoteDefaultCategoryId: ""
+  knowledgeOneNoteDefaultCategoryId: "",
+  knowledgeOneNoteConnectedUserEmail: null,
+  knowledgeOneNoteConnectedAt: null,
+  knowledgeOneNoteConnected: false
 };
 
 export function KnowledgeConfigPanel() {
@@ -51,7 +57,10 @@ export function KnowledgeConfigPanel() {
         knowledgeOneNoteClientId: settingsData.knowledgeOneNoteClientId ?? "",
         knowledgeOneNoteClientSecretReference: settingsData.knowledgeOneNoteClientSecretReference ?? "env:MICROSOFT_CLIENT_SECRET",
         knowledgeOneNoteSourceUserPrincipalName: settingsData.knowledgeOneNoteSourceUserPrincipalName ?? "",
-        knowledgeOneNoteDefaultCategoryId: settingsData.knowledgeOneNoteDefaultCategoryId ?? ""
+        knowledgeOneNoteDefaultCategoryId: settingsData.knowledgeOneNoteDefaultCategoryId ?? "",
+        knowledgeOneNoteConnectedUserEmail: settingsData.knowledgeOneNoteConnectedUserEmail ?? null,
+        knowledgeOneNoteConnectedAt: settingsData.knowledgeOneNoteConnectedAt ?? null,
+        knowledgeOneNoteConnected: settingsData.knowledgeOneNoteConnected
       });
       setCategories(categoryData);
     } catch (caught) {
@@ -64,28 +73,66 @@ export function KnowledgeConfigPanel() {
     setError(null);
     setNotice(null);
     try {
-      const saved = await apiFetch<OneNoteSettings>("/knowledge-base/config/onenote", {
-        method: "PATCH",
-        body: JSON.stringify({
-          ...settings,
-          knowledgeOneNoteTenantId: settings.knowledgeOneNoteTenantId || null,
-          knowledgeOneNoteClientId: settings.knowledgeOneNoteClientId || null,
-          knowledgeOneNoteClientSecretReference: settings.knowledgeOneNoteClientSecretReference || "env:MICROSOFT_CLIENT_SECRET",
-          knowledgeOneNoteSourceUserPrincipalName: settings.knowledgeOneNoteSourceUserPrincipalName || null,
-          knowledgeOneNoteDefaultCategoryId: settings.knowledgeOneNoteDefaultCategoryId || null
-        })
-      });
-      setSettings({
-        knowledgeOneNoteImportEnabled: saved.knowledgeOneNoteImportEnabled,
-        knowledgeOneNoteTenantId: saved.knowledgeOneNoteTenantId ?? "",
-        knowledgeOneNoteClientId: saved.knowledgeOneNoteClientId ?? "",
-        knowledgeOneNoteClientSecretReference: saved.knowledgeOneNoteClientSecretReference ?? "env:MICROSOFT_CLIENT_SECRET",
-        knowledgeOneNoteSourceUserPrincipalName: saved.knowledgeOneNoteSourceUserPrincipalName ?? "",
-        knowledgeOneNoteDefaultCategoryId: saved.knowledgeOneNoteDefaultCategoryId ?? ""
-      });
+      await persistSettings();
       setNotice("Knowledge Base OneNote settings saved.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to save Knowledge Base configuration.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function persistSettings() {
+    const saved = await apiFetch<OneNoteSettings>("/knowledge-base/config/onenote", {
+      method: "PATCH",
+      body: JSON.stringify({
+        ...settings,
+        knowledgeOneNoteTenantId: settings.knowledgeOneNoteTenantId || null,
+        knowledgeOneNoteClientId: settings.knowledgeOneNoteClientId || null,
+        knowledgeOneNoteClientSecretReference: settings.knowledgeOneNoteClientSecretReference || "env:MICROSOFT_CLIENT_SECRET",
+        knowledgeOneNoteSourceUserPrincipalName: settings.knowledgeOneNoteSourceUserPrincipalName || null,
+        knowledgeOneNoteDefaultCategoryId: settings.knowledgeOneNoteDefaultCategoryId || null
+      })
+    });
+    setSettings({
+      knowledgeOneNoteImportEnabled: saved.knowledgeOneNoteImportEnabled,
+      knowledgeOneNoteTenantId: saved.knowledgeOneNoteTenantId ?? "",
+      knowledgeOneNoteClientId: saved.knowledgeOneNoteClientId ?? "",
+      knowledgeOneNoteClientSecretReference: saved.knowledgeOneNoteClientSecretReference ?? "env:MICROSOFT_CLIENT_SECRET",
+      knowledgeOneNoteSourceUserPrincipalName: saved.knowledgeOneNoteSourceUserPrincipalName ?? "",
+      knowledgeOneNoteDefaultCategoryId: saved.knowledgeOneNoteDefaultCategoryId ?? "",
+      knowledgeOneNoteConnectedUserEmail: saved.knowledgeOneNoteConnectedUserEmail ?? null,
+      knowledgeOneNoteConnectedAt: saved.knowledgeOneNoteConnectedAt ?? null,
+      knowledgeOneNoteConnected: saved.knowledgeOneNoteConnected
+    });
+    return saved;
+  }
+
+  async function connectOneNote() {
+    setBusy("connect");
+    setError(null);
+    setNotice(null);
+    try {
+      await persistSettings();
+      const result = await apiFetch<{ authorizationUrl: string; redirectUri: string }>("/knowledge-base/config/onenote/connect-url", { method: "POST" });
+      window.location.href = result.authorizationUrl;
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to start Microsoft OneNote connection.");
+      setBusy(null);
+    }
+  }
+
+  async function disconnectOneNote() {
+    if (!window.confirm("Disconnect Microsoft OneNote import? Existing Knowledge Base articles will not be removed.")) return;
+    setBusy("disconnect");
+    setError(null);
+    setNotice(null);
+    try {
+      await apiFetch("/knowledge-base/config/onenote/connection", { method: "DELETE" });
+      await loadConfig();
+      setNotice("Microsoft OneNote disconnected.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to disconnect Microsoft OneNote.");
     } finally {
       setBusy(null);
     }
@@ -124,7 +171,7 @@ export function KnowledgeConfigPanel() {
         <div className="section-heading">
           <div>
             <h3>Microsoft OneNote Import</h3>
-            <p className="muted">Use application permissions to import selected OneNote pages as Knowledge Base drafts.</p>
+            <p className="muted">Connect a Microsoft account with delegated OneNote access to import selected pages as Knowledge Base drafts.</p>
           </div>
         </div>
         <label className="checkbox-row">
@@ -154,7 +201,7 @@ export function KnowledgeConfigPanel() {
             />
           </label>
           <label className="field">
-            <span>Source user email / UPN</span>
+            <span>Login hint email / UPN</span>
             <input
               className="input"
               placeholder="user@domain.com"
@@ -172,16 +219,34 @@ export function KnowledgeConfigPanel() {
             </select>
           </label>
         </div>
-        <p className="muted">Leave Tenant ID and Client ID blank to use MICROSOFT_TENANT_ID and MICROSOFT_CLIENT_ID from the server environment. Secrets must be saved as env: references.</p>
+        <div className="nested-panel">
+          <strong>{settings.knowledgeOneNoteConnected ? "Connected Microsoft account" : "No Microsoft account connected"}</strong>
+          <p className="muted">
+            {settings.knowledgeOneNoteConnected
+              ? `${settings.knowledgeOneNoteConnectedUserEmail ?? "Microsoft account"} connected${settings.knowledgeOneNoteConnectedAt ? ` on ${new Date(settings.knowledgeOneNoteConnectedAt).toLocaleString()}` : ""}.`
+              : "Save settings, then connect Microsoft OneNote to authorize delegated access."}
+          </p>
+        </div>
+        <p className="muted">Leave Tenant ID and Client ID blank to use MICROSOFT_TENANT_ID and MICROSOFT_CLIENT_ID from the server environment. Secrets must be saved as env: references. Azure must include the redirect URI /api/knowledge-base/config/onenote/callback.</p>
         <div className="form-actions">
           <button className="button" type="button" onClick={saveSettings} disabled={busy === "save"}>
             <Save size={16} aria-hidden="true" />
             <span>Save OneNote Import</span>
           </button>
-          <button className="button secondary" type="button" onClick={testConnection} disabled={busy === "test" || !settings.knowledgeOneNoteImportEnabled}>
+          <button className="button secondary" type="button" onClick={connectOneNote} disabled={busy === "connect" || !settings.knowledgeOneNoteImportEnabled}>
+            <Link2 size={16} aria-hidden="true" />
+            <span>Connect Microsoft OneNote</span>
+          </button>
+          <button className="button secondary" type="button" onClick={testConnection} disabled={busy === "test" || !settings.knowledgeOneNoteImportEnabled || !settings.knowledgeOneNoteConnected}>
             <TestTube2 size={16} aria-hidden="true" />
             <span>Test Connection</span>
           </button>
+          {settings.knowledgeOneNoteConnected ? (
+            <button className="button danger" type="button" onClick={disconnectOneNote} disabled={busy === "disconnect"}>
+              <Unlink size={16} aria-hidden="true" />
+              <span>Disconnect</span>
+            </button>
+          ) : null}
         </div>
       </div>
     </section>

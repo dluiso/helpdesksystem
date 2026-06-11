@@ -1802,6 +1802,13 @@ export function SettingsWorkspace() {
     void loadSettingsData();
   }, []);
 
+  useEffect(() => {
+    const oneNoteStatus = new URLSearchParams(window.location.search).get("onenote");
+    if (!oneNoteStatus) return;
+    setActiveSection("knowledge");
+    setNotice(oneNoteStatus === "connected" ? "Microsoft OneNote connected." : "Microsoft OneNote connection was not completed.");
+  }, []);
+
   return (
     <div className="settings-page">
       <div className="compact-page-header">
