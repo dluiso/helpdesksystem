@@ -28,6 +28,12 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     } catch {
       parsedMessage = "";
     }
+    if (!parsedMessage && /<!doctype html|<html[\s>]/i.test(text)) {
+      parsedMessage =
+        response.status === 504
+          ? "The server timed out while processing the request. Try a smaller selection or try again."
+          : `Request failed with status ${response.status}. The server returned an HTML error page instead of JSON.`;
+    }
     throw new Error(parsedMessage || text || `Request failed with status ${response.status}`);
   }
 

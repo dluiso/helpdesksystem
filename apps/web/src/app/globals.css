@@ -5234,6 +5234,12 @@ a.dashboard-list-row:hover {
   gap: 10px;
 }
 
+.subtle-banner {
+  background: color-mix(in srgb, var(--brand-primary) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--brand-primary) 28%, var(--line));
+  color: var(--text);
+}
+
 .knowledge-import-page {
   display: grid;
   gap: 8px;

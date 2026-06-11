@@ -335,19 +335,18 @@ export class KnowledgeOneNoteImportService {
     for (const sectionId of sectionIds) {
       const section = await this.getSection(sectionId, token);
       const pages = await this.listPagesForSection(sectionId, token);
-      const articlePages = [];
-      for (const [index, page] of pages.entries()) {
+      const articlePages = await this.mapWithConcurrency(pages, 3, async (page, index) => {
         const html = await this.getPageContent(page, token);
         const title = this.cleanTitle(page.title || `Page ${index + 1}`);
-        articlePages.push({
+        return {
           title,
           content: this.sanitizer.sanitize(this.extractOneNoteBody(html)),
           sortOrder: index,
           sourceType: "ONENOTE_PAGE",
           sourceExternalId: page.id,
           sourceUrl: page.links?.oneNoteWebUrl?.href ?? null
-        });
-      }
+        };
+      });
       const alreadyImported = existingIds.has(sectionId);
       items.push({
         temporaryId: `onenote-section-${sectionId}`,
@@ -526,6 +525,21 @@ export class KnowledgeOneNoteImportService {
       }
     }
     throw lastError instanceof Error ? lastError : new InternalServerErrorException("Unable to load OneNote page content.");
+  }
+
+  private async mapWithConcurrency<T, R>(items: T[], limit: number, handler: (item: T, index: number) => Promise<R>) {
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+    await Promise.all(
+      Array.from({ length: Math.min(limit, items.length) }, async () => {
+        while (nextIndex < items.length) {
+          const currentIndex = nextIndex;
+          nextIndex += 1;
+          results[currentIndex] = await handler(items[currentIndex], currentIndex);
+        }
+      })
+    );
+    return results;
   }
 
   private async listRecentNotebooksWithToken(token: string) {

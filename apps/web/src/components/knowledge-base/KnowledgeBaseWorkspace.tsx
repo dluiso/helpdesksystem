@@ -181,6 +181,7 @@ export function KnowledgeBaseWorkspace() {
   const [selectedSectionIds, setSelectedSectionIds] = useState<string[]>([]);
   const [oneNoteCategoryId, setOneNoteCategoryId] = useState("");
   const [oneNoteImportError, setOneNoteImportError] = useState<string | null>(null);
+  const [oneNoteImportProgress, setOneNoteImportProgress] = useState<string | null>(null);
 
   const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? articles[0] ?? null;
   const selectedArticlePages = selectedArticle?.pages?.length ? selectedArticle.pages : selectedArticle ? [legacyPage(selectedArticle)] : [];
@@ -480,6 +481,7 @@ export function KnowledgeBaseWorkspace() {
     setError(null);
     setNotice(null);
     setOneNoteImportError(null);
+    setOneNoteImportProgress(null);
     if (!oneNoteNotebooks.length) await loadOneNoteNotebooks();
   }
 
@@ -500,6 +502,7 @@ export function KnowledgeBaseWorkspace() {
     setSelectedNotebookId(notebookId);
     setOneNoteSections([]);
     setSelectedSectionIds([]);
+    setOneNoteImportProgress(null);
     if (!notebookId) return;
     setBusy(true);
     setOneNoteImportError(null);
@@ -524,19 +527,27 @@ export function KnowledgeBaseWorkspace() {
     }
     setBusy(true);
     setOneNoteImportError(null);
+    setOneNoteImportProgress(`Preparing 0 of ${selectedSectionIds.length} sections...`);
     try {
-      const result = await apiFetch<{ items: ImportItem[]; itemCount: number }>("/knowledge-base/import/onenote/preview", {
-        method: "POST",
-        body: JSON.stringify({ sectionIds: selectedSectionIds, categoryId: oneNoteCategoryId || null })
-      });
-      setImportItems(result.items.map((item, index) => ({ ...item, accentColor: item.accentColor ?? accentPalette[index % accentPalette.length] })));
+      const items: ImportItem[] = [];
+      for (const [index, sectionId] of selectedSectionIds.entries()) {
+        const section = oneNoteSections.find((item) => item.id === sectionId);
+        setOneNoteImportProgress(`Preparing ${index + 1} of ${selectedSectionIds.length}: ${section?.displayName ?? "OneNote section"}...`);
+        const result = await apiFetch<{ items: ImportItem[]; itemCount: number }>("/knowledge-base/import/onenote/preview", {
+          method: "POST",
+          body: JSON.stringify({ sectionIds: [sectionId], categoryId: oneNoteCategoryId || null })
+        });
+        items.push(...result.items.map((item) => ({ ...item, accentColor: item.accentColor ?? accentPalette[items.length % accentPalette.length] })));
+      }
+      setImportItems(items);
       setImportSource("OneNote");
       setShowOneNoteImport(false);
       setShowImportReview(true);
-      setNotice(`${result.itemCount} OneNote sections ready for review.`);
+      setNotice(`${items.length} OneNote sections ready for review.`);
     } catch (err) {
-      setOneNoteImportError(err instanceof Error ? err.message : "Unable to preview OneNote import.");
+      setOneNoteImportError(cleanApiError(err, "Unable to preview OneNote import."));
     } finally {
+      setOneNoteImportProgress(null);
       setBusy(false);
     }
   }
@@ -846,6 +857,7 @@ export function KnowledgeBaseWorkspace() {
               </button>
             </div>
             {oneNoteImportError ? <div className="error-banner">{oneNoteImportError}</div> : null}
+            {oneNoteImportProgress ? <div className="success-banner subtle-banner">{oneNoteImportProgress}</div> : null}
             <div className="onenote-import-grid">
               <label className="field">
                 <span>Notebook</span>
@@ -912,6 +924,14 @@ function composeContent(pages: Array<{ title: string; content: string }>) {
 function formatOneNoteNotebookLabel(notebook: OneNoteNotebook) {
   const labels = [notebook.isDefault ? "Default" : null, notebook.isShared ? "Shared" : null, notebook.userRole ?? null].filter(Boolean);
   return labels.length ? `${notebook.displayName} (${labels.join(", ")})` : notebook.displayName;
+}
+
+function cleanApiError(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : fallback;
+  if (/<!doctype html|<html[\s>]|cf-error-details|cloudflare/i.test(message)) {
+    return "The OneNote preview timed out before all selected sections could be prepared. Try again; sections are now prepared one at a time to avoid large requests.";
+  }
+  return message || fallback;
 }
 
 function escapeHtml(value: string) {
