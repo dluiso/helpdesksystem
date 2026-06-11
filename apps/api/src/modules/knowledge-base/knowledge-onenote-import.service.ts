@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable, InternalServerErrorException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { KnowledgeStatus } from "@prisma/client";
-import { createHmac, randomBytes, timingSafeEqual } from "crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { HtmlSanitizerService } from "../../common/html/html-sanitizer.service";
 import { decryptSecret, encryptSecret } from "../auth/auth-security.util";
 import { AuthenticatedUser } from "../auth/auth.types";
+import { FileStorageService } from "../file-storage/file-storage.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { PreviewOneNoteImportDto, UpdateKnowledgeOneNoteSettingsDto } from "./dto/knowledge-base.dto";
 
@@ -63,7 +64,8 @@ export class KnowledgeOneNoteImportService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    private readonly sanitizer: HtmlSanitizerService
+    private readonly sanitizer: HtmlSanitizerService,
+    private readonly fileStorage: FileStorageService
   ) {}
 
   async getSettings(user: AuthenticatedUser) {
@@ -322,6 +324,303 @@ export class KnowledgeOneNoteImportService {
     }
 
     return { source: "onenote", itemCount: items.length, items };
+  }
+
+  async syncImportedArticlesMedia(user: AuthenticatedUser, articleIds: string[]) {
+    let synced = 0;
+    let skipped = 0;
+    for (const articleId of [...new Set(articleIds)]) {
+      try {
+        const result = await this.syncArticleMedia(user, articleId);
+        synced += result.synced;
+        skipped += result.skipped;
+      } catch {
+        skipped += 1;
+      }
+    }
+    return { synced, skipped };
+  }
+
+  async syncArticleMedia(user: AuthenticatedUser, articleId: string) {
+    const article = await this.prisma.knowledgeArticle.findFirst({
+      where: { id: articleId, organizationId: user.organizationId, deletedAt: null },
+      include: {
+        pages: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+        attachments: { where: { deletedAt: null }, orderBy: { createdAt: "asc" } },
+        category: true,
+        createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+        updatedBy: { select: { id: true, firstName: true, lastName: true, email: true } }
+      }
+    });
+    if (!article) {
+      throw new BadRequestException("Knowledge article was not found.");
+    }
+    const oneNotePages = article.pages.filter((page) => page.sourceType === "ONENOTE_PAGE" && page.sourceExternalId);
+    if (!oneNotePages.length && article.sourceType !== "ONENOTE" && article.sourceType !== "ONENOTE_SECTION") {
+      throw new BadRequestException("This article is not linked to OneNote.");
+    }
+
+    const token = await this.getAccessToken(user);
+    let synced = 0;
+    let skipped = 0;
+    const updatedPages: Array<{ id: string; content: string }> = [];
+
+    for (const page of oneNotePages) {
+      let sourceHtml = page.content;
+      try {
+        const graphPage = await this.graphGet<GraphPage>(
+          `https://graph.microsoft.com/v1.0/me/onenote/pages/${encodeURIComponent(page.sourceExternalId as string)}?$select=id,title,links,contentUrl`,
+          token
+        );
+        sourceHtml = this.extractOneNoteBody(await this.getPageContent(graphPage, token));
+      } catch {
+        sourceHtml = page.content;
+      }
+
+      const localized = await this.localizeOneNoteMedia({
+        articleId: article.id,
+        userId: user.id,
+        token,
+        currentHtml: page.content,
+        sourceHtml
+      });
+      synced += localized.synced;
+      skipped += localized.skipped;
+      if (localized.html !== page.content) {
+        updatedPages.push({ id: page.id, content: this.sanitizer.sanitize(localized.html) });
+      }
+    }
+
+    if (updatedPages.length) {
+      await this.prisma.$transaction(
+        updatedPages.map((page) =>
+          this.prisma.knowledgeArticlePage.update({
+            where: { id: page.id },
+            data: { content: page.content, sourceSyncedAt: new Date() }
+          })
+        )
+      );
+      const pages = await this.prisma.knowledgeArticlePage.findMany({
+        where: { articleId: article.id },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+      });
+      await this.prisma.knowledgeArticle.update({
+        where: { id: article.id },
+        data: {
+          content: this.sanitizer.sanitize(pages.map((page) => `<section class="knowledge-page-section"><h2>${this.escapeHtml(page.title)}</h2>${page.content}</section>`).join("\n")),
+          sourceSyncedAt: new Date(),
+          updatedById: user.id
+        }
+      });
+    }
+
+    const updated = await this.prisma.knowledgeArticle.findFirstOrThrow({
+      where: { id: article.id },
+      include: {
+        category: true,
+        createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+        updatedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+        pages: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+        attachments: { where: { deletedAt: null }, orderBy: { createdAt: "asc" } }
+      }
+    });
+
+    return { synced, skipped, article: updated };
+  }
+
+  private async localizeOneNoteMedia(input: {
+    articleId: string;
+    userId: string;
+    token: string;
+    currentHtml: string;
+    sourceHtml: string;
+  }) {
+    const resources = this.extractOneNoteResourceReferences(input.sourceHtml);
+    if (!resources.length) {
+      return { html: input.currentHtml, synced: 0, skipped: 0 };
+    }
+
+    let html = input.currentHtml;
+    const appendedLinks: string[] = [];
+    let synced = 0;
+    let skipped = 0;
+
+    for (const resource of resources) {
+      if (!this.isOneNoteGraphResourceUrl(resource.url)) {
+        skipped += 1;
+        continue;
+      }
+      const hasGraphReference = this.htmlIncludesResourceUrl(html, resource.url);
+      if (!hasGraphReference && this.hasExistingLocalizedResource(html, resource)) {
+        skipped += 1;
+        continue;
+      }
+
+      try {
+        const downloaded = await this.downloadGraphResource(resource.url, input.token);
+        const attachment = await this.createInlineAttachment({
+          articleId: input.articleId,
+          userId: input.userId,
+          buffer: downloaded.buffer,
+          mimeType: downloaded.mimeType,
+          originalFilename: this.mediaFilename(resource.alt || resource.name || "onenote-media", downloaded.mimeType, downloaded.buffer)
+        });
+        const localUrl = `/api/knowledge-base/articles/${input.articleId}/attachments/${attachment.id}/preview`;
+        html = this.replaceAttributeValue(html, resource.url, localUrl);
+        if (!html.includes(localUrl)) {
+          appendedLinks.push(this.renderMissingResource(resource, localUrl, downloaded.mimeType));
+        }
+        synced += 1;
+      } catch {
+        skipped += 1;
+      }
+    }
+
+    if (appendedLinks.length) {
+      html = `${html}\n<div class="knowledge-onenote-media">${appendedLinks.join("\n")}</div>`;
+    }
+
+    return { html, synced, skipped };
+  }
+
+  private extractOneNoteResourceReferences(html: string) {
+    const resources: Array<{ url: string; kind: "image" | "file"; alt?: string; name?: string }> = [];
+    const seen = new Set<string>();
+    const tagPattern = /<(img|a|object|iframe|embed)\b[^>]*(?:src|href|data)=["']([^"']+)["'][^>]*>/gi;
+    let match: RegExpExecArray | null;
+    while ((match = tagPattern.exec(html)) !== null) {
+      const tag = match[0];
+      const tagName = match[1].toLowerCase();
+      const url = this.decodeHtmlAttribute(match[2]);
+      if (!this.isOneNoteGraphResourceUrl(url) || seen.has(url)) continue;
+      seen.add(url);
+      resources.push({
+        url,
+        kind: tagName === "img" ? "image" : "file",
+        alt: this.decodeHtmlAttribute(tag.match(/\balt=["']([^"']*)["']/i)?.[1] ?? ""),
+        name: this.decodeHtmlAttribute(tag.match(/\btitle=["']([^"']*)["']/i)?.[1] ?? "")
+      });
+    }
+    return resources;
+  }
+
+  private isOneNoteGraphResourceUrl(value: string) {
+    return /^https:\/\/graph\.microsoft\.com\/v1\.0\/.+\/onenote\/resources\/.+/i.test(value);
+  }
+
+  private async downloadGraphResource(url: string, token: string) {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "*/*" }
+    });
+    if (!response.ok) {
+      const details = await response.text();
+      throw new InternalServerErrorException(`Unable to download OneNote media${details ? `: ${details.slice(0, 300)}` : "."}`);
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const contentType = response.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream";
+    return { buffer, mimeType: this.normalizeMediaMimeType(buffer, contentType) };
+  }
+
+  private async createInlineAttachment(input: { articleId: string; userId: string; buffer: Buffer; mimeType: string; originalFilename: string }) {
+    const stored = await this.fileStorage.saveAttachmentFile({
+      originalFilename: input.originalFilename,
+      mimeType: input.mimeType,
+      buffer: input.buffer,
+      folder: "knowledge-base"
+    });
+
+    return this.prisma.$transaction(async (tx) => {
+      const storedFile = await tx.storedFile.create({
+        data: {
+          storageProvider: stored.storageProvider,
+          storageKey: stored.storageKey,
+          originalFilename: stored.originalFilename,
+          storedFilename: stored.storedFilename,
+          mimeType: stored.mimeType,
+          fileExtension: stored.fileExtension,
+          fileSize: stored.fileSize,
+          sha256Hash: stored.sha256Hash
+        }
+      });
+
+      return tx.knowledgeArticleAttachment.create({
+        data: {
+          articleId: input.articleId,
+          uploadedByUserId: input.userId,
+          storedFileId: storedFile.id,
+          originalFilename: stored.originalFilename,
+          storedFilename: stored.storedFilename,
+          storageProvider: stored.storageProvider,
+          storageKey: stored.storageKey,
+          mimeType: stored.mimeType,
+          fileExtension: stored.fileExtension,
+          fileSize: stored.fileSize,
+          sha256Hash: stored.sha256Hash,
+          isInline: input.mimeType.startsWith("image/")
+        }
+      });
+    });
+  }
+
+  private replaceAttributeValue(html: string, oldValue: string, newValue: string) {
+    const escaped = oldValue.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const escapedAmp = oldValue.replace(/&/g, "&amp;").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return html.replace(new RegExp(escaped, "g"), newValue).replace(new RegExp(escapedAmp, "g"), newValue);
+  }
+
+  private htmlIncludesResourceUrl(html: string, resourceUrl: string) {
+    return html.includes(resourceUrl) || html.includes(resourceUrl.replace(/&/g, "&amp;"));
+  }
+
+  private hasExistingLocalizedResource(html: string, resource: { alt?: string; name?: string }) {
+    const label = this.escapeHtml(resource.alt || resource.name || "");
+    return Boolean(label && html.includes("/api/knowledge-base/articles/") && html.includes(label));
+  }
+
+  private renderMissingResource(resource: { kind: "image" | "file"; alt?: string; name?: string }, localUrl: string, mimeType: string) {
+    const label = this.escapeHtml(resource.alt || resource.name || "OneNote media");
+    if (resource.kind === "image" && mimeType.startsWith("image/")) {
+      return `<p><img src="${localUrl}" alt="${label}" /></p>`;
+    }
+    return `<p><a href="${localUrl}" target="_blank" rel="noopener noreferrer">${label}</a></p>`;
+  }
+
+  private mediaFilename(name: string, mimeType: string, buffer: Buffer) {
+    const extension = this.extensionForMimeType(mimeType);
+    const base =
+      name
+        .replace(/\.[a-z0-9]{2,5}$/i, "")
+        .replace(/[^a-z0-9._-]+/gi, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 72) || "onenote-media";
+    return `${base}-${createHash("sha256").update(buffer).digest("hex").slice(0, 10)}${extension}`;
+  }
+
+  private normalizeMediaMimeType(buffer: Buffer, contentType: string) {
+    if (contentType && contentType !== "application/octet-stream") return contentType;
+    if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+    if (buffer.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) return "image/jpeg";
+    const gifHeader = buffer.subarray(0, 6).toString("ascii");
+    if (gifHeader === "GIF87a" || gifHeader === "GIF89a") return "image/gif";
+    if (buffer.subarray(8, 12).toString("ascii") === "WEBP") return "image/webp";
+    return contentType || "application/octet-stream";
+  }
+
+  private extensionForMimeType(mimeType: string) {
+    switch (mimeType) {
+      case "image/png":
+        return ".png";
+      case "image/jpeg":
+        return ".jpg";
+      case "image/gif":
+        return ".gif";
+      case "image/webp":
+        return ".webp";
+      case "application/pdf":
+        return ".pdf";
+      default:
+        return "";
+    }
   }
 
   private async previewSectionImport(user: AuthenticatedUser, token: string, sectionIds: string[], categoryId: string | null) {
@@ -593,6 +892,14 @@ export class KnowledgeOneNoteImportService {
   private extractOneNoteBody(html: string) {
     const body = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? html;
     return body.trim() || "<p></p>";
+  }
+
+  private decodeHtmlAttribute(value: string) {
+    return value.replace(/&amp;/g, "&").replace(/&quot;/g, "\"").replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+  }
+
+  private escapeHtml(value: string) {
+    return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
   private cleanTitle(value: string) {

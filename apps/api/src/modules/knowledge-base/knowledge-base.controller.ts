@@ -114,6 +114,12 @@ export class KnowledgeBaseController {
     return this.knowledgeBaseService.updateArticle(articleId, user, body);
   }
 
+  @Post("articles/:articleId/sync-onenote-media")
+  @RequirePermissions("knowledge_base.update")
+  syncOneNoteMedia(@Param("articleId") articleId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.oneNoteImportService.syncArticleMedia(user, articleId);
+  }
+
   @Delete("articles/:articleId")
   @HttpCode(204)
   @RequirePermissions("knowledge_base.delete")
@@ -229,8 +235,16 @@ export class KnowledgeBaseController {
 
   @Post("import/commit")
   @RequirePermissions("knowledge_base.create")
-  commitImport(@CurrentUser() user: AuthenticatedUser, @Body() body: CommitKnowledgeImportDto) {
-    return this.knowledgeBaseService.commitImport(user, body);
+  async commitImport(@CurrentUser() user: AuthenticatedUser, @Body() body: CommitKnowledgeImportDto) {
+    const result = await this.knowledgeBaseService.commitImport(user, body);
+    const oneNoteArticleIds = result.articles
+      .filter((article) => article.sourceType === "ONENOTE" || article.sourceType === "ONENOTE_SECTION")
+      .map((article) => article.id);
+    if (!oneNoteArticleIds.length) {
+      return result;
+    }
+    const media = await this.oneNoteImportService.syncImportedArticlesMedia(user, oneNoteArticleIds);
+    return { ...result, mediaSynced: media.synced, mediaSkipped: media.skipped };
   }
 }
 

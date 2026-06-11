@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ArrowLeft, Bold, BookOpen, Edit3, Eye, FileUp, Grid3X3, ImagePlus, Italic, List, ListOrdered, Plus, Save, Search, Table2, Trash2, Underline, UploadCloud, X } from "lucide-react";
+import { Archive, ArrowLeft, Bold, BookOpen, Edit3, Eye, FileUp, Grid3X3, ImagePlus, Italic, List, ListOrdered, Plus, RefreshCw, Save, Search, Table2, Trash2, Underline, UploadCloud, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
@@ -59,6 +59,10 @@ interface KnowledgeArticle {
   updatedBy: UserRef | null;
   attachments: KnowledgeAttachment[];
   pages: KnowledgeArticlePage[];
+  sourceType?: string | null;
+  sourceExternalId?: string | null;
+  sourceUrl?: string | null;
+  sourceSyncedAt?: string | null;
 }
 
 interface KnowledgeSearchResult {
@@ -211,6 +215,7 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
   const activeDraftPage = draftPages.find((page) => page.id === activeDraftPageId) ?? draftPages[0];
   const allTags = useMemo(() => [...new Set(articles.flatMap((article) => article.tags))].sort(), [articles]);
   const visibleAttachments = selectedArticle?.attachments.filter((attachment) => !attachment.isInline) ?? [];
+  const isOneNoteArticle = Boolean(selectedArticle?.sourceType?.startsWith("ONENOTE") || selectedArticle?.pages?.some((page) => page.sourceType === "ONENOTE_PAGE"));
 
   useEffect(() => {
     void loadData();
@@ -553,16 +558,41 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
     setBusy(true);
     setError(null);
     try {
-      const result = await apiFetch<{ imported: number }>("/knowledge-base/import/commit", {
+      const result = await apiFetch<{ imported: number; mediaSynced?: number; mediaSkipped?: number }>("/knowledge-base/import/commit", {
         method: "POST",
         body: JSON.stringify({ items: importItems.map((item) => ({ ...item, content: composeContent(item.pages ?? [{ title: item.title, content: item.content }]) })) })
       });
       setShowImportReview(false);
       setImportItems([]);
-      setNotice(`${result.imported} articles imported as drafts.`);
+      setNotice(`${result.imported} articles imported as drafts.${result.mediaSynced ? ` ${result.mediaSynced} OneNote media item${result.mediaSynced === 1 ? "" : "s"} synced.` : ""}`);
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to import articles.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function syncOneNoteMedia() {
+    if (!selectedArticle) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await apiFetch<{ synced: number; skipped: number; article: KnowledgeArticle }>(`/knowledge-base/articles/${selectedArticle.id}/sync-onenote-media`, {
+        method: "POST"
+      });
+      setDetailArticle(result.article);
+      setDraft(result.article);
+      setNotice(
+        result.synced
+          ? `${result.synced} OneNote media item${result.synced === 1 ? "" : "s"} synced.`
+          : result.skipped
+            ? `No OneNote media synced. ${result.skipped} item${result.skipped === 1 ? "" : "s"} skipped.`
+          : "No OneNote media needed syncing."
+      );
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to sync OneNote media.");
     } finally {
       setBusy(false);
     }
@@ -903,6 +933,12 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
                   <Edit3 size={16} aria-hidden="true" />
                   <span>Edit</span>
                 </button>
+                {isOneNoteArticle ? (
+                  <button className="button secondary" type="button" onClick={() => void syncOneNoteMedia()} disabled={busy}>
+                    <RefreshCw size={16} aria-hidden="true" />
+                    <span>Sync OneNote Media</span>
+                  </button>
+                ) : null}
                 <button className="button secondary" type="button" onClick={() => void updateStatus(selectedArticle.status === "PUBLISHED" ? "DRAFT" : "PUBLISHED")} disabled={busy}>
                   <Eye size={16} aria-hidden="true" />
                   <span>{selectedArticle.status === "PUBLISHED" ? "Draft" : "Publish"}</span>
