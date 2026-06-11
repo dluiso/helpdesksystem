@@ -3,10 +3,12 @@ import { KnowledgeBaseWorkspace } from "@/components/knowledge-base/KnowledgeBas
 import { Suspense } from "react";
 
 interface KnowledgeArticlePageProps {
-  params: { articleId: string };
+  params: Promise<{ articleId: string }>;
 }
 
-export default function KnowledgeArticlePage({ params }: KnowledgeArticlePageProps) {
+export default async function KnowledgeArticlePage({ params }: KnowledgeArticlePageProps) {
+  const { articleId } = await params;
+
   return (
     <AppShell>
       <div className="compact-page-header">
@@ -15,7 +17,7 @@ export default function KnowledgeArticlePage({ params }: KnowledgeArticlePagePro
         </div>
       </div>
       <Suspense fallback={<section className="panel">Loading article...</section>}>
-        <KnowledgeBaseWorkspace articleId={params.articleId} />
+        <KnowledgeBaseWorkspace articleId={articleId} />
       </Suspense>
     </AppShell>
   );
