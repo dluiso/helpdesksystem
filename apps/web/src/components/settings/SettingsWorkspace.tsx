@@ -491,29 +491,99 @@ function displayLabel(value: string) {
 }
 
 function NotificationPreferenceGroup({
+  title,
   row,
   fields,
   onChange
 }: {
+  title: string;
   row: UserNotificationPreferenceRow;
   fields: Array<{ label: string; inAppKey: keyof NotificationPreference; emailKey: keyof NotificationPreference }>;
   onChange: (userId: string, key: keyof NotificationPreference, value: boolean) => void;
 }) {
   return (
     <div className="notification-preference-group">
+      <div className="notification-group-title">
+        <h3>{title}</h3>
+        <div>
+          <span>In-app</span>
+          <span>Email</span>
+        </div>
+      </div>
       <div className="notification-preference-header">
-        <span>Event</span>
+        <span>Notification</span>
         <span>In-app</span>
         <span>Email</span>
       </div>
       {fields.map((field) => (
         <div className="notification-preference-row" key={field.label}>
           <span>{field.label}</span>
-          <input type="checkbox" checked={Boolean(row.notificationPreference[field.inAppKey])} onChange={(event) => onChange(row.id, field.inAppKey, event.target.checked)} aria-label={`${field.label} in-app`} />
-          <input type="checkbox" checked={Boolean(row.notificationPreference[field.emailKey])} onChange={(event) => onChange(row.id, field.emailKey, event.target.checked)} aria-label={`${field.label} email`} />
+          <NotificationSwitch checked={Boolean(row.notificationPreference[field.inAppKey])} onChange={(value) => onChange(row.id, field.inAppKey, value)} label={`${field.label} in-app`} />
+          <NotificationSwitch checked={Boolean(row.notificationPreference[field.emailKey])} onChange={(value) => onChange(row.id, field.emailKey, value)} label={`${field.label} email`} />
         </div>
       ))}
     </div>
+  );
+}
+
+function NotificationSwitch({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
+  return (
+    <button
+      className={`notification-switch ${checked ? "is-on" : ""}`}
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+    >
+      <span />
+    </button>
+  );
+}
+
+function NotificationUserCard({
+  row,
+  busy,
+  onChange,
+  onSave
+}: {
+  row: UserNotificationPreferenceRow;
+  busy: string | null;
+  onChange: (userId: string, key: keyof NotificationPreference, value: boolean) => void;
+  onSave: (row: UserNotificationPreferenceRow) => void;
+}) {
+  return (
+    <article className="notification-user-card">
+      <div className="notification-user-header">
+        <div>
+          <h3>
+            {row.firstName} {row.lastName}
+          </h3>
+          <p className="muted">{row.email}</p>
+        </div>
+        <button className="button secondary" type="button" onClick={() => onSave(row)} disabled={busy === `notification-${row.id}`}>
+          Save
+        </button>
+      </div>
+      <div className="notification-channel-strip">
+        <div className="notification-channel-item">
+          <span>In-app</span>
+          <NotificationSwitch checked={row.notificationPreference.inAppEnabled} onChange={(value) => onChange(row.id, "inAppEnabled", value)} label={`${row.email} in-app channel`} />
+        </div>
+        <div className="notification-channel-item">
+          <span>Email</span>
+          <NotificationSwitch checked={row.notificationPreference.emailEnabled} onChange={(value) => onChange(row.id, "emailEnabled", value)} label={`${row.email} email channel`} />
+        </div>
+        <div className="notification-channel-item">
+          <span>Daily digest</span>
+          <NotificationSwitch checked={row.notificationPreference.dailyDigestEnabled} onChange={(value) => onChange(row.id, "dailyDigestEnabled", value)} label={`${row.email} daily digest`} />
+        </div>
+      </div>
+      <div className="notification-user-grid">
+        <NotificationPreferenceGroup title="Ticket Notifications" row={row} fields={TICKET_NOTIFICATION_FIELDS} onChange={onChange} />
+        <NotificationPreferenceGroup title="Event Service Notifications" row={row} fields={EVENT_NOTIFICATION_FIELDS} onChange={onChange} />
+      </div>
+    </article>
   );
 }
 
@@ -2950,78 +3020,17 @@ export function SettingsWorkspace() {
                 </div>
                 <span className="status-pill">{notificationPreferenceRows.length} users</span>
               </div>
-              <div className="table-scroll settings-section">
-                <table className="tickets-table">
-                  <thead>
-                    <tr>
-                      <th>User</th>
-                      <th>Channels</th>
-                      <th>Ticket Notifications</th>
-                      <th>Event Service Notifications</th>
-                      <th>Digest</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {notificationPreferenceRows.length === 0 ? (
-                      <tr>
-                        <td colSpan={6}>No users available for notification settings.</td>
-                      </tr>
-                    ) : null}
-                    {notificationPreferenceRows.map((row) => (
-                      <tr key={row.id}>
-                        <td>
-                          <strong>
-                            {row.firstName} {row.lastName}
-                          </strong>
-                          <span className="muted">{row.email}</span>
-                        </td>
-                        <td>
-                          <div className="settings-inline-checks">
-                            <label className="checkbox-row">
-                              <input
-                                type="checkbox"
-                                checked={row.notificationPreference.inAppEnabled}
-                                onChange={(event) => updateNotificationPreferenceDraft(row.id, "inAppEnabled", event.target.checked)}
-                              />
-                              In-app
-                            </label>
-                            <label className="checkbox-row">
-                              <input
-                                type="checkbox"
-                                checked={row.notificationPreference.emailEnabled}
-                                onChange={(event) => updateNotificationPreferenceDraft(row.id, "emailEnabled", event.target.checked)}
-                              />
-                              Email
-                            </label>
-                          </div>
-                        </td>
-                        <td>
-                          <NotificationPreferenceGroup row={row} fields={TICKET_NOTIFICATION_FIELDS} onChange={updateNotificationPreferenceDraft} />
-                        </td>
-                        <td>
-                          <NotificationPreferenceGroup row={row} fields={EVENT_NOTIFICATION_FIELDS} onChange={updateNotificationPreferenceDraft} />
-                        </td>
-                        <td>
-                          <label className="checkbox-row">
-                            <input
-                              type="checkbox"
-                              checked={row.notificationPreference.dailyDigestEnabled}
-                              onChange={(event) => updateNotificationPreferenceDraft(row.id, "dailyDigestEnabled", event.target.checked)}
-                            />
-                            Daily digest
-                          </label>
-                          <span className="muted">Scheduled summary preference.</span>
-                        </td>
-                        <td>
-                          <button className="button secondary" type="button" onClick={() => saveNotificationPreference(row)} disabled={busy === `notification-${row.id}`}>
-                            Save
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="notification-user-list settings-section">
+                {notificationPreferenceRows.length === 0 ? <p className="muted">No users available for notification settings.</p> : null}
+                {notificationPreferenceRows.map((row) => (
+                  <NotificationUserCard
+                    key={row.id}
+                    row={row}
+                    busy={busy}
+                    onChange={updateNotificationPreferenceDraft}
+                    onSave={(nextRow) => void saveNotificationPreference(nextRow)}
+                  />
+                ))}
               </div>
               <p className="muted settings-section">
                 Email notifications use the active outbound support mailbox. If outbound mail is disabled or Graph permissions fail, in-app notifications still continue.
