@@ -355,8 +355,10 @@ export class KnowledgeOneNoteImportService {
     if (!article) {
       throw new BadRequestException("Knowledge article was not found.");
     }
+    const isOneNoteArticle = article.sourceType === "ONENOTE" || article.sourceType === "ONENOTE_SECTION";
     const oneNotePages = article.pages.filter((page) => page.sourceType === "ONENOTE_PAGE" && page.sourceExternalId);
-    if (!oneNotePages.length && article.sourceType !== "ONENOTE" && article.sourceType !== "ONENOTE_SECTION") {
+    const pagesToSync = oneNotePages.length ? oneNotePages : isOneNoteArticle ? article.pages : [];
+    if (!pagesToSync.length && !isOneNoteArticle) {
       throw new BadRequestException("This article is not linked to OneNote.");
     }
 
@@ -365,16 +367,14 @@ export class KnowledgeOneNoteImportService {
     let skipped = 0;
     const updatedPages: Array<{ id: string; content: string }> = [];
 
-    for (const page of oneNotePages) {
+    for (const page of pagesToSync) {
       let sourceHtml = page.content;
-      try {
-        const graphPage = await this.graphGet<GraphPage>(
-          `https://graph.microsoft.com/v1.0/me/onenote/pages/${encodeURIComponent(page.sourceExternalId as string)}?$select=id,title,links,contentUrl`,
-          token
-        );
-        sourceHtml = this.extractOneNoteBody(await this.getPageContent(graphPage, token));
-      } catch {
-        sourceHtml = page.content;
+      if (page.sourceExternalId) {
+        try {
+          sourceHtml = this.extractOneNoteBody(await this.getPageContentById(page.sourceExternalId, token));
+        } catch {
+          sourceHtml = page.content;
+        }
       }
 
       const localized = await this.localizeOneNoteMedia({
@@ -382,7 +382,7 @@ export class KnowledgeOneNoteImportService {
         userId: user.id,
         token,
         currentHtml: page.content,
-        sourceHtml
+        sourceHtml: sourceHtml === page.content ? sourceHtml : `${sourceHtml}\n${page.content}`
       });
       synced += localized.synced;
       skipped += localized.skipped;
@@ -486,26 +486,31 @@ export class KnowledgeOneNoteImportService {
   private extractOneNoteResourceReferences(html: string) {
     const resources: Array<{ url: string; kind: "image" | "file"; alt?: string; name?: string }> = [];
     const seen = new Set<string>();
-    const tagPattern = /<(img|a|object|iframe|embed)\b[^>]*(?:src|href|data)=["']([^"']+)["'][^>]*>/gi;
+    const tagPattern = /<(img|a|object|iframe|embed)\b[^>]*>/gi;
+    const attributePattern = /\b(src|href|data|data-fullres-src|data-render-src)=("([^"]*)"|'([^']*)'|([^\s>]+))/gi;
     let match: RegExpExecArray | null;
     while ((match = tagPattern.exec(html)) !== null) {
       const tag = match[0];
       const tagName = match[1].toLowerCase();
-      const url = this.decodeHtmlAttribute(match[2]);
-      if (!this.isOneNoteGraphResourceUrl(url) || seen.has(url)) continue;
-      seen.add(url);
-      resources.push({
-        url,
-        kind: tagName === "img" ? "image" : "file",
-        alt: this.decodeHtmlAttribute(tag.match(/\balt=["']([^"']*)["']/i)?.[1] ?? ""),
-        name: this.decodeHtmlAttribute(tag.match(/\btitle=["']([^"']*)["']/i)?.[1] ?? "")
-      });
+      let attributeMatch: RegExpExecArray | null;
+      attributePattern.lastIndex = 0;
+      while ((attributeMatch = attributePattern.exec(tag)) !== null) {
+        const url = this.decodeHtmlAttribute(attributeMatch[3] ?? attributeMatch[4] ?? attributeMatch[5] ?? "");
+        if (!this.isOneNoteGraphResourceUrl(url) || seen.has(url)) continue;
+        seen.add(url);
+        resources.push({
+          url,
+          kind: tagName === "img" ? "image" : "file",
+          alt: this.decodeHtmlAttribute(tag.match(/\balt=["']([^"']*)["']/i)?.[1] ?? ""),
+          name: this.decodeHtmlAttribute(tag.match(/\btitle=["']([^"']*)["']/i)?.[1] ?? "")
+        });
+      }
     }
     return resources;
   }
 
   private isOneNoteGraphResourceUrl(value: string) {
-    return /^https:\/\/graph\.microsoft\.com\/v1\.0\/.+\/onenote\/resources\/.+/i.test(value);
+    return /^https:\/\/graph\.microsoft\.com\/(?:v1\.0|beta)\/.+\/onenote\/resources\/.+/i.test(value);
   }
 
   private async downloadGraphResource(url: string, token: string) {
@@ -824,6 +829,19 @@ export class KnowledgeOneNoteImportService {
       }
     }
     throw lastError instanceof Error ? lastError : new InternalServerErrorException("Unable to load OneNote page content.");
+  }
+
+  private async getPageContentById(pageId: string, token: string) {
+    const directUrl = `https://graph.microsoft.com/v1.0/me/onenote/pages/${encodeURIComponent(pageId)}/content?includeIDs=true`;
+    try {
+      return await this.graphGetText(directUrl, token);
+    } catch {
+      const graphPage = await this.graphGet<GraphPage>(
+        `https://graph.microsoft.com/v1.0/me/onenote/pages/${encodeURIComponent(pageId)}?$select=id,title,links,contentUrl`,
+        token
+      );
+      return this.getPageContent(graphPage, token);
+    }
   }
 
   private async mapWithConcurrency<T, R>(items: T[], limit: number, handler: (item: T, index: number) => Promise<R>) {
