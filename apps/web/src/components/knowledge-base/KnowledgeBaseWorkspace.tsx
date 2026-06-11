@@ -1,11 +1,12 @@
 "use client";
 
-import { Archive, Bold, BookOpen, Edit3, Eye, FileUp, ImagePlus, Italic, List, ListOrdered, Plus, Save, Search, Trash2, Underline, UploadCloud, X } from "lucide-react";
+import { Archive, Bold, BookOpen, Edit3, Eye, FileUp, Grid3X3, ImagePlus, Italic, List, ListOrdered, Plus, Save, Search, Table2, Trash2, Underline, UploadCloud, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
 
 type KnowledgeStatus = "DRAFT" | "PUBLISHED" | "ARCHIVED";
+type KnowledgeViewMode = "list" | "cards";
 
 interface UserRef {
   id: string;
@@ -30,11 +31,22 @@ interface KnowledgeAttachment {
   isInline: boolean;
 }
 
+interface KnowledgeArticlePage {
+  id: string;
+  title: string;
+  content: string;
+  sortOrder: number;
+  sourceType?: string | null;
+  sourceExternalId?: string | null;
+  sourceUrl?: string | null;
+}
+
 interface KnowledgeArticle {
   id: string;
   title: string;
   slug: string;
   content: string;
+  accentColor: string | null;
   tags: string[];
   status: KnowledgeStatus;
   visibility: string;
@@ -46,6 +58,17 @@ interface KnowledgeArticle {
   createdBy: UserRef | null;
   updatedBy: UserRef | null;
   attachments: KnowledgeAttachment[];
+  pages: KnowledgeArticlePage[];
+}
+
+interface ImportPage {
+  title: string;
+  content: string;
+  sortOrder?: number;
+  sourceType?: string | null;
+  sourceExternalId?: string | null;
+  sourceUrl?: string | null;
+  selected?: boolean;
 }
 
 interface ImportItem {
@@ -53,11 +76,13 @@ interface ImportItem {
   selected: boolean;
   title: string;
   content: string;
+  accentColor?: string | null;
   categoryName: string | null;
   categoryId?: string | null;
   tags: string[];
   status: KnowledgeStatus;
   sensitiveWarnings: string[];
+  pages?: ImportPage[];
   sourceType?: string | null;
   sourceExternalId?: string | null;
   sourceUrl?: string | null;
@@ -83,11 +108,15 @@ interface OneNoteSection {
   displayName: string;
 }
 
-interface OneNotePage {
-  id: string;
-  title: string;
-  lastModifiedDateTime?: string;
-}
+const accentPalette = ["#2563eb", "#059669", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#be123c", "#475569"];
+
+const editorCommands = [
+  { command: "bold", label: "Bold", icon: Bold },
+  { command: "italic", label: "Italic", icon: Italic },
+  { command: "underline", label: "Underline", icon: Underline },
+  { command: "insertUnorderedList", label: "Bullet list", icon: List },
+  { command: "insertOrderedList", label: "Numbered list", icon: ListOrdered }
+];
 
 function label(value: string) {
   return value
@@ -97,24 +126,27 @@ function label(value: string) {
     .join(" ");
 }
 
+function newPage(title = "Content", content = "<p></p>"): KnowledgeArticlePage {
+  return {
+    id: `draft-${crypto.randomUUID()}`,
+    title,
+    content,
+    sortOrder: 0
+  };
+}
+
 function emptyDraft(): Partial<KnowledgeArticle> {
   return {
     title: "",
     content: "<p></p>",
+    accentColor: accentPalette[0],
     tags: [],
     status: "DRAFT",
     visibility: "INTERNAL",
-    categoryId: null
+    categoryId: null,
+    pages: [newPage()]
   };
 }
-
-const editorCommands = [
-  { command: "bold", label: "Bold", icon: Bold },
-  { command: "italic", label: "Italic", icon: Italic },
-  { command: "underline", label: "Underline", icon: Underline },
-  { command: "insertUnorderedList", label: "Bullet list", icon: List },
-  { command: "insertOrderedList", label: "Numbered list", icon: ListOrdered }
-];
 
 export function KnowledgeBaseWorkspace() {
   const searchParams = useSearchParams();
@@ -126,6 +158,9 @@ export function KnowledgeBaseWorkspace() {
   const [selectedArticleId, setSelectedArticleId] = useState("");
   const [draft, setDraft] = useState<Partial<KnowledgeArticle>>(emptyDraft());
   const [editing, setEditing] = useState(false);
+  const [activeDraftPageId, setActiveDraftPageId] = useState("");
+  const [activeViewPageId, setActiveViewPageId] = useState("");
+  const [viewMode, setViewMode] = useState<KnowledgeViewMode>("cards");
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [status, setStatus] = useState("");
@@ -142,14 +177,16 @@ export function KnowledgeBaseWorkspace() {
   const [showOneNoteImport, setShowOneNoteImport] = useState(false);
   const [oneNoteNotebooks, setOneNoteNotebooks] = useState<OneNoteNotebook[]>([]);
   const [oneNoteSections, setOneNoteSections] = useState<OneNoteSection[]>([]);
-  const [oneNotePages, setOneNotePages] = useState<OneNotePage[]>([]);
   const [selectedNotebookId, setSelectedNotebookId] = useState("");
-  const [selectedSectionId, setSelectedSectionId] = useState("");
-  const [selectedOneNotePageIds, setSelectedOneNotePageIds] = useState<string[]>([]);
+  const [selectedSectionIds, setSelectedSectionIds] = useState<string[]>([]);
   const [oneNoteCategoryId, setOneNoteCategoryId] = useState("");
   const [oneNoteImportError, setOneNoteImportError] = useState<string | null>(null);
 
   const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? articles[0] ?? null;
+  const selectedArticlePages = selectedArticle?.pages?.length ? selectedArticle.pages : selectedArticle ? [legacyPage(selectedArticle)] : [];
+  const activeViewPage = selectedArticlePages.find((page) => page.id === activeViewPageId) ?? selectedArticlePages[0] ?? null;
+  const draftPages = draft.pages?.length ? draft.pages : [newPage(draft.title || "Content", draft.content ?? "<p></p>")];
+  const activeDraftPage = draftPages.find((page) => page.id === activeDraftPageId) ?? draftPages[0];
   const allTags = useMemo(() => [...new Set(articles.flatMap((article) => article.tags))].sort(), [articles]);
   const visibleAttachments = selectedArticle?.attachments.filter((attachment) => !attachment.isInline) ?? [];
 
@@ -164,16 +201,21 @@ export function KnowledgeBaseWorkspace() {
 
   useEffect(() => {
     const articleId = searchParams.get("articleId");
-    if (articleId) {
-      setSelectedArticleId(articleId);
-    }
+    if (articleId) setSelectedArticleId(articleId);
   }, [searchParams]);
 
   useEffect(() => {
     if (selectedArticle && !editing) {
       setDraft(selectedArticle);
+      setActiveViewPageId(selectedArticle.pages?.[0]?.id ?? "");
     }
   }, [selectedArticle, editing]);
+
+  useEffect(() => {
+    if (editing && draftPages.length && !draftPages.some((page) => page.id === activeDraftPageId)) {
+      setActiveDraftPageId(draftPages[0].id);
+    }
+  }, [activeDraftPageId, draftPages, editing]);
 
   async function loadData() {
     setLoading(true);
@@ -189,10 +231,8 @@ export function KnowledgeBaseWorkspace() {
         apiFetch<KnowledgeCategory[]>("/knowledge-base/categories")
       ]);
       setArticles(articleResult);
+      if (!selectedArticleId && articleResult[0]) setSelectedArticleId(articleResult[0].id);
       setCategories(categoryResult);
-      if (!selectedArticleId && articleResult[0]) {
-        setSelectedArticleId(articleResult[0].id);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load Knowledge Base.");
     } finally {
@@ -210,25 +250,65 @@ export function KnowledgeBaseWorkspace() {
     }
   }
 
+  function persistActiveEditorPage() {
+    if (!editing || !activeDraftPage || !editorRef.current) return draftPages;
+    const content = editorRef.current.innerHTML;
+    const nextPages = draftPages.map((page) => (page.id === activeDraftPage.id ? { ...page, content } : page));
+    setDraft((current) => ({ ...current, pages: nextPages }));
+    return nextPages;
+  }
+
   function startNewArticle() {
+    const next = emptyDraft();
     setSelectedArticleId("");
-    setDraft(emptyDraft());
+    setDraft(next);
+    setActiveDraftPageId(next.pages?.[0]?.id ?? "");
     setEditing(true);
     setNotice(null);
   }
 
   function startEditArticle() {
     if (!selectedArticle) return;
-    setDraft(selectedArticle);
+    const pages = selectedArticle.pages?.length ? selectedArticle.pages : [legacyPage(selectedArticle)];
+    setDraft({ ...selectedArticle, pages });
+    setActiveDraftPageId(pages[0]?.id ?? "");
     setEditing(true);
     setNotice(null);
   }
 
+  function switchDraftPage(pageId: string) {
+    persistActiveEditorPage();
+    setActiveDraftPageId(pageId);
+  }
+
+  function addDraftPage() {
+    const pages = persistActiveEditorPage();
+    const page = newPage(`Page ${pages.length + 1}`);
+    page.sortOrder = pages.length;
+    setDraft((current) => ({ ...current, pages: [...pages, page] }));
+    setActiveDraftPageId(page.id);
+  }
+
+  function removeDraftPage(pageId: string) {
+    const pages = persistActiveEditorPage();
+    if (pages.length <= 1) return;
+    const nextPages = pages.filter((page) => page.id !== pageId).map((page, index) => ({ ...page, sortOrder: index }));
+    setDraft((current) => ({ ...current, pages: nextPages }));
+    setActiveDraftPageId(nextPages[0]?.id ?? "");
+  }
+
+  function updateDraftPage(pageId: string, patch: Partial<KnowledgeArticlePage>) {
+    setDraft((current) => ({
+      ...current,
+      pages: (current.pages ?? []).map((page) => (page.id === pageId ? { ...page, ...patch } : page))
+    }));
+  }
+
   async function saveArticle(event?: FormEvent) {
     event?.preventDefault();
-    const content = editorRef.current?.innerHTML ?? draft.content ?? "";
-    if (!draft.title?.trim() || !content.trim()) {
-      setError("Title and content are required.");
+    const pages = persistActiveEditorPage().map((page, index) => ({ ...page, sortOrder: index }));
+    if (!draft.title?.trim() || !pages.some((page) => page.content.trim())) {
+      setError("Title and at least one page with content are required.");
       return;
     }
 
@@ -237,7 +317,9 @@ export function KnowledgeBaseWorkspace() {
     try {
       const payload = {
         title: draft.title,
-        content,
+        content: composeContent(pages),
+        accentColor: draft.accentColor || null,
+        pages: pages.map((page, index) => ({ ...page, sortOrder: index })),
         categoryId: draft.categoryId || null,
         tags: normalizeTags(draft.tags),
         status: draft.status ?? "DRAFT",
@@ -248,6 +330,7 @@ export function KnowledgeBaseWorkspace() {
         : await apiFetch<KnowledgeArticle>("/knowledge-base/articles", { method: "POST", body: JSON.stringify(payload) });
       setSelectedArticleId(saved.id);
       setDraft(saved);
+      setActiveViewPageId(saved.pages?.[0]?.id ?? "");
       setEditing(false);
       setNotice("Article saved.");
       await loadData();
@@ -304,6 +387,7 @@ export function KnowledgeBaseWorkspace() {
         body: JSON.stringify({ name: newCategoryName.trim() })
       });
       setNewCategoryName("");
+      setCategoryId(category.id);
       setDraft((current) => ({ ...current, categoryId: category.id }));
       await loadData();
     } catch (err) {
@@ -348,7 +432,7 @@ export function KnowledgeBaseWorkspace() {
         method: "POST",
         body: formData
       });
-      setImportItems(result.items);
+      setImportItems(result.items.map((item) => ({ ...item, accentColor: item.accentColor ?? accentPalette[0], pages: item.pages ?? [{ title: item.title, content: item.content, sortOrder: 0 }] })));
       setImportSource("PDF");
       setShowImportReview(true);
       setNotice(`${result.itemCount} import candidates detected.`);
@@ -365,7 +449,7 @@ export function KnowledgeBaseWorkspace() {
     try {
       const result = await apiFetch<{ imported: number }>("/knowledge-base/import/commit", {
         method: "POST",
-        body: JSON.stringify({ items: importItems })
+        body: JSON.stringify({ items: importItems.map((item) => ({ ...item, content: composeContent(item.pages ?? [{ title: item.title, content: item.content }]) })) })
       });
       setShowImportReview(false);
       setImportItems([]);
@@ -382,14 +466,21 @@ export function KnowledgeBaseWorkspace() {
     setImportItems((current) => current.map((item) => (item.temporaryId === id ? { ...item, ...patch } : item)));
   }
 
+  function updateImportPage(itemId: string, pageIndex: number, patch: Partial<ImportPage>) {
+    setImportItems((current) => current.map((item) => {
+      if (item.temporaryId !== itemId) return item;
+      const pages = [...(item.pages ?? [])];
+      pages[pageIndex] = { ...pages[pageIndex], ...patch };
+      return { ...item, pages, content: composeContent(pages) };
+    }));
+  }
+
   async function openOneNoteImport() {
     setShowOneNoteImport(true);
     setError(null);
     setNotice(null);
     setOneNoteImportError(null);
-    if (!oneNoteNotebooks.length) {
-      await loadOneNoteNotebooks();
-    }
+    if (!oneNoteNotebooks.length) await loadOneNoteNotebooks();
   }
 
   async function loadOneNoteNotebooks() {
@@ -407,10 +498,8 @@ export function KnowledgeBaseWorkspace() {
 
   async function selectOneNoteNotebook(notebookId: string) {
     setSelectedNotebookId(notebookId);
-    setSelectedSectionId("");
     setOneNoteSections([]);
-    setOneNotePages([]);
-    setSelectedOneNotePageIds([]);
+    setSelectedSectionIds([]);
     if (!notebookId) return;
     setBusy(true);
     setOneNoteImportError(null);
@@ -424,30 +513,13 @@ export function KnowledgeBaseWorkspace() {
     }
   }
 
-  async function selectOneNoteSection(sectionId: string) {
-    setSelectedSectionId(sectionId);
-    setOneNotePages([]);
-    setSelectedOneNotePageIds([]);
-    if (!sectionId) return;
-    setBusy(true);
-    setOneNoteImportError(null);
-    try {
-      const result = await apiFetch<OneNotePage[]>(`/knowledge-base/import/onenote/pages?sectionId=${encodeURIComponent(sectionId)}`);
-      setOneNotePages(result);
-    } catch (err) {
-      setOneNoteImportError(err instanceof Error ? err.message : "Unable to load OneNote pages.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function toggleOneNotePage(pageId: string, checked: boolean) {
-    setSelectedOneNotePageIds((current) => (checked ? [...new Set([...current, pageId])] : current.filter((id) => id !== pageId)));
+  function toggleOneNoteSection(sectionId: string, checked: boolean) {
+    setSelectedSectionIds((current) => (checked ? [...new Set([...current, sectionId])] : current.filter((id) => id !== sectionId)));
   }
 
   async function previewOneNoteImport() {
-    if (!selectedOneNotePageIds.length) {
-      setOneNoteImportError("Select at least one OneNote page to import.");
+    if (!selectedSectionIds.length) {
+      setOneNoteImportError("Select at least one OneNote section to import.");
       return;
     }
     setBusy(true);
@@ -455,13 +527,13 @@ export function KnowledgeBaseWorkspace() {
     try {
       const result = await apiFetch<{ items: ImportItem[]; itemCount: number }>("/knowledge-base/import/onenote/preview", {
         method: "POST",
-        body: JSON.stringify({ pageIds: selectedOneNotePageIds, categoryId: oneNoteCategoryId || null })
+        body: JSON.stringify({ sectionIds: selectedSectionIds, categoryId: oneNoteCategoryId || null })
       });
-      setImportItems(result.items);
+      setImportItems(result.items.map((item, index) => ({ ...item, accentColor: item.accentColor ?? accentPalette[index % accentPalette.length] })));
       setImportSource("OneNote");
       setShowOneNoteImport(false);
       setShowImportReview(true);
-      setNotice(`${result.itemCount} OneNote pages ready for review.`);
+      setNotice(`${result.itemCount} OneNote sections ready for review.`);
     } catch (err) {
       setOneNoteImportError(err instanceof Error ? err.message : "Unable to preview OneNote import.");
     } finally {
@@ -476,13 +548,11 @@ export function KnowledgeBaseWorkspace() {
       <section className="knowledge-toolbar panel">
         <label className="input-with-icon">
           <Search size={16} aria-hidden="true" />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search articles, body, or tags" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search articles, pages, or tags" />
         </label>
         <select className="input" value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
           <option value="">All categories</option>
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>{category.name}</option>
-          ))}
+          {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
         </select>
         <select className="input" value={status} onChange={(event) => setStatus(event.target.value)}>
           <option value="">All statuses</option>
@@ -494,6 +564,14 @@ export function KnowledgeBaseWorkspace() {
           <option value="">All tags</option>
           {allTags.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
+        <div className="knowledge-view-toggle" aria-label="Knowledge Base view mode">
+          <button className={`icon-button ${viewMode === "list" ? "active" : ""}`} type="button" onClick={() => setViewMode("list")} aria-label="List view">
+            <Table2 size={16} aria-hidden="true" />
+          </button>
+          <button className={`icon-button ${viewMode === "cards" ? "active" : ""}`} type="button" onClick={() => setViewMode("cards")} aria-label="Card view">
+            <Grid3X3 size={16} aria-hidden="true" />
+          </button>
+        </div>
         <div className="form-actions knowledge-actions">
           <button className="button" type="button" onClick={startNewArticle}>
             <Plus size={16} aria-hidden="true" />
@@ -513,127 +591,192 @@ export function KnowledgeBaseWorkspace() {
         </div>
       </section>
 
-      <section className="knowledge-layout">
-        <aside className="panel knowledge-list-panel">
-          <div className="section-heading compact-heading">
-            <div>
-              <h2>Articles</h2>
-              <p className="muted">{articles.length} articles</p>
-            </div>
-          </div>
-          <div className="knowledge-article-list">
-            {loading ? <p className="muted">Loading articles...</p> : null}
-            {!loading && articles.length === 0 ? <p className="muted">No articles match the current filters.</p> : null}
-            {articles.map((article) => (
-              <button className={`knowledge-article-row ${selectedArticle?.id === article.id ? "active" : ""}`} type="button" key={article.id} onClick={() => { setSelectedArticleId(article.id); setEditing(false); }}>
-                <strong>{article.title}</strong>
-                <span>{article.category?.name ?? "Uncategorized"} - {label(article.status)}</span>
-                <span className="knowledge-tag-line">{article.tags.slice(0, 4).map((item) => <span className="tag-chip" key={item}>{item}</span>)}</span>
-              </button>
-            ))}
+      <section className="panel knowledge-catalog-panel">
+        <div className="section-heading compact-heading">
+          <div>
+            <h2>Knowledge Articles</h2>
+            <p className="muted">{articles.length} articles across {categories.length} categories</p>
           </div>
           <div className="knowledge-category-create">
             <input className="input" value={newCategoryName} onChange={(event) => setNewCategoryName(event.target.value)} placeholder="New category" />
             <button className="button secondary" type="button" onClick={createCategory} disabled={busy}>Add</button>
           </div>
-        </aside>
-
-        <main className="panel knowledge-detail-panel">
-          {editing ? (
-            <form className="knowledge-editor" onSubmit={saveArticle}>
-              <input className="input knowledge-title-input" value={draft.title ?? ""} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} placeholder="Article title" />
-              <div className="knowledge-editor-grid">
-                <select className="input" value={draft.categoryId ?? ""} onChange={(event) => setDraft((current) => ({ ...current, categoryId: event.target.value || null }))}>
-                  <option value="">Uncategorized</option>
-                  {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                </select>
-                <select className="input" value={draft.status ?? "DRAFT"} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as KnowledgeStatus }))}>
-                  <option value="DRAFT">Draft</option>
-                  <option value="PUBLISHED">Published</option>
-                  <option value="ARCHIVED">Archived</option>
-                </select>
-                <input className="input" value={(draft.tags ?? []).join(", ")} onChange={(event) => setDraft((current) => ({ ...current, tags: event.target.value.split(",") }))} placeholder="Tags, separated by commas" />
-              </div>
-              <div className="editor-toolbar">
-                {editorCommands.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <button className="icon-button" type="button" key={item.command} onClick={() => document.execCommand(item.command)} title={item.label} aria-label={item.label}>
-                      <Icon size={16} aria-hidden="true" />
-                    </button>
-                  );
-                })}
-                <button className="button secondary" type="button" onClick={() => imageInputRef.current?.click()} disabled={!selectedArticleId}>
-                  <ImagePlus size={16} aria-hidden="true" />
-                  <span>Image</span>
-                </button>
-                <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={(event: ChangeEvent<HTMLInputElement>) => event.target.files?.[0] && void uploadInlineImage(event.target.files[0])} />
-              </div>
-              <div
-                ref={editorRef}
-                className="knowledge-rich-editor"
-                contentEditable
-                suppressContentEditableWarning
-                dangerouslySetInnerHTML={{ __html: draft.content ?? "" }}
-              />
-              <div className="form-actions">
-                <button className="button" type="submit" disabled={busy}>
-                  <Save size={16} aria-hidden="true" />
-                  <span>Save Article</span>
-                </button>
-                <button className="button secondary" type="button" onClick={() => setEditing(false)}>Cancel</button>
-              </div>
-            </form>
-          ) : selectedArticle ? (
-            <article className="knowledge-article-view">
-              <div className="knowledge-detail-header">
-                <div>
-                  <span className={`status-pill ${selectedArticle.status === "PUBLISHED" ? "success" : selectedArticle.status === "ARCHIVED" ? "muted-pill" : ""}`}>{label(selectedArticle.status)}</span>
-                  <h2>{selectedArticle.title}</h2>
-                  <p className="muted">
-                    {selectedArticle.category?.name ?? "Uncategorized"} - Updated {new Date(selectedArticle.updatedAt).toLocaleString()}
-                  </p>
-                </div>
-                <div className="form-actions">
-                  <button className="button secondary" type="button" onClick={startEditArticle}>
-                    <Edit3 size={16} aria-hidden="true" />
-                    <span>Edit</span>
-                  </button>
-                  <button className="button secondary" type="button" onClick={() => void updateStatus(selectedArticle.status === "PUBLISHED" ? "DRAFT" : "PUBLISHED")} disabled={busy}>
-                    <Eye size={16} aria-hidden="true" />
-                    <span>{selectedArticle.status === "PUBLISHED" ? "Draft" : "Publish"}</span>
-                  </button>
-                  <button className="button secondary" type="button" onClick={() => void updateStatus("ARCHIVED")} disabled={busy}>
-                    <Archive size={16} aria-hidden="true" />
-                    <span>Archive</span>
-                  </button>
-                  <button className="button danger" type="button" onClick={() => void deleteArticle()} disabled={busy}>
-                    <Trash2 size={16} aria-hidden="true" />
-                    <span>Delete</span>
-                  </button>
-                </div>
-              </div>
-              <div className="knowledge-tag-line">{selectedArticle.tags.map((item) => <span className="tag-chip" key={item}>{item}</span>)}</div>
-              <div className="knowledge-content" dangerouslySetInnerHTML={{ __html: selectedArticle.content }} />
-              {visibleAttachments.length > 0 ? (
-                <div className="knowledge-attachments">
-                  <h3>Files</h3>
-                  {visibleAttachments.map((attachment) => (
-                    <a href={`${apiBaseUrl}/knowledge-base/articles/${selectedArticle.id}/attachments/${attachment.id}/preview`} target="_blank" rel="noreferrer" key={attachment.id}>
-                      {attachment.originalFilename}
-                    </a>
-                  ))}
-                </div>
-              ) : null}
-            </article>
-          ) : (
-            <div className="empty-state-panel">
-              <h2>No article selected</h2>
-              <p className="muted">Create a new article or select one from the list.</p>
+        </div>
+        {loading ? <p className="muted">Loading articles...</p> : null}
+        {!loading && articles.length === 0 ? <p className="muted">No articles match the current filters.</p> : null}
+        {viewMode === "list" ? (
+          <div className="knowledge-table" role="table" aria-label="Knowledge articles">
+            <div className="knowledge-table-row header" role="row">
+              <span>Article</span>
+              <span>Category</span>
+              <span>Status</span>
+              <span>Pages</span>
+              <span>Updated</span>
             </div>
-          )}
-        </main>
+            {articles.map((article) => (
+              <button className={`knowledge-table-row ${selectedArticle?.id === article.id ? "active" : ""}`} type="button" key={article.id} onClick={() => { setSelectedArticleId(article.id); setEditing(false); }}>
+                <span className="knowledge-title-cell"><i style={{ backgroundColor: article.accentColor ?? accentPalette[0] }} />{article.title}</span>
+                <span>{article.category?.name ?? "Uncategorized"}</span>
+                <span>{label(article.status)}</span>
+                <span>{article.pages?.length ?? 1}</span>
+                <span>{new Date(article.updatedAt).toLocaleDateString()}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="knowledge-card-grid">
+            {articles.map((article) => (
+              <button className={`knowledge-card ${selectedArticle?.id === article.id ? "active" : ""}`} style={{ borderTopColor: article.accentColor ?? accentPalette[0] }} type="button" key={article.id} onClick={() => { setSelectedArticleId(article.id); setEditing(false); }}>
+                <span className={`status-pill ${article.status === "PUBLISHED" ? "success" : article.status === "ARCHIVED" ? "muted-pill" : ""}`}>{label(article.status)}</span>
+                <strong>{article.title}</strong>
+                <small>{article.category?.name ?? "Uncategorized"} - {article.pages?.length ?? 1} page{(article.pages?.length ?? 1) === 1 ? "" : "s"}</small>
+                <span className="knowledge-tag-line">{article.tags.slice(0, 3).map((item) => <span className="tag-chip" key={item}>{item}</span>)}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </section>
+
+      <main className="panel knowledge-detail-panel">
+        {editing ? (
+          <form className="knowledge-editor" onSubmit={saveArticle}>
+            <div className="knowledge-editor-top">
+              <input className="input knowledge-title-input" value={draft.title ?? ""} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} placeholder="Article title" />
+              <div className="knowledge-color-palette" aria-label="Article color">
+                {accentPalette.map((color) => (
+                  <button className={draft.accentColor === color ? "active" : ""} style={{ backgroundColor: color }} type="button" key={color} onClick={() => setDraft((current) => ({ ...current, accentColor: color }))} aria-label={`Use color ${color}`} />
+                ))}
+              </div>
+            </div>
+            <div className="knowledge-editor-grid">
+              <select className="input" value={draft.categoryId ?? ""} onChange={(event) => setDraft((current) => ({ ...current, categoryId: event.target.value || null }))}>
+                <option value="">Uncategorized</option>
+                {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+              </select>
+              <select className="input" value={draft.status ?? "DRAFT"} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as KnowledgeStatus }))}>
+                <option value="DRAFT">Draft</option>
+                <option value="PUBLISHED">Published</option>
+                <option value="ARCHIVED">Archived</option>
+              </select>
+              <input className="input" value={(draft.tags ?? []).join(", ")} onChange={(event) => setDraft((current) => ({ ...current, tags: event.target.value.split(",") }))} placeholder="Tags, separated by commas" />
+            </div>
+            <div className="knowledge-page-editor-layout">
+              <aside className="knowledge-page-nav">
+                {draftPages.map((page, index) => (
+                  <button className={page.id === activeDraftPage?.id ? "active" : ""} type="button" key={page.id} onClick={() => switchDraftPage(page.id)}>
+                    <span>{page.title || `Page ${index + 1}`}</span>
+                    <small>Page {index + 1}</small>
+                  </button>
+                ))}
+                <button className="button secondary" type="button" onClick={addDraftPage}>
+                  <Plus size={16} aria-hidden="true" />
+                  <span>Add Page</span>
+                </button>
+              </aside>
+              <section className="knowledge-page-editor">
+                <div className="knowledge-page-title-row">
+                  <input className="input" value={activeDraftPage?.title ?? ""} onChange={(event) => activeDraftPage && updateDraftPage(activeDraftPage.id, { title: event.target.value })} placeholder="Page title" />
+                  <button className="button secondary" type="button" onClick={() => activeDraftPage && removeDraftPage(activeDraftPage.id)} disabled={draftPages.length <= 1}>Remove</button>
+                </div>
+                <div className="editor-toolbar">
+                  {editorCommands.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button className="icon-button" type="button" key={item.command} onClick={() => document.execCommand(item.command)} title={item.label} aria-label={item.label}>
+                        <Icon size={16} aria-hidden="true" />
+                      </button>
+                    );
+                  })}
+                  <button className="button secondary" type="button" onClick={() => imageInputRef.current?.click()} disabled={!selectedArticleId}>
+                    <ImagePlus size={16} aria-hidden="true" />
+                    <span>Image</span>
+                  </button>
+                  <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={(event: ChangeEvent<HTMLInputElement>) => event.target.files?.[0] && void uploadInlineImage(event.target.files[0])} />
+                </div>
+                <div
+                  key={activeDraftPage?.id}
+                  ref={editorRef}
+                  className="knowledge-rich-editor"
+                  contentEditable
+                  suppressContentEditableWarning
+                  dangerouslySetInnerHTML={{ __html: activeDraftPage?.content ?? "" }}
+                />
+              </section>
+            </div>
+            <div className="form-actions">
+              <button className="button" type="submit" disabled={busy}>
+                <Save size={16} aria-hidden="true" />
+                <span>Save Article</span>
+              </button>
+              <button className="button secondary" type="button" onClick={() => setEditing(false)}>Cancel</button>
+            </div>
+          </form>
+        ) : selectedArticle ? (
+          <article className="knowledge-article-view">
+            <div className="knowledge-detail-header">
+              <div>
+                <span className={`status-pill ${selectedArticle.status === "PUBLISHED" ? "success" : selectedArticle.status === "ARCHIVED" ? "muted-pill" : ""}`}>{label(selectedArticle.status)}</span>
+                <h2>{selectedArticle.title}</h2>
+                <p className="muted">{selectedArticle.category?.name ?? "Uncategorized"} - Updated {new Date(selectedArticle.updatedAt).toLocaleString()}</p>
+              </div>
+              <div className="form-actions">
+                <button className="button secondary" type="button" onClick={startEditArticle}>
+                  <Edit3 size={16} aria-hidden="true" />
+                  <span>Edit</span>
+                </button>
+                <button className="button secondary" type="button" onClick={() => void updateStatus(selectedArticle.status === "PUBLISHED" ? "DRAFT" : "PUBLISHED")} disabled={busy}>
+                  <Eye size={16} aria-hidden="true" />
+                  <span>{selectedArticle.status === "PUBLISHED" ? "Draft" : "Publish"}</span>
+                </button>
+                <button className="button secondary" type="button" onClick={() => void updateStatus("ARCHIVED")} disabled={busy}>
+                  <Archive size={16} aria-hidden="true" />
+                  <span>Archive</span>
+                </button>
+                <button className="button danger" type="button" onClick={() => void deleteArticle()} disabled={busy}>
+                  <Trash2 size={16} aria-hidden="true" />
+                  <span>Delete</span>
+                </button>
+              </div>
+            </div>
+            <div className="knowledge-tag-line">{selectedArticle.tags.map((item) => <span className="tag-chip" key={item}>{item}</span>)}</div>
+            <div className="knowledge-readable-layout">
+              {selectedArticlePages.length > 1 ? (
+                <aside className="knowledge-page-nav read">
+                  {selectedArticlePages.map((page, index) => (
+                    <button className={page.id === activeViewPage?.id ? "active" : ""} type="button" key={page.id} onClick={() => setActiveViewPageId(page.id)}>
+                      <span>{page.title}</span>
+                      <small>Page {index + 1}</small>
+                    </button>
+                  ))}
+                </aside>
+              ) : null}
+              <section className="knowledge-page-view">
+                {activeViewPage ? (
+                  <>
+                    <h3>{activeViewPage.title}</h3>
+                    <div className="knowledge-content" dangerouslySetInnerHTML={{ __html: activeViewPage.content }} />
+                  </>
+                ) : <div className="knowledge-content" dangerouslySetInnerHTML={{ __html: selectedArticle.content }} />}
+              </section>
+            </div>
+            {visibleAttachments.length > 0 ? (
+              <div className="knowledge-attachments">
+                <h3>Files</h3>
+                {visibleAttachments.map((attachment) => (
+                  <a href={`${apiBaseUrl}/knowledge-base/articles/${selectedArticle.id}/attachments/${attachment.id}/preview`} target="_blank" rel="noreferrer" key={attachment.id}>
+                    {attachment.originalFilename}
+                  </a>
+                ))}
+              </div>
+            ) : null}
+          </article>
+        ) : (
+          <div className="empty-state-panel">
+            <h2>No article selected</h2>
+            <p className="muted">Create a new article or select one from the list.</p>
+          </div>
+        )}
+      </main>
 
       {showImportReview ? (
         <div className="modal-backdrop" role="presentation">
@@ -641,7 +784,7 @@ export function KnowledgeBaseWorkspace() {
             <div className="modal-header">
               <div>
                 <h2 id="kb-import-title">Review {importSource} Import</h2>
-                <p className="muted">Edit, deselect, or remove candidates before creating draft articles.</p>
+                <p className="muted">Each candidate becomes one structured article. Edit titles, colors, pages, and content before importing.</p>
               </div>
               <button className="icon-button" type="button" onClick={() => setShowImportReview(false)} aria-label="Close import review">
                 <X size={16} aria-hidden="true" />
@@ -649,19 +792,33 @@ export function KnowledgeBaseWorkspace() {
             </div>
             <div className="knowledge-import-list">
               {importItems.map((item) => (
-                <div className={`knowledge-import-card ${item.selected === false ? "muted-import" : ""}`} key={item.temporaryId}>
+                <div className={`knowledge-import-card ${item.selected === false ? "muted-import" : ""}`} style={{ borderTopColor: item.accentColor ?? accentPalette[0] }} key={item.temporaryId}>
                   <label className="checkbox-card">
                     <input type="checkbox" checked={item.selected !== false} onChange={(event) => updateImportItem(item.temporaryId, { selected: event.target.checked })} />
                     <span>{item.alreadyImported ? "Already imported" : "Import this article"}</span>
                   </label>
-                  <input className="input" value={item.title} onChange={(event) => updateImportItem(item.temporaryId, { title: event.target.value })} />
+                  <div className="knowledge-editor-top">
+                    <input className="input" value={item.title} onChange={(event) => updateImportItem(item.temporaryId, { title: event.target.value })} />
+                    <div className="knowledge-color-palette" aria-label="Import article color">
+                      {accentPalette.map((color) => (
+                        <button className={item.accentColor === color ? "active" : ""} style={{ backgroundColor: color }} type="button" key={color} onClick={() => updateImportItem(item.temporaryId, { accentColor: color })} aria-label={`Use color ${color}`} />
+                      ))}
+                    </div>
+                  </div>
                   <div className="knowledge-editor-grid">
                     <input className="input" value={item.categoryName ?? ""} onChange={(event) => updateImportItem(item.temporaryId, { categoryName: event.target.value })} placeholder="Category" />
                     <input className="input" value={item.tags.join(", ")} onChange={(event) => updateImportItem(item.temporaryId, { tags: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })} placeholder="Tags" />
                   </div>
                   {item.sensitiveWarnings.length ? <p className="warning-text">Review sensitive content: {item.sensitiveWarnings.map(label).join(", ")}</p> : null}
-                  {item.sourceUrl ? <a className="muted" href={item.sourceUrl} target="_blank" rel="noreferrer">Open original source</a> : null}
-                  <textarea className="input" rows={6} value={stripHtml(item.content)} onChange={(event) => updateImportItem(item.temporaryId, { content: `<pre>${escapeHtml(event.target.value)}</pre>` })} />
+                  {item.sourceUrl ? <a className="muted" href={item.sourceUrl} target="_blank" rel="noreferrer">Open original section</a> : null}
+                  <div className="knowledge-import-pages">
+                    {(item.pages ?? [{ title: item.title, content: item.content }]).map((page, index) => (
+                      <div className="knowledge-import-page" key={`${item.temporaryId}-${index}`}>
+                        <input className="input" value={page.title} onChange={(event) => updateImportPage(item.temporaryId, index, { title: event.target.value })} />
+                        <textarea className="input" rows={6} value={stripHtml(page.content)} onChange={(event) => updateImportPage(item.temporaryId, index, { content: `<pre>${escapeHtml(event.target.value)}</pre>` })} />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
@@ -681,8 +838,8 @@ export function KnowledgeBaseWorkspace() {
           <section className="modal-panel knowledge-import-modal" role="dialog" aria-modal="true" aria-labelledby="kb-onenote-title">
             <div className="modal-header">
               <div>
-                <h2 id="kb-onenote-title">Import OneNote Pages</h2>
-                <p className="muted">Select pages from the configured Microsoft OneNote account. Imported pages become draft articles.</p>
+                <h2 id="kb-onenote-title">Import OneNote Sections</h2>
+                <p className="muted">Select one or more sections. Each section becomes an article, and its pages become editable article pages.</p>
               </div>
               <button className="icon-button" type="button" onClick={() => setShowOneNoteImport(false)} aria-label="Close OneNote import">
                 <X size={16} aria-hidden="true" />
@@ -700,15 +857,6 @@ export function KnowledgeBaseWorkspace() {
                 </select>
               </label>
               <label className="field">
-                <span>Section</span>
-                <select className="input" value={selectedSectionId} onChange={(event) => void selectOneNoteSection(event.target.value)} disabled={!selectedNotebookId}>
-                  <option value="">Select section</option>
-                  {oneNoteSections.map((section) => (
-                    <option key={section.id} value={section.id}>{section.displayName}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
                 <span>Import category</span>
                 <select className="input" value={oneNoteCategoryId} onChange={(event) => setOneNoteCategoryId(event.target.value)}>
                   <option value="">Imported</option>
@@ -719,23 +867,23 @@ export function KnowledgeBaseWorkspace() {
               </label>
             </div>
             <div className="onenote-page-list">
-              {!selectedSectionId ? <p className="muted">Choose a notebook and section to list pages.</p> : null}
-              {selectedSectionId && oneNotePages.length === 0 ? <p className="muted">No pages found in this section.</p> : null}
-              {oneNotePages.map((page) => (
-                <label className="onenote-page-row" key={page.id}>
-                  <input type="checkbox" checked={selectedOneNotePageIds.includes(page.id)} onChange={(event) => toggleOneNotePage(page.id, event.target.checked)} />
+              {!selectedNotebookId ? <p className="muted">Choose a notebook to list sections.</p> : null}
+              {selectedNotebookId && oneNoteSections.length === 0 ? <p className="muted">No sections found in this notebook.</p> : null}
+              {oneNoteSections.map((section) => (
+                <label className="onenote-page-row" key={section.id}>
+                  <input type="checkbox" checked={selectedSectionIds.includes(section.id)} onChange={(event) => toggleOneNoteSection(section.id, event.target.checked)} />
                   <span>
-                    <strong>{page.title || "Untitled page"}</strong>
-                    {page.lastModifiedDateTime ? <small>Modified {new Date(page.lastModifiedDateTime).toLocaleString()}</small> : null}
+                    <strong>{section.displayName || "Untitled section"}</strong>
+                    <small>Import this section and all pages inside it.</small>
                   </span>
                 </label>
               ))}
             </div>
             <div className="modal-actions">
               <button className="button secondary" type="button" onClick={() => setShowOneNoteImport(false)}>Cancel</button>
-              <button className="button" type="button" onClick={() => void previewOneNoteImport()} disabled={busy || selectedOneNotePageIds.length === 0}>
+              <button className="button" type="button" onClick={() => void previewOneNoteImport()} disabled={busy || selectedSectionIds.length === 0}>
                 <UploadCloud size={16} aria-hidden="true" />
-                <span>Review Selected Pages</span>
+                <span>Review Selected Sections</span>
               </button>
             </div>
           </section>
@@ -745,12 +893,20 @@ export function KnowledgeBaseWorkspace() {
   );
 }
 
+function legacyPage(article: KnowledgeArticle): KnowledgeArticlePage {
+  return { id: `${article.id}-content`, title: "Content", content: article.content, sortOrder: 0 };
+}
+
 function normalizeTags(tags: string[] | undefined) {
   return [...new Set((tags ?? []).map((item) => item.trim().toLowerCase()).filter(Boolean))];
 }
 
 function stripHtml(value: string) {
   return value.replace(/^<pre>/, "").replace(/<\/pre>$/, "").replace(/<br\s*\/?>/g, "\n").replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+}
+
+function composeContent(pages: Array<{ title: string; content: string }>) {
+  return pages.map((page) => `<section><h2>${escapeHtml(page.title)}</h2>${page.content}</section>`).join("\n");
 }
 
 function formatOneNoteNotebookLabel(notebook: OneNoteNotebook) {

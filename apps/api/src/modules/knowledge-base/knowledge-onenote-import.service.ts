@@ -45,6 +45,7 @@ export interface GraphSection {
   id: string;
   displayName: string;
   pagesUrl?: string;
+  links?: { oneNoteWebUrl?: { href?: string } };
   parentNotebook?: { id?: string; displayName?: string };
 }
 
@@ -268,18 +269,20 @@ export class KnowledgeOneNoteImportService {
       throw new BadRequestException("Section ID is required.");
     }
     const token = await this.getAccessToken(user);
-    return this.graphGetCollection<GraphPage>(
-      `https://graph.microsoft.com/v1.0/me/onenote/sections/${encodeURIComponent(sectionId)}/pages?$top=100&$select=id,title,createdDateTime,lastModifiedDateTime,links,contentUrl`,
-      token
-    );
+    return this.listPagesForSection(sectionId, token);
   }
 
   async previewImport(user: AuthenticatedUser, input: PreviewOneNoteImportDto) {
-    const pageIds = [...new Set(input.pageIds.map((id) => id.trim()).filter(Boolean))].slice(0, 50);
-    if (!pageIds.length) {
-      throw new BadRequestException("Select at least one OneNote page to import.");
+    const sectionIds = [...new Set((input.sectionIds ?? []).map((id) => id.trim()).filter(Boolean))].slice(0, 20);
+    const pageIds = [...new Set((input.pageIds ?? []).map((id) => id.trim()).filter(Boolean))].slice(0, 50);
+    if (!sectionIds.length && !pageIds.length) {
+      throw new BadRequestException("Select at least one OneNote section or page to import.");
     }
     const token = await this.getAccessToken(user);
+    if (sectionIds.length) {
+      return this.previewSectionImport(user, token, sectionIds, input.categoryId ?? null);
+    }
+
     const existing = await this.prisma.knowledgeArticle.findMany({
       where: { organizationId: user.organizationId, sourceType: "ONENOTE", sourceExternalId: { in: pageIds }, deletedAt: null },
       select: { sourceExternalId: true }
@@ -288,8 +291,8 @@ export class KnowledgeOneNoteImportService {
 
     const items = [];
     for (const pageId of pageIds) {
-      const page = await this.graphGet<GraphPage>(`https://graph.microsoft.com/v1.0/me/onenote/pages/${encodeURIComponent(pageId)}?$select=id,title,links`, token);
-      const html = await this.graphGetText(`https://graph.microsoft.com/v1.0/me/onenote/pages/${encodeURIComponent(pageId)}/content?includeIDs=true`, token);
+      const page = await this.graphGet<GraphPage>(`https://graph.microsoft.com/v1.0/me/onenote/pages/${encodeURIComponent(pageId)}?$select=id,title,links,contentUrl`, token);
+      const html = await this.getPageContent(page, token);
       const title = this.cleanTitle(page.title || "Imported OneNote page");
       const sourceUrl = page.links?.oneNoteWebUrl?.href ?? null;
       const alreadyImported = existingIds.has(pageId);
@@ -298,6 +301,14 @@ export class KnowledgeOneNoteImportService {
         selected: !alreadyImported,
         title,
         content: this.sanitizer.sanitize(this.extractOneNoteBody(html)),
+        pages: [{
+          title,
+          content: this.sanitizer.sanitize(this.extractOneNoteBody(html)),
+          sortOrder: 0,
+          sourceType: "ONENOTE_PAGE",
+          sourceExternalId: pageId,
+          sourceUrl
+        }],
         categoryId: input.categoryId ?? null,
         categoryName: input.categoryId ? null : "Imported",
         tags: ["imported", "onenote"],
@@ -306,6 +317,52 @@ export class KnowledgeOneNoteImportService {
         sourceType: "ONENOTE",
         sourceExternalId: pageId,
         sourceUrl,
+        alreadyImported
+      });
+    }
+
+    return { source: "onenote", itemCount: items.length, items };
+  }
+
+  private async previewSectionImport(user: AuthenticatedUser, token: string, sectionIds: string[], categoryId: string | null) {
+    const existing = await this.prisma.knowledgeArticle.findMany({
+      where: { organizationId: user.organizationId, sourceType: "ONENOTE_SECTION", sourceExternalId: { in: sectionIds }, deletedAt: null },
+      select: { sourceExternalId: true }
+    });
+    const existingIds = new Set(existing.map((item) => item.sourceExternalId).filter(Boolean));
+    const items = [];
+
+    for (const sectionId of sectionIds) {
+      const section = await this.getSection(sectionId, token);
+      const pages = await this.listPagesForSection(sectionId, token);
+      const articlePages = [];
+      for (const [index, page] of pages.entries()) {
+        const html = await this.getPageContent(page, token);
+        const title = this.cleanTitle(page.title || `Page ${index + 1}`);
+        articlePages.push({
+          title,
+          content: this.sanitizer.sanitize(this.extractOneNoteBody(html)),
+          sortOrder: index,
+          sourceType: "ONENOTE_PAGE",
+          sourceExternalId: page.id,
+          sourceUrl: page.links?.oneNoteWebUrl?.href ?? null
+        });
+      }
+      const alreadyImported = existingIds.has(sectionId);
+      items.push({
+        temporaryId: `onenote-section-${sectionId}`,
+        selected: !alreadyImported,
+        title: this.cleanTitle(section.displayName || "Imported OneNote section"),
+        content: this.sanitizer.sanitize(articlePages.map((page) => `<h2>${page.title}</h2>${page.content}`).join("\n")),
+        pages: articlePages,
+        categoryId,
+        categoryName: categoryId ? null : "Imported",
+        tags: ["imported", "onenote"],
+        status: KnowledgeStatus.DRAFT,
+        sensitiveWarnings: [],
+        sourceType: "ONENOTE_SECTION",
+        sourceExternalId: sectionId,
+        sourceUrl: section.links?.oneNoteWebUrl?.href ?? null,
         alreadyImported
       });
     }
@@ -422,6 +479,53 @@ export class KnowledgeOneNoteImportService {
     }
 
     return [...byId.values()];
+  }
+
+  private async getSection(sectionId: string, token: string) {
+    return this.graphGet<GraphSection>(
+      `https://graph.microsoft.com/v1.0/me/onenote/sections/${encodeURIComponent(sectionId)}?$select=id,displayName,pagesUrl,links,parentNotebook`,
+      token
+    );
+  }
+
+  private async listPagesForSection(sectionId: string, token: string) {
+    let section: GraphSection | null = null;
+    try {
+      section = await this.getSection(sectionId, token);
+    } catch {
+      section = null;
+    }
+    const pageUrls = [
+      section?.pagesUrl ? this.withQuery(section.pagesUrl, { $top: "100", $select: "id,title,createdDateTime,lastModifiedDateTime,links,contentUrl" }) : null,
+      `https://graph.microsoft.com/v1.0/me/onenote/sections/${encodeURIComponent(sectionId)}/pages?$top=100&$select=id,title,createdDateTime,lastModifiedDateTime,links,contentUrl`
+    ].filter(Boolean) as string[];
+
+    let lastError: unknown;
+    for (const pageUrl of pageUrls) {
+      try {
+        return await this.graphGetCollection<GraphPage>(pageUrl, token);
+      } catch (caught) {
+        lastError = caught;
+      }
+    }
+    throw lastError instanceof Error ? lastError : new InternalServerErrorException("Unable to load OneNote section pages.");
+  }
+
+  private async getPageContent(page: GraphPage, token: string) {
+    const contentUrl = page.contentUrl ? this.withQuery(page.contentUrl, { includeIDs: "true" }) : null;
+    const urls = [
+      contentUrl,
+      `https://graph.microsoft.com/v1.0/me/onenote/pages/${encodeURIComponent(page.id)}/content?includeIDs=true`
+    ].filter(Boolean) as string[];
+    let lastError: unknown;
+    for (const url of urls) {
+      try {
+        return await this.graphGetText(url, token);
+      } catch (caught) {
+        lastError = caught;
+      }
+    }
+    throw lastError instanceof Error ? lastError : new InternalServerErrorException("Unable to load OneNote page content.");
   }
 
   private async listRecentNotebooksWithToken(token: string) {

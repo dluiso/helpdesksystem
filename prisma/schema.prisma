@@ -1362,6 +1362,7 @@ model KnowledgeArticle {
   title          String
   slug           String
   content        String
+  accentColor    String?
   visibility     KnowledgeVisibility @default(INTERNAL)
   status         KnowledgeStatus     @default(DRAFT)
   tags           String[]            @default([])
@@ -1380,12 +1381,32 @@ model KnowledgeArticle {
   createdBy      User?               @relation("KnowledgeArticleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   updatedBy      User?               @relation("KnowledgeArticleUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   attachments    KnowledgeArticleAttachment[]
+  pages          KnowledgeArticlePage[]
 
   @@unique([organizationId, slug])
   @@index([organizationId, sourceType, sourceExternalId])
   @@index([status, visibility])
   @@index([deletedAt])
   @@map("knowledge_articles")
+}
+
+model KnowledgeArticlePage {
+  id               String           @id @default(uuid()) @db.Uuid
+  articleId        String           @db.Uuid
+  title            String
+  content          String
+  sortOrder        Int              @default(0)
+  sourceType       String?
+  sourceExternalId String?
+  sourceUrl        String?
+  sourceSyncedAt   DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  article          KnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@index([articleId, sortOrder])
+  @@index([sourceType, sourceExternalId])
+  @@map("knowledge_article_pages")
 }
 
 model KnowledgeArticleAttachment {

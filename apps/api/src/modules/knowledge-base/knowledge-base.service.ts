@@ -10,6 +10,7 @@ import {
   CommitKnowledgeImportDto,
   CreateKnowledgeArticleDto,
   CreateKnowledgeCategoryDto,
+  KnowledgeArticlePageInputDto,
   ListKnowledgeArticlesQueryDto,
   UpdateKnowledgeArticleDto,
   UpdateKnowledgeCategoryDto
@@ -43,6 +44,8 @@ export class KnowledgeBaseService {
       where.OR = [
         { title: { contains: search, mode: "insensitive" } },
         { content: { contains: search, mode: "insensitive" } },
+        { pages: { some: { title: { contains: search, mode: "insensitive" } } } },
+        { pages: { some: { content: { contains: search, mode: "insensitive" } } } },
         { tags: { has: search.toLowerCase() } }
       ];
     }
@@ -100,19 +103,23 @@ export class KnowledgeBaseService {
     await this.validateCategory(user.organizationId, input.categoryId ?? null);
     const status = input.status ?? KnowledgeStatus.DRAFT;
     const title = input.title.trim();
+    const pages = this.normalizeArticlePages(input.pages, title, input.content);
+    const content = this.composeArticleContent(pages);
     return this.prisma.knowledgeArticle.create({
       data: {
         organizationId: user.organizationId,
         categoryId: input.categoryId ?? null,
         title,
         slug: await this.uniqueArticleSlug(user.organizationId, title),
-        content: this.sanitizer.sanitize(input.content),
+        content,
+        accentColor: this.normalizeAccentColor(input.accentColor),
         tags: this.normalizeTags(input.tags),
         status,
         visibility: input.visibility ?? KnowledgeVisibility.INTERNAL,
         createdById: user.id,
         updatedById: user.id,
-        publishedAt: status === KnowledgeStatus.PUBLISHED ? new Date() : null
+        publishedAt: status === KnowledgeStatus.PUBLISHED ? new Date() : null,
+        pages: { create: pages.map((page, index) => this.toPageCreateInput(page, index)) }
       },
       include: this.articleInclude()
     });
@@ -124,24 +131,32 @@ export class KnowledgeBaseService {
     await this.validateCategory(user.organizationId, nextCategoryId ?? null);
     const nextTitle = input.title?.trim();
     const nextStatus = input.status ?? existing.status;
+    const pages = input.pages !== undefined ? this.normalizeArticlePages(input.pages, nextTitle ?? existing.title, input.content ?? existing.content) : null;
 
-    return this.prisma.knowledgeArticle.update({
-      where: { id: existing.id },
-      data: {
-        ...(nextTitle ? { title: nextTitle, slug: nextTitle === existing.title ? existing.slug : await this.uniqueArticleSlug(user.organizationId, nextTitle) } : {}),
-        ...(input.content !== undefined ? { content: this.sanitizer.sanitize(input.content) } : {}),
-        ...(input.categoryId !== undefined ? { categoryId: input.categoryId } : {}),
-        ...(input.tags !== undefined ? { tags: this.normalizeTags(input.tags) } : {}),
-        ...(input.visibility !== undefined ? { visibility: input.visibility } : {}),
-        ...(input.status !== undefined
-          ? {
-              status: nextStatus,
-              publishedAt: nextStatus === KnowledgeStatus.PUBLISHED ? existing.publishedAt ?? new Date() : null
-            }
-          : {}),
-        updatedById: user.id
-      },
-      include: this.articleInclude()
+    return this.prisma.$transaction(async (tx) => {
+      if (pages) {
+        await tx.knowledgeArticlePage.deleteMany({ where: { articleId: existing.id } });
+      }
+      return tx.knowledgeArticle.update({
+        where: { id: existing.id },
+        data: {
+          ...(nextTitle ? { title: nextTitle, slug: nextTitle === existing.title ? existing.slug : await this.uniqueArticleSlug(user.organizationId, nextTitle) } : {}),
+          ...(pages ? { content: this.composeArticleContent(pages) } : input.content !== undefined ? { content: this.sanitizer.sanitize(input.content) } : {}),
+          ...(input.accentColor !== undefined ? { accentColor: this.normalizeAccentColor(input.accentColor) } : {}),
+          ...(input.categoryId !== undefined ? { categoryId: input.categoryId } : {}),
+          ...(input.tags !== undefined ? { tags: this.normalizeTags(input.tags) } : {}),
+          ...(input.visibility !== undefined ? { visibility: input.visibility } : {}),
+          ...(input.status !== undefined
+            ? {
+                status: nextStatus,
+                publishedAt: nextStatus === KnowledgeStatus.PUBLISHED ? existing.publishedAt ?? new Date() : null
+              }
+            : {}),
+          updatedById: user.id,
+          ...(pages ? { pages: { create: pages.map((page, index) => this.toPageCreateInput(page, index)) } } : {})
+        },
+        include: this.articleInclude()
+      });
     });
   }
 
@@ -308,6 +323,8 @@ export class KnowledgeBaseService {
           content: item.content,
           categoryId,
           tags: item.tags,
+          accentColor: item.accentColor,
+          pages: item.pages,
           sourceType: item.sourceType,
           sourceExternalId: item.sourceExternalId,
           sourceUrl: item.sourceUrl
@@ -325,6 +342,8 @@ export class KnowledgeBaseService {
       content: string;
       categoryId: string | null;
       tags?: string[];
+      accentColor?: string | null;
+      pages?: KnowledgeArticlePageInputDto[];
       sourceType?: string | null;
       sourceExternalId?: string | null;
       sourceUrl?: string | null;
@@ -332,13 +351,15 @@ export class KnowledgeBaseService {
   ) {
     await this.validateCategory(user.organizationId, input.categoryId ?? null);
     const title = input.title.trim();
+    const pages = this.normalizeArticlePages(input.pages, title, input.content);
     return this.prisma.knowledgeArticle.create({
       data: {
         organizationId: user.organizationId,
         categoryId: input.categoryId ?? null,
         title,
         slug: await this.uniqueArticleSlug(user.organizationId, title),
-        content: this.sanitizer.sanitize(input.content),
+        content: this.composeArticleContent(pages),
+        accentColor: this.normalizeAccentColor(input.accentColor),
         tags: this.normalizeTags(input.tags),
         status: KnowledgeStatus.DRAFT,
         visibility: KnowledgeVisibility.INTERNAL,
@@ -347,7 +368,8 @@ export class KnowledgeBaseService {
         sourceType: this.optionalTrim(input.sourceType),
         sourceExternalId: this.optionalTrim(input.sourceExternalId),
         sourceUrl: this.optionalTrim(input.sourceUrl),
-        sourceSyncedAt: input.sourceType && input.sourceExternalId ? new Date() : null
+        sourceSyncedAt: input.sourceType && input.sourceExternalId ? new Date() : null,
+        pages: { create: pages.map((page, index) => this.toPageCreateInput(page, index)) }
       },
       include: this.articleInclude()
     });
@@ -358,6 +380,7 @@ export class KnowledgeBaseService {
       category: true,
       createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
       updatedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      pages: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
       attachments: { where: { deletedAt: null }, orderBy: { createdAt: "asc" } }
     } satisfies Prisma.KnowledgeArticleInclude;
   }
@@ -371,6 +394,57 @@ export class KnowledgeBaseService {
       throw new NotFoundException("Knowledge article was not found.");
     }
     return article;
+  }
+
+  private normalizeArticlePages(pages: KnowledgeArticlePageInputDto[] | undefined, articleTitle: string, fallbackContent: string | undefined) {
+    const candidates = pages?.length
+      ? pages.filter((page) => page.selected !== false)
+      : [{ title: articleTitle || "Content", content: fallbackContent ?? "" }];
+    const normalized = candidates
+      .map((page, index) => ({
+        title: this.cleanPageTitle(page.title || `Page ${index + 1}`),
+        content: this.sanitizer.sanitize(page.content),
+        sortOrder: page.sortOrder ?? index,
+        sourceType: this.optionalTrim(page.sourceType),
+        sourceExternalId: this.optionalTrim(page.sourceExternalId),
+        sourceUrl: this.optionalTrim(page.sourceUrl)
+      }))
+      .filter((page) => page.title && page.content.trim());
+
+    if (!normalized.length) {
+      throw new BadRequestException("At least one article page with content is required.");
+    }
+    return normalized;
+  }
+
+  private composeArticleContent(pages: ReturnType<KnowledgeBaseService["normalizeArticlePages"]>) {
+    return this.sanitizer.sanitize(
+      pages
+        .map((page) => `<section class="knowledge-page-section"><h2>${this.escapeHtml(page.title)}</h2>${page.content}</section>`)
+        .join("\n")
+    );
+  }
+
+  private toPageCreateInput(page: ReturnType<KnowledgeBaseService["normalizeArticlePages"]>[number], index: number): Prisma.KnowledgeArticlePageCreateWithoutArticleInput {
+    return {
+      title: page.title,
+      content: page.content,
+      sortOrder: page.sortOrder ?? index,
+      sourceType: page.sourceType,
+      sourceExternalId: page.sourceExternalId,
+      sourceUrl: page.sourceUrl,
+      sourceSyncedAt: page.sourceType && page.sourceExternalId ? new Date() : null
+    };
+  }
+
+  private cleanPageTitle(value: string) {
+    return value.trim().replace(/\s+/g, " ").slice(0, 180) || "Content";
+  }
+
+  private normalizeAccentColor(value: string | null | undefined) {
+    const trimmed = value?.trim();
+    if (!trimmed) return null;
+    return /^#[0-9a-f]{6}$/i.test(trimmed) ? trimmed : null;
   }
 
   private async validateCategory(organizationId: string, categoryId: string | null) {

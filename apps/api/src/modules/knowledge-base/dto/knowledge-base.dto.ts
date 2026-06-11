@@ -1,5 +1,6 @@
 import { KnowledgeStatus, KnowledgeVisibility } from "@prisma/client";
-import { IsArray, IsBoolean, IsEnum, IsOptional, IsString, IsUUID, MaxLength, MinLength } from "class-validator";
+import { Type } from "class-transformer";
+import { IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength, ValidateNested } from "class-validator";
 
 export class ListKnowledgeArticlesQueryDto {
   @IsOptional()
@@ -44,15 +45,66 @@ export class UpdateKnowledgeCategoryDto {
   description?: string | null;
 }
 
-export class CreateKnowledgeArticleDto {
+export class KnowledgeArticlePageInputDto {
+  @IsOptional()
   @IsString()
-  @MinLength(2)
+  id?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  selected?: boolean;
+
+  @IsString()
+  @MinLength(1)
   @MaxLength(180)
   title!: string;
 
   @IsString()
   @MinLength(1)
   content!: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  sortOrder?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  sourceType?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  sourceExternalId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  sourceUrl?: string | null;
+}
+
+export class CreateKnowledgeArticleDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(180)
+  title!: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  content?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  accentColor?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => KnowledgeArticlePageInputDto)
+  pages?: KnowledgeArticlePageInputDto[];
 
   @IsOptional()
   @IsUUID()
@@ -83,6 +135,17 @@ export class UpdateKnowledgeArticleDto {
   @IsString()
   @MinLength(1)
   content?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  accentColor?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => KnowledgeArticlePageInputDto)
+  pages?: KnowledgeArticlePageInputDto[];
 
   @IsOptional()
   @IsUUID()
@@ -118,6 +181,17 @@ export class KnowledgeImportItemDto {
   @IsString()
   @MinLength(1)
   content!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  accentColor?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => KnowledgeArticlePageInputDto)
+  pages?: KnowledgeArticlePageInputDto[];
 
   @IsOptional()
   @IsString()
@@ -184,9 +258,15 @@ export class UpdateKnowledgeOneNoteSettingsDto {
 }
 
 export class PreviewOneNoteImportDto {
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  pageIds!: string[];
+  pageIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  sectionIds?: string[];
 
   @IsOptional()
   @IsUUID()
