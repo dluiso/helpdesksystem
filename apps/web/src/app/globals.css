@@ -17,18 +17,26 @@
   --success-surface: #effaf4;
   --warning-surface: #fff8ea;
   --info-surface: #eef5ff;
-  --pill-new-bg: #e8eef9;
-  --pill-new-text: #24416f;
+  --pill-new-bg: #eaf1ff;
+  --pill-new-text: #1d4ed8;
   --pill-open-bg: #e7f0ff;
-  --pill-open-text: #1c4f9c;
-  --pill-progress-bg: #fff8ea;
-  --pill-progress-text: #8a4b05;
-  --pill-waiting-bg: #fff4e5;
-  --pill-waiting-text: #88400b;
-  --pill-resolved-bg: #effaf4;
-  --pill-resolved-text: #0f7a45;
+  --pill-open-text: #1e40af;
+  --pill-progress-bg: #f1edff;
+  --pill-progress-text: #5b21b6;
+  --pill-waiting-customer-bg: #fef7d6;
+  --pill-waiting-customer-text: #854d0e;
+  --pill-waiting-technician-bg: #fff0e6;
+  --pill-waiting-technician-text: #c2410c;
+  --pill-waiting-third-party-bg: #fff4de;
+  --pill-waiting-third-party-text: #92400e;
+  --pill-resolved-bg: #eafbf1;
+  --pill-resolved-text: #15803d;
   --pill-closed-bg: #eef2f7;
   --pill-closed-text: #475569;
+  --pill-reopened-bg: #fff1f2;
+  --pill-reopened-text: #b91c1c;
+  --pill-cancelled-bg: #fee2e2;
+  --pill-cancelled-text: #991b1b;
   --pill-critical-bg: #fff1f0;
   --pill-critical-text: #b42318;
   --pill-read-bg: #dff6ea;
@@ -74,14 +82,22 @@
   --pill-new-text: #d8e9ff;
   --pill-open-bg: #15416f;
   --pill-open-text: #dbeafe;
-  --pill-progress-bg: #4a3515;
-  --pill-progress-text: #ffe2a8;
-  --pill-waiting-bg: #4a2f14;
-  --pill-waiting-text: #ffd6a6;
+  --pill-progress-bg: #322257;
+  --pill-progress-text: #ddd6fe;
+  --pill-waiting-customer-bg: #4a3a12;
+  --pill-waiting-customer-text: #fde68a;
+  --pill-waiting-technician-bg: #4a2a12;
+  --pill-waiting-technician-text: #fdba74;
+  --pill-waiting-third-party-bg: #463013;
+  --pill-waiting-third-party-text: #fcd34d;
   --pill-resolved-bg: #153d2e;
-  --pill-resolved-text: #b8f7d6;
+  --pill-resolved-text: #bbf7d0;
   --pill-closed-bg: #30394a;
   --pill-closed-text: #dbe4f0;
+  --pill-reopened-bg: #4d1f1f;
+  --pill-reopened-text: #fecaca;
+  --pill-cancelled-bg: #461113;
+  --pill-cancelled-text: #fecaca;
   --pill-critical-bg: #4d1f1f;
   --pill-critical-text: #ffd1cc;
   --pill-read-bg: #14452f;
@@ -127,14 +143,22 @@
   --pill-new-text: #d9e8ff;
   --pill-open-bg: #073763;
   --pill-open-text: #dbeafe;
-  --pill-progress-bg: #402a08;
-  --pill-progress-text: #ffe5b4;
-  --pill-waiting-bg: #3a2408;
-  --pill-waiting-text: #ffd8a8;
+  --pill-progress-bg: #261442;
+  --pill-progress-text: #e9d5ff;
+  --pill-waiting-customer-bg: #3a300f;
+  --pill-waiting-customer-text: #fde68a;
+  --pill-waiting-technician-bg: #3a1d0a;
+  --pill-waiting-technician-text: #fdba74;
+  --pill-waiting-third-party-bg: #38260c;
+  --pill-waiting-third-party-text: #fcd34d;
   --pill-resolved-bg: #063922;
   --pill-resolved-text: #b7f7d3;
   --pill-closed-bg: #182233;
   --pill-closed-text: #d8e2f0;
+  --pill-reopened-bg: #461113;
+  --pill-reopened-text: #fecaca;
+  --pill-cancelled-bg: #361012;
+  --pill-cancelled-text: #fecaca;
   --pill-critical-bg: #461113;
   --pill-critical-text: #ffd2d2;
   --pill-read-bg: #063922;
@@ -4160,8 +4184,7 @@ a.dashboard-list-row:hover {
   background: var(--pill-new-bg);
 }
 
-.inline-ticket-select.ticket-status-open,
-.inline-ticket-select.ticket-status-reopened {
+.inline-ticket-select.ticket-status-open {
   color: var(--pill-open-text);
   background: var(--pill-open-bg);
 }
@@ -4171,11 +4194,19 @@ a.dashboard-list-row:hover {
   background: var(--pill-progress-bg);
 }
 
-.inline-ticket-select.ticket-status-waiting-on-customer,
-.inline-ticket-select.ticket-status-waiting-on-technician,
+.inline-ticket-select.ticket-status-waiting-on-customer {
+  color: var(--pill-waiting-customer-text);
+  background: var(--pill-waiting-customer-bg);
+}
+
+.inline-ticket-select.ticket-status-waiting-on-technician {
+  color: var(--pill-waiting-technician-text);
+  background: var(--pill-waiting-technician-bg);
+}
+
 .inline-ticket-select.ticket-status-waiting-on-third-party {
-  color: var(--pill-waiting-text);
-  background: var(--pill-waiting-bg);
+  color: var(--pill-waiting-third-party-text);
+  background: var(--pill-waiting-third-party-bg);
 }
 
 .inline-ticket-select.ticket-status-resolved {
@@ -4190,8 +4221,13 @@ a.dashboard-list-row:hover {
 }
 
 .inline-ticket-select.ticket-status-cancelled {
-  color: var(--pill-critical-text);
-  background: var(--pill-critical-bg);
+  color: var(--pill-cancelled-text);
+  background: var(--pill-cancelled-bg);
+}
+
+.inline-ticket-select.ticket-status-reopened {
+  color: var(--pill-reopened-text);
+  background: var(--pill-reopened-bg);
 }
 
 .ticket-create-grid {
@@ -4425,8 +4461,7 @@ a.dashboard-list-row:hover {
   background: var(--pill-new-bg);
 }
 
-.status-pill.ticket-status-open,
-.status-pill.ticket-status-reopened {
+.status-pill.ticket-status-open {
   color: var(--pill-open-text);
   background: var(--pill-open-bg);
 }
@@ -4436,11 +4471,19 @@ a.dashboard-list-row:hover {
   background: var(--pill-progress-bg);
 }
 
-.status-pill.ticket-status-waiting-on-customer,
-.status-pill.ticket-status-waiting-on-technician,
+.status-pill.ticket-status-waiting-on-customer {
+  color: var(--pill-waiting-customer-text);
+  background: var(--pill-waiting-customer-bg);
+}
+
+.status-pill.ticket-status-waiting-on-technician {
+  color: var(--pill-waiting-technician-text);
+  background: var(--pill-waiting-technician-bg);
+}
+
 .status-pill.ticket-status-waiting-on-third-party {
-  color: var(--pill-waiting-text);
-  background: var(--pill-waiting-bg);
+  color: var(--pill-waiting-third-party-text);
+  background: var(--pill-waiting-third-party-bg);
 }
 
 .status-pill.ticket-status-resolved,
@@ -4457,8 +4500,13 @@ a.dashboard-list-row:hover {
 }
 
 .status-pill.ticket-status-cancelled {
-  color: var(--pill-critical-text);
-  background: var(--pill-critical-bg);
+  color: var(--pill-cancelled-text);
+  background: var(--pill-cancelled-bg);
+}
+
+.status-pill.ticket-status-reopened {
+  color: var(--pill-reopened-text);
+  background: var(--pill-reopened-bg);
 }
 
 .ticket-layout {
