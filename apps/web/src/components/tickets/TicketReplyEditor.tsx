@@ -67,10 +67,11 @@ interface TicketReplyEditorProps {
   ticketId?: string;
   notifyUsers?: Array<{ id: string; firstName: string; lastName: string; email: string }>;
   ccUsers?: Array<{ id: string; firstName: string; lastName: string; email: string }>;
+  ccContacts?: Array<{ id: string; firstName: string; lastName: string; email: string }>;
   onSaved?: () => void | Promise<void>;
 }
 
-export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], onSaved }: TicketReplyEditorProps) {
+export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], ccContacts = [], onSaved }: TicketReplyEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const autocompleteRequestRef = useRef(0);
   const grammarRequestRef = useRef(0);
@@ -299,6 +300,11 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
     setGrammarSuggestion(null);
   }
 
+  function clearWritingSuggestions() {
+    clearAutocomplete();
+    clearGrammarSuggestion();
+  }
+
   function isCursorAtAutocompleteBoundary() {
     const textAfterCursor = normalizeEditorText(getTextAfterCursor());
     return !textAfterCursor || Boolean(signatureTextRef.current && textAfterCursor === signatureTextRef.current);
@@ -468,8 +474,7 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
       return;
     }
 
-    removeInlineAutocomplete();
-    setAutocompleteSuggestion("");
+    clearWritingSuggestions();
     const bodyHtml = editorRef.current.innerHTML;
     const bodyText = editorRef.current.innerText.trim();
     if (!bodyText) {
@@ -516,6 +521,7 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
       return;
     }
 
+    clearWritingSuggestions();
     setSaving(true);
     setError(null);
     try {
@@ -554,13 +560,21 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
       return;
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(token)) {
-      setError("CC must be an email address or @internal user name.");
+    const displayEmail = token.match(/<([^<>\s@]+@[^<>\s@]+\.[^<>\s@]+)>$/)?.[1]?.toLowerCase();
+    const contactLookup = token.toLowerCase();
+    const matchedContact = ccContacts.find((contact) =>
+      `${contact.firstName} ${contact.lastName} ${contact.email}`.toLowerCase().includes(contactLookup)
+    );
+    const email = displayEmail ?? matchedContact?.email.toLowerCase() ?? token.toLowerCase();
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError("CC must be an email address, requester name, or @internal user name.");
       return;
     }
 
-    setCcEmails((current) => (current.includes(token.toLowerCase()) ? current : [...current, token.toLowerCase()]));
+    setCcEmails((current) => (current.includes(email) ? current : [...current, email]));
     setCcInput("");
+    setError(null);
   }
 
   function removeCcEmail(email: string) {
@@ -723,39 +737,41 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
           Internal Note
         </button>
       </div>
-      <div
-        className="editor-surface signature-render"
-        autoCapitalize="sentences"
-        autoCorrect="on"
-        contentEditable={!preview}
-        dir="ltr"
-        spellCheck
-        suppressContentEditableWarning
-        ref={editorRef}
-        onInput={handleEditorInput}
-        onKeyDown={handleEditorKeyDown}
-        onMouseDown={handleEditorMouseDown}
-        onPaste={handlePaste}
-        role="textbox"
-        aria-label={mode === "public" ? "Public reply body" : "Internal note body"}
-        data-placeholder={mode === "public" ? "Write a customer-facing reply..." : "Write an internal troubleshooting note..."}
-      />
-      {grammarSuggestion ? (
-        <div className="grammar-suggestion">
-          <div>
-            <strong>Grammar suggestion</strong>
-            <span>{grammarSuggestion.corrected}</span>
+      <div className="editor-body-frame">
+        <div
+          className="editor-surface signature-render"
+          autoCapitalize="sentences"
+          autoCorrect="on"
+          contentEditable={!preview}
+          dir="ltr"
+          spellCheck
+          suppressContentEditableWarning
+          ref={editorRef}
+          onInput={handleEditorInput}
+          onKeyDown={handleEditorKeyDown}
+          onMouseDown={handleEditorMouseDown}
+          onPaste={handlePaste}
+          role="textbox"
+          aria-label={mode === "public" ? "Public reply body" : "Internal note body"}
+          data-placeholder={mode === "public" ? "Write a customer-facing reply..." : "Write an internal troubleshooting note..."}
+        />
+        {grammarSuggestion ? (
+          <div className="grammar-suggestion" aria-live="polite">
+            <div>
+              <strong>Grammar suggestion</strong>
+              <span>{grammarSuggestion.corrected}</span>
+            </div>
+            <div className="row-actions">
+              <button className="button secondary small-button" type="button" onClick={dismissGrammarSuggestion}>
+                Dismiss
+              </button>
+              <button className="button small-button" type="button" onClick={applyGrammarSuggestion}>
+                Apply
+              </button>
+            </div>
           </div>
-          <div className="row-actions">
-            <button className="button secondary small-button" type="button" onClick={dismissGrammarSuggestion}>
-              Dismiss
-            </button>
-            <button className="button small-button" type="button" onClick={applyGrammarSuggestion}>
-              Apply
-            </button>
-          </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
       {mode === "public" ? (
         <div className="cc-picker">
           <label className="field">
@@ -771,13 +787,18 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], on
                   addCcToken(ccInput);
                 }
               }}
-              placeholder="Add email or @internal user"
+              placeholder="Add email, requester, or @internal user"
               list="ticket-cc-users"
             />
             <datalist id="ticket-cc-users">
               {ccUsers.map((user) => (
-                <option key={user.id} value={`@${user.firstName} ${user.lastName}`}>
+                <option key={`user-${user.id}`} value={`@${user.firstName} ${user.lastName}`}>
                   {user.email}
+                </option>
+              ))}
+              {ccContacts.map((contact) => (
+                <option key={`contact-${contact.id}`} value={`${contact.firstName} ${contact.lastName} <${contact.email}>`}>
+                  Requester
                 </option>
               ))}
             </datalist>

@@ -14,6 +14,13 @@ interface User {
   email: string;
 }
 
+interface Contact {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
 interface Group {
   id: string;
   name: string;
@@ -80,8 +87,8 @@ interface Ticket {
   source: string;
   senderEmail: string | null;
   senderDomain: string | null;
-  client: { name: string } | null;
-  contact: { firstName: string; lastName: string; email: string } | null;
+  client: { id: string; name: string } | null;
+  contact: { id: string; firstName: string; lastName: string; email: string } | null;
   assignedUserId: string | null;
   assignedGroupId: string | null;
   assignedTeamId: string | null;
@@ -114,6 +121,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const router = useRouter();
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [users, setUsers] = useState<User[]>([]);
+  const [ccContacts, setCcContacts] = useState<Contact[]>([]);
   const [ticketTeams, setTicketTeams] = useState<TicketTeam[]>([]);
   const [assignedUserIds, setAssignedUserIds] = useState<string[]>([]);
   const [assignedTeamId, setAssignedTeamId] = useState("");
@@ -156,6 +164,15 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       }
       setUsers(userData);
       setTicketTeams(teamData);
+      if (ticketData.client?.id) {
+        try {
+          setCcContacts(await apiFetch<Contact[]>(`/clients/${ticketData.client.id}/contacts`));
+        } catch {
+          setCcContacts(ticketData.contact ? [ticketData.contact] : []);
+        }
+      } else {
+        setCcContacts(ticketData.contact ? [ticketData.contact] : []);
+      }
       setAssignedUserIds(ticketData.assignees?.length ? ticketData.assignees.map((assignment) => assignment.user.id) : ticketData.assignedUserId ? [ticketData.assignedUserId] : []);
       setAssignedTeamId(ticketData.assignedTeamId ?? "");
       setWatcherIds(ticketData.watchers.map((watcher) => watcher.user.id));
@@ -416,7 +433,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
           {!isMergedTicket ? (
             <div className="panel">
               <h2>Reply Composer</h2>
-              <TicketReplyEditor ticketId={ticketRef} notifyUsers={users} ccUsers={users} onSaved={load} />
+              <TicketReplyEditor ticketId={ticketRef} notifyUsers={users} ccUsers={users} ccContacts={ccContacts} onSaved={load} />
             </div>
           ) : null}
           <div className="panel">

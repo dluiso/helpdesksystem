@@ -766,6 +766,11 @@ select.compact-select {
 }
 
 .grammar-suggestion {
+  position: absolute;
+  z-index: 15;
+  right: 12px;
+  bottom: 12px;
+  max-width: min(720px, calc(100% - 24px));
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -774,6 +779,7 @@ select.compact-select {
   border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
   border-radius: 8px;
   background: var(--surface-muted);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.14);
 }
 
 .grammar-suggestion > div:first-child {
@@ -4608,6 +4614,11 @@ a.dashboard-list-row:hover {
   min-width: 0;
 }
 
+.editor-body-frame {
+  position: relative;
+  min-width: 0;
+}
+
 .editor-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -6087,6 +6098,14 @@ a.dashboard-list-row:hover {
   .attachment-image-preview {
     max-width: 100% !important;
     height: auto !important;
+  }
+
+  .grammar-suggestion {
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    max-width: none;
+    flex-direction: column;
   }
 
   .attachment-row,
