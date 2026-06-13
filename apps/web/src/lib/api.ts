@@ -1,7 +1,10 @@
 export const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
 export function getApiBaseUrl() {
-  if (typeof window !== "undefined" && window.location.hostname.startsWith("events.")) {
+  if (
+    typeof window !== "undefined" &&
+    (window.location.hostname.startsWith("events.") || window.location.hostname.startsWith("support."))
+  ) {
     return "/api";
   }
   return apiBaseUrl;

@@ -4,6 +4,7 @@ import { Download, Plus, RefreshCcw, RotateCw, TestTube2, Upload, X } from "luci
 import { useEffect, useMemo, useState } from "react";
 import { EventServicesConfigPanel } from "@/components/settings/EventServicesConfigPanel";
 import { KnowledgeConfigPanel } from "@/components/settings/KnowledgeConfigPanel";
+import { SupportPortalConfigPanel } from "@/components/settings/SupportPortalConfigPanel";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
 
 interface Mailbox {
@@ -684,7 +685,7 @@ export function SettingsWorkspace() {
   const [selectedClientByDomain, setSelectedClientByDomain] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<"general" | "mailboxes" | "autoReplies" | "teams" | "routing" | "domains" | "notifications" | "events" | "knowledge" | "spam" | "maintenance" | "logs" | "security" | "ai">("general");
+  const [activeSection, setActiveSection] = useState<"general" | "mailboxes" | "autoReplies" | "teams" | "routing" | "domains" | "supportPortal" | "notifications" | "events" | "knowledge" | "spam" | "maintenance" | "logs" | "security" | "ai">("general");
   const [generalTab, setGeneralTab] = useState<GeneralTab>("identity");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1843,6 +1844,9 @@ export function SettingsWorkspace() {
           </button>
           <button className={activeSection === "domains" ? "active" : ""} type="button" onClick={() => setActiveSection("domains")}>
             Domain Mapping
+          </button>
+          <button className={activeSection === "supportPortal" ? "active" : ""} type="button" onClick={() => setActiveSection("supportPortal")}>
+            Support Portal
           </button>
           <button className={activeSection === "notifications" ? "active" : ""} type="button" onClick={() => setActiveSection("notifications")}>
             Notifications
@@ -3021,6 +3025,8 @@ export function SettingsWorkspace() {
         </div>
       </section>
           ) : null}
+
+          {activeSection === "supportPortal" ? <SupportPortalConfigPanel /> : null}
 
           {activeSection === "notifications" ? (
             <section className="panel settings-section">

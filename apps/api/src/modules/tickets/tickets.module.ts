@@ -7,13 +7,15 @@ import { NotificationsModule } from "../notifications/notifications.module";
 import { AutoRepliesModule } from "../auto-replies/auto-replies.module";
 import { TicketRoutingModule } from "../ticket-routing/ticket-routing.module";
 import { HtmlSanitizerService } from "../../common/html/html-sanitizer.service";
+import { SupportPortalController } from "./support-portal.controller";
+import { SupportPortalService } from "./support-portal.service";
 import { TicketsController } from "./tickets.controller";
 import { TicketsService } from "./tickets.service";
 
 @Module({
   imports: [AuthModule, AuditLogsModule, ContactsModule, TicketRoutingModule, MailTransportModule, NotificationsModule, AutoRepliesModule],
-  controllers: [TicketsController],
-  providers: [TicketsService, HtmlSanitizerService],
+  controllers: [TicketsController, SupportPortalController],
+  providers: [TicketsService, SupportPortalService, HtmlSanitizerService],
   exports: [TicketsService]
 })
 export class TicketsModule {}

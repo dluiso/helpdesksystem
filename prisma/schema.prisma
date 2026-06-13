@@ -248,6 +248,7 @@ model Organization {
   eventServiceServices EventServiceService[]
   eventServiceForms    EventServiceForm[]
   eventServiceSequences EventServiceSequence[]
+  supportPortalForms   SupportPortalForm[]
 
   @@map("organizations")
 }
@@ -337,6 +338,13 @@ model SystemSetting {
   eventTurnstileEnabled      Boolean  @default(false)
   eventTurnstileSiteKey      String?
   eventTurnstileSecretReference String?
+  supportPortalEnabled       Boolean  @default(true)
+  supportPortalTitle         String   @default("Submit a Support Request")
+  supportPortalIntroText     String?
+  supportPortalSuccessMessage String?
+  supportPortalTurnstileEnabled Boolean @default(false)
+  supportPortalTurnstileSiteKey String?
+  supportPortalTurnstileSecretReference String?
   eventCalendarSyncEnabled   Boolean  @default(false)
   eventCalendarTenantId      String?
   eventCalendarClientId      String?
@@ -1637,6 +1645,46 @@ model EventServiceFormField {
   @@unique([formId, fieldKey])
   @@index([formId, sortOrder])
   @@map("event_service_form_fields")
+}
+
+model SupportPortalForm {
+  id             String                   @id @default(uuid()) @db.Uuid
+  organizationId String                   @db.Uuid
+  name           String
+  slug           String
+  introText      String?
+  isActive       Boolean                  @default(true)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fields         SupportPortalFormField[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, isActive])
+  @@map("support_portal_forms")
+}
+
+model SupportPortalFormField {
+  id                  String                @id @default(uuid()) @db.Uuid
+  formId              String                @db.Uuid
+  type                EventServiceFieldType
+  label               String
+  fieldKey            String
+  placeholder         String?
+  helpText            String?
+  options             String[]              @default([])
+  isRequired          Boolean               @default(false)
+  isActive            Boolean               @default(true)
+  sortOrder           Int                   @default(100)
+  isCore              Boolean               @default(false)
+  visibilityCondition Json?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  form                SupportPortalForm     @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@unique([formId, fieldKey])
+  @@index([formId, sortOrder])
+  @@map("support_portal_form_fields")
 }
 
 model EventServiceRequest {

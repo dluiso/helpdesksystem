@@ -1,11 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const publicPaths = ["/login", "/reset-password", "/public/event-services"];
+const publicPaths = ["/login", "/reset-password", "/public/event-services", "/public/support"];
 
 export function proxy(request: NextRequest) {
   const host = request.headers.get("host")?.toLowerCase() ?? "";
   if (host.startsWith("events.") && request.nextUrl.pathname === "/") {
     return NextResponse.rewrite(new URL("/public/event-services/request", request.url));
+  }
+  if (host.startsWith("support.") && request.nextUrl.pathname === "/") {
+    return NextResponse.rewrite(new URL("/public/support/request", request.url));
   }
 
   const isPublic = publicPaths.some((path) => request.nextUrl.pathname.startsWith(path));
