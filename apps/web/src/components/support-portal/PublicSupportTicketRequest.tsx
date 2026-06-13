@@ -236,11 +236,22 @@ export function PublicSupportTicketRequest() {
         </fieldset>
       );
     }
-    const type = field.type === "NUMBER" ? "number" : field.type === "DATE" ? "date" : field.type === "EMAIL" ? "email" : field.type === "PHONE" ? "tel" : "text";
+    const type =
+      field.fieldKey === "occurredAt"
+        ? "datetime-local"
+        : field.type === "NUMBER"
+          ? "number"
+          : field.type === "DATE"
+            ? "date"
+            : field.type === "EMAIL"
+              ? "email"
+              : field.type === "PHONE"
+                ? "tel"
+                : "text";
     return (
       <label key={field.id}>
         {label}
-        <input className="public-event-input" type={type} required={field.isRequired} placeholder={field.placeholder ?? ""} value={fieldValue(formData, field.fieldKey)} onChange={(event) => updateField(field.fieldKey, event.target.value)} />
+        <input className="public-event-input" type={type} required={field.isRequired} placeholder={type === "datetime-local" ? undefined : (field.placeholder ?? "")} value={fieldValue(formData, field.fieldKey)} onChange={(event) => updateField(field.fieldKey, event.target.value)} />
         {commonHelp}
       </label>
     );
@@ -289,19 +300,24 @@ export function PublicSupportTicketRequest() {
 
   return (
     <main className="public-event-page">
-      <section className="public-event-hero">
+      <section className="public-event-hero public-support-hero">
         <div className="public-event-brand">
           {logoUrl ? <img src={logoUrl} alt={branding.companyName} style={logoBackgroundStyle} /> : null}
-          <span>Support Portal</span>
         </div>
-        <h1>{config.portal.title}</h1>
+        <h1>Support Portal</h1>
         <p>{config.portal.introText ?? config.form.introText ?? "Tell us what is happening so our team can help."}</p>
       </section>
 
       <form className="public-event-form-card public-support-form-card" onSubmit={submit}>
-        <div className="section-heading">
-          <h2>{config.form.name}</h2>
-          <p>Fields marked with an asterisk are required. Attachments are not accepted here yet; email files to {config.organization.supportEmail} after submitting.</p>
+        <div className="section-heading public-support-form-heading">
+          <div>
+            <span className="public-support-eyebrow">Support request</span>
+            <h2>{config.portal.title}</h2>
+          </div>
+          <p>Fields marked with an asterisk are required.</p>
+        </div>
+        <div className="public-support-note">
+          Attachments are not accepted here yet. Email files to <strong>{config.organization.supportEmail}</strong> after submitting and include your ticket number.
         </div>
         {error ? <p className="form-error">{error}</p> : null}
         {renderSection("Requester Information", <UserRound size={18} />, fieldGroups.requester)}
