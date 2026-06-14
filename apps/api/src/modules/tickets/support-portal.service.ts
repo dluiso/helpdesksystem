@@ -222,6 +222,7 @@ export class SupportPortalService {
           helpText: data.helpText,
           sortOrder: data.sortOrder,
           options: data.options,
+          layoutWidth: this.normalizeLayoutWidth(input.layoutWidth ?? existing.layoutWidth, existing.type),
           isRequired: true,
           isActive: true,
           visibilityCondition: Prisma.JsonNull
