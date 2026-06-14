@@ -1677,6 +1677,7 @@ model SupportPortalFormField {
   isActive            Boolean               @default(true)
   sortOrder           Int                   @default(100)
   isCore              Boolean               @default(false)
+  layoutWidth         String                @default("HALF")
   visibilityCondition Json?
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt

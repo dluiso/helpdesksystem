@@ -27,8 +27,11 @@ interface SupportField {
   isActive: boolean;
   sortOrder: number;
   isCore: boolean;
-  visibilityCondition: { fieldKey?: string; operator?: string; value?: string } | null;
+  layoutWidth: "FULL" | "HALF" | "THIRD" | "QUARTER";
+  visibilityCondition: { fieldKey?: string; operator?: string; value?: string } | { logic?: "ANY" | "ALL"; rules?: Array<{ fieldKey?: string; operator?: string; value?: string }> } | null;
 }
+
+type VisibilityRule = { fieldKey?: string; operator?: string; value?: string };
 
 interface SupportPortalConfig {
   organization: { name: string; supportEmail: string };
@@ -61,19 +64,35 @@ function fieldArrayValue(data: FormDataState, key: string) {
   return Array.isArray(value) ? value : value ? [value] : [];
 }
 
+function visibilityRules(condition: SupportField["visibilityCondition"]) {
+  if (!condition || typeof condition !== "object") {
+    return { logic: "ANY" as const, rules: [] as VisibilityRule[] };
+  }
+  if ("rules" in condition && Array.isArray(condition.rules)) {
+    return { logic: condition.logic === "ALL" ? "ALL" as const : "ANY" as const, rules: condition.rules };
+  }
+  return { logic: "ANY" as const, rules: [condition as VisibilityRule] };
+}
+
 function isVisible(field: SupportField, data: FormDataState) {
-  const condition = field.visibilityCondition;
-  if (!condition?.fieldKey || !condition.operator) {
+  const { logic, rules } = visibilityRules(field.visibilityCondition);
+  const checks = rules
+    .filter((rule) => rule.fieldKey && rule.operator)
+    .map((rule) => {
+      const current = fieldValue(data, rule.fieldKey ?? "");
+      const expected = rule.value ?? "";
+      if (rule.operator === "equals") return current === expected;
+      if (rule.operator === "not_equals") return current !== expected;
+      if (rule.operator === "contains") return current.toLowerCase().includes(expected.toLowerCase());
+      if (rule.operator === "is_one_of") return expected.split(",").map((value) => value.trim().toLowerCase()).filter(Boolean).includes(current.toLowerCase());
+      if (rule.operator === "is_empty") return !current;
+      if (rule.operator === "is_not_empty") return Boolean(current);
+      return true;
+    });
+  if (checks.length === 0) {
     return true;
   }
-  const current = fieldValue(data, condition.fieldKey);
-  const expected = condition.value ?? "";
-  if (condition.operator === "equals") return current === expected;
-  if (condition.operator === "not_equals") return current !== expected;
-  if (condition.operator === "contains") return current.toLowerCase().includes(expected.toLowerCase());
-  if (condition.operator === "is_empty") return !current;
-  if (condition.operator === "is_not_empty") return Boolean(current);
-  return true;
+  return logic === "ALL" ? checks.every(Boolean) : checks.some(Boolean);
 }
 
 function priorityLabel(option: string) {
@@ -169,9 +188,10 @@ export function PublicSupportTicketRequest() {
   function renderField(field: SupportField) {
     const label = `${field.label}${field.isRequired ? " *" : ""}`;
     const commonHelp = field.helpText ? <small>{field.helpText}</small> : null;
+    const layoutClass = `support-layout-${(field.layoutWidth ?? "HALF").toLowerCase()}`;
     if (field.type === "TEXTAREA") {
       return (
-        <label className="span-2" key={field.id}>
+        <label className={layoutClass} key={field.id}>
           {label}
           <textarea className="public-event-input" required={field.isRequired} placeholder={field.placeholder ?? ""} value={fieldValue(formData, field.fieldKey)} onChange={(event) => updateField(field.fieldKey, event.target.value)} />
           {commonHelp}
@@ -180,7 +200,7 @@ export function PublicSupportTicketRequest() {
     }
     if (field.type === "SELECT") {
       return (
-        <label key={field.id}>
+        <label className={layoutClass} key={field.id}>
           {label}
           <select className="public-event-input" required={field.isRequired} value={fieldValue(formData, field.fieldKey)} onChange={(event) => updateField(field.fieldKey, event.target.value)}>
             <option value="">Select...</option>
@@ -192,7 +212,7 @@ export function PublicSupportTicketRequest() {
     }
     if (field.type === "MULTI_SELECT") {
       return (
-        <label className="span-2" key={field.id}>
+        <label className={layoutClass} key={field.id}>
           {label}
           <select
             className="public-event-input"
@@ -210,7 +230,7 @@ export function PublicSupportTicketRequest() {
     if (field.type === "RADIO" || field.type === "CHECKBOX") {
       const selected = fieldArrayValue(formData, field.fieldKey);
       return (
-        <fieldset className="public-support-choice-field span-2" key={field.id}>
+        <fieldset className={`public-support-choice-field ${layoutClass}`} key={field.id}>
           <legend>{label}</legend>
           <div className="public-event-choice-group">
             {field.options.map((option) => (
@@ -249,7 +269,7 @@ export function PublicSupportTicketRequest() {
                 ? "tel"
                 : "text";
     return (
-      <label key={field.id}>
+      <label className={layoutClass} key={field.id}>
         {label}
         <input className="public-event-input" type={type} required={field.isRequired} placeholder={type === "datetime-local" ? undefined : (field.placeholder ?? "")} value={fieldValue(formData, field.fieldKey)} onChange={(event) => updateField(field.fieldKey, event.target.value)} />
         {commonHelp}

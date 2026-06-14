@@ -2302,7 +2302,7 @@ select.compact-select {
 
 .support-settings-grid .span-2,
 .support-field-editor textarea,
-.support-condition-row {
+.support-condition-builder {
   grid-column: 1 / -1;
 }
 
@@ -2338,10 +2338,31 @@ select.compact-select {
   font-size: 13px;
 }
 
+.support-condition-builder {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.support-condition-toolbar {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.45fr) minmax(220px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.support-condition-toolbar span {
+  font-weight: 850;
+}
+
 .support-condition-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(160px, 0.7fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 0.7fr) minmax(0, 1fr) auto;
   gap: 10px;
+  align-items: center;
 }
 
 .support-field-actions {
@@ -2493,11 +2514,12 @@ select.compact-select {
 
 .public-event-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 18px;
 }
 
 .public-event-grid label,
+.public-event-grid fieldset,
 .public-event-services {
   display: grid;
   gap: 8px;
@@ -2508,8 +2530,39 @@ select.compact-select {
   vertical-align: middle;
 }
 
-.public-event-grid .span-2 {
+.public-event-grid > label,
+.public-event-grid > fieldset {
+  grid-column: span 6;
+}
+
+.public-event-grid .span-2,
+.public-event-grid .support-layout-full {
   grid-column: 1 / -1;
+}
+
+.public-event-grid .support-layout-half {
+  grid-column: span 6;
+}
+
+.public-event-grid .support-layout-third {
+  grid-column: span 4;
+}
+
+.public-event-grid .support-layout-quarter {
+  grid-column: span 3;
+}
+
+.support-preview-grid .support-layout-full {
+  grid-column: 1 / -1;
+}
+
+.support-preview-grid .support-layout-half {
+  grid-column: span 1;
+}
+
+.support-preview-grid .support-layout-third,
+.support-preview-grid .support-layout-quarter {
+  grid-column: span 1;
 }
 
 .public-event-schedule-row {
@@ -6884,6 +6937,7 @@ a.dashboard-list-row:hover {
   .support-settings-grid,
   .support-field-editor,
   .support-condition-row,
+  .support-condition-toolbar,
   .support-preview-grid,
   .event-preview-grid,
   .public-event-grid,
@@ -6984,7 +7038,13 @@ a.dashboard-list-row:hover {
     max-width: none;
   }
 
-  .public-event-grid .span-2 {
+  .public-event-grid > label,
+  .public-event-grid > fieldset,
+  .public-event-grid .span-2,
+  .public-event-grid .support-layout-full,
+  .public-event-grid .support-layout-half,
+  .public-event-grid .support-layout-third,
+  .public-event-grid .support-layout-quarter {
     grid-column: auto;
   }
 

@@ -5,6 +5,10 @@ import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
 type FieldType = "TEXT" | "TEXTAREA" | "EMAIL" | "PHONE" | "DATE" | "TIME" | "SELECT" | "MULTI_SELECT" | "CHECKBOX" | "RADIO" | "NUMBER";
+type LayoutWidth = "FULL" | "HALF" | "THIRD" | "QUARTER";
+type VisibilityLogic = "ANY" | "ALL";
+type VisibilityRule = { fieldKey: string; operator: string; value: string };
+type VisibilityCondition = { fieldKey?: string; operator?: string; value?: string } | { logic?: VisibilityLogic; rules?: VisibilityRule[] } | null;
 
 interface SupportPortalField {
   id: string;
@@ -18,7 +22,8 @@ interface SupportPortalField {
   isActive: boolean;
   sortOrder: number;
   isCore: boolean;
-  visibilityCondition: { fieldKey?: string; operator?: string; value?: string } | null;
+  layoutWidth: LayoutWidth;
+  visibilityCondition: VisibilityCondition;
 }
 
 interface SupportPortalConfig {
@@ -52,9 +57,9 @@ type FieldDraft = {
   isRequired: boolean;
   isActive: boolean;
   sortOrder: number;
-  conditionFieldKey: string;
-  conditionOperator: string;
-  conditionValue: string;
+  layoutWidth: LayoutWidth;
+  conditionLogic: VisibilityLogic;
+  conditionRules: VisibilityRule[];
 };
 
 const fieldTypes: FieldType[] = ["TEXT", "TEXTAREA", "EMAIL", "PHONE", "DATE", "TIME", "SELECT", "MULTI_SELECT", "CHECKBOX", "RADIO", "NUMBER"];
@@ -69,9 +74,9 @@ const blankFieldDraft: FieldDraft = {
   isRequired: false,
   isActive: true,
   sortOrder: 100,
-  conditionFieldKey: "",
-  conditionOperator: "equals",
-  conditionValue: ""
+  layoutWidth: "HALF",
+  conditionLogic: "ANY",
+  conditionRules: []
 };
 
 function label(value: string) {
@@ -96,7 +101,30 @@ function textToOptions(value: string) {
   return value.split(/\r?\n/).map((option) => option.trim()).filter(Boolean);
 }
 
+function defaultLayoutWidth(type: FieldType): LayoutWidth {
+  return ["TEXTAREA", "MULTI_SELECT", "CHECKBOX", "RADIO"].includes(type) ? "FULL" : "HALF";
+}
+
+function conditionToRules(condition: VisibilityCondition): { logic: VisibilityLogic; rules: VisibilityRule[] } {
+  if (!condition || typeof condition !== "object") {
+    return { logic: "ANY", rules: [] };
+  }
+  if ("rules" in condition && Array.isArray(condition.rules)) {
+    return {
+      logic: condition.logic === "ALL" ? "ALL" : "ANY",
+      rules: condition.rules
+        .filter((rule) => rule.fieldKey && rule.operator)
+        .map((rule) => ({ fieldKey: rule.fieldKey, operator: rule.operator, value: rule.value ?? "" }))
+    };
+  }
+  if ("fieldKey" in condition && condition.fieldKey && condition.operator) {
+    return { logic: "ANY", rules: [{ fieldKey: condition.fieldKey, operator: condition.operator, value: condition.value ?? "" }] };
+  }
+  return { logic: "ANY", rules: [] };
+}
+
 function fieldToDraft(field: SupportPortalField): FieldDraft {
+  const condition = conditionToRules(field.visibilityCondition);
   return {
     label: field.label,
     fieldKey: field.fieldKey,
@@ -107,9 +135,9 @@ function fieldToDraft(field: SupportPortalField): FieldDraft {
     isRequired: field.isRequired,
     isActive: field.isActive,
     sortOrder: field.sortOrder,
-    conditionFieldKey: field.visibilityCondition?.fieldKey ?? "",
-    conditionOperator: field.visibilityCondition?.operator ?? "equals",
-    conditionValue: field.visibilityCondition?.value ?? ""
+    layoutWidth: field.layoutWidth ?? defaultLayoutWidth(field.type),
+    conditionLogic: condition.logic,
+    conditionRules: condition.rules
   };
 }
 
@@ -124,11 +152,15 @@ function fieldPayload(draft: FieldDraft) {
     isRequired: draft.isRequired,
     isActive: draft.isActive,
     sortOrder: draft.sortOrder,
-    visibilityCondition: draft.conditionFieldKey
+    layoutWidth: draft.layoutWidth,
+    visibilityCondition: draft.conditionRules.length > 0
       ? {
-          fieldKey: draft.conditionFieldKey,
-          operator: draft.conditionOperator,
-          value: draft.conditionValue
+          logic: draft.conditionLogic,
+          rules: draft.conditionRules.map((rule) => ({
+            fieldKey: rule.fieldKey,
+            operator: rule.operator,
+            value: ["is_empty", "is_not_empty"].includes(rule.operator) ? "" : rule.value
+          }))
         }
       : null
   };
@@ -239,14 +271,35 @@ export function SupportPortalConfigPanel() {
   }
 
   function renderFieldDraftControls(draft: FieldDraft, onChange: (next: FieldDraft) => void, lockedKey = false) {
+    const updateRule = (index: number, patch: Partial<VisibilityRule>) => {
+      onChange({
+        ...draft,
+        conditionRules: draft.conditionRules.map((rule, ruleIndex) => ruleIndex === index ? { ...rule, ...patch } : rule)
+      });
+    };
+    const removeRule = (index: number) => {
+      onChange({ ...draft, conditionRules: draft.conditionRules.filter((_, ruleIndex) => ruleIndex !== index) });
+    };
+    const addRule = () => {
+      onChange({ ...draft, conditionRules: [...draft.conditionRules, { fieldKey: "", operator: "equals", value: "" }] });
+    };
     return (
       <div className="support-field-editor">
         <input value={draft.label} placeholder="Field label" onChange={(event) => onChange({ ...draft, label: event.target.value, fieldKey: lockedKey ? draft.fieldKey : draft.fieldKey || makeFieldKey(event.target.value) })} />
         <input value={draft.fieldKey} placeholder="fieldKey" disabled={lockedKey} onChange={(event) => onChange({ ...draft, fieldKey: event.target.value })} />
-        <select value={draft.type} disabled={lockedKey} onChange={(event) => onChange({ ...draft, type: event.target.value as FieldType })}>
+        <select value={draft.type} disabled={lockedKey} onChange={(event) => {
+          const nextType = event.target.value as FieldType;
+          onChange({ ...draft, type: nextType, layoutWidth: defaultLayoutWidth(nextType) });
+        }}>
           {fieldTypes.map((type) => <option key={type} value={type}>{label(type)}</option>)}
         </select>
         <input type="number" min="0" value={draft.sortOrder} onChange={(event) => onChange({ ...draft, sortOrder: Number(event.target.value) })} />
+        <select value={draft.layoutWidth} onChange={(event) => onChange({ ...draft, layoutWidth: event.target.value as LayoutWidth })}>
+          <option value="FULL">Full width</option>
+          <option value="HALF">1/2 width</option>
+          <option value="THIRD">1/3 width</option>
+          <option value="QUARTER">1/4 width</option>
+        </select>
         <input value={draft.placeholder} placeholder="Placeholder" onChange={(event) => onChange({ ...draft, placeholder: event.target.value })} />
         <input value={draft.helpText} placeholder="Help text" onChange={(event) => onChange({ ...draft, helpText: event.target.value })} />
         {optionFieldTypes.has(draft.type) ? (
@@ -254,19 +307,34 @@ export function SupportPortalConfigPanel() {
         ) : null}
         <label><input type="checkbox" checked={draft.isRequired} disabled={lockedKey} onChange={(event) => onChange({ ...draft, isRequired: event.target.checked })} /> Required</label>
         <label><input type="checkbox" checked={draft.isActive} disabled={lockedKey} onChange={(event) => onChange({ ...draft, isActive: event.target.checked })} /> Active</label>
-        <div className="support-condition-row">
-          <select value={draft.conditionFieldKey} disabled={lockedKey} onChange={(event) => onChange({ ...draft, conditionFieldKey: event.target.value })}>
-            <option value="">Always show</option>
-            {editableConditionFields.map((field) => <option key={field.id} value={field.fieldKey}>{field.label}</option>)}
-          </select>
-          <select value={draft.conditionOperator} disabled={lockedKey || !draft.conditionFieldKey} onChange={(event) => onChange({ ...draft, conditionOperator: event.target.value })}>
-            <option value="equals">Equals</option>
-            <option value="not_equals">Does not equal</option>
-            <option value="contains">Contains</option>
-            <option value="is_empty">Is empty</option>
-            <option value="is_not_empty">Is not empty</option>
-          </select>
-          <input value={draft.conditionValue} disabled={lockedKey || !draft.conditionFieldKey || ["is_empty", "is_not_empty"].includes(draft.conditionOperator)} placeholder="Value" onChange={(event) => onChange({ ...draft, conditionValue: event.target.value })} />
+        <div className="support-condition-builder">
+          <div className="support-condition-toolbar">
+            <span>Visibility rules</span>
+            <select value={draft.conditionLogic} disabled={lockedKey || draft.conditionRules.length < 2} onChange={(event) => onChange({ ...draft, conditionLogic: event.target.value as VisibilityLogic })}>
+              <option value="ANY">Show when any rule matches</option>
+              <option value="ALL">Show when all rules match</option>
+            </select>
+            <button type="button" disabled={lockedKey} onClick={addRule}>Add Rule</button>
+          </div>
+          {draft.conditionRules.length === 0 ? <p className="muted">Always visible.</p> : null}
+          {draft.conditionRules.map((rule, index) => (
+            <div className="support-condition-row" key={`${rule.fieldKey}-${index}`}>
+              <select value={rule.fieldKey} disabled={lockedKey} onChange={(event) => updateRule(index, { fieldKey: event.target.value })}>
+                <option value="">Select field</option>
+                {editableConditionFields.filter((field) => field.fieldKey !== draft.fieldKey).map((field) => <option key={field.id} value={field.fieldKey}>{field.label}</option>)}
+              </select>
+              <select value={rule.operator} disabled={lockedKey || !rule.fieldKey} onChange={(event) => updateRule(index, { operator: event.target.value })}>
+                <option value="equals">Equals</option>
+                <option value="not_equals">Does not equal</option>
+                <option value="contains">Contains</option>
+                <option value="is_one_of">Is one of</option>
+                <option value="is_empty">Is empty</option>
+                <option value="is_not_empty">Is not empty</option>
+              </select>
+              <input value={rule.value} disabled={lockedKey || !rule.fieldKey || ["is_empty", "is_not_empty"].includes(rule.operator)} placeholder={rule.operator === "is_one_of" ? "Value 1, Value 2" : "Value"} onChange={(event) => updateRule(index, { value: event.target.value })} />
+              <button type="button" disabled={lockedKey} onClick={() => removeRule(index)}>Remove</button>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -344,7 +412,7 @@ export function SupportPortalConfigPanel() {
           <p>{settingsDraft.supportPortalIntroText || config.form.introText}</p>
           <div className="support-preview-grid">
             {sortedFields.filter((field) => field.isActive).slice(0, 12).map((field) => (
-              <label key={field.id}>{field.label}{field.isRequired ? " *" : ""}<input disabled placeholder={field.placeholder ?? ""} /></label>
+              <label className={`support-layout-${field.layoutWidth?.toLowerCase() ?? "half"}`} key={field.id}>{field.label}{field.isRequired ? " *" : ""}<input disabled placeholder={field.placeholder ?? ""} /></label>
             ))}
           </div>
         </div>

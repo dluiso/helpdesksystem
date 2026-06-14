@@ -35,7 +35,14 @@ type SupportPortalField = {
   isActive: boolean;
   sortOrder: number;
   isCore: boolean;
+  layoutWidth: string;
   visibilityCondition: Prisma.JsonValue | null;
+};
+
+type SupportPortalVisibilityRule = {
+  fieldKey: string;
+  operator: string;
+  value: string;
 };
 
 type PublicFormData = Record<string, unknown>;
@@ -401,6 +408,7 @@ export class SupportPortalService {
         isActive: field.isActive,
         sortOrder: field.sortOrder,
         isCore: field.isCore,
+        layoutWidth: field.layoutWidth,
         visibilityCondition: field.visibilityCondition
       }))
     };
@@ -532,6 +540,7 @@ export class SupportPortalService {
       sortOrder,
       isRequired,
       isCore,
+      layoutWidth: this.defaultLayoutWidth(type),
       placeholder: placeholder ?? null,
       visibilityCondition: visibilityCondition ?? undefined,
       options
@@ -553,6 +562,7 @@ export class SupportPortalService {
       isRequired: input.isRequired ?? false,
       isActive: input.isActive ?? true,
       sortOrder: input.sortOrder ?? 100,
+      layoutWidth: this.normalizeLayoutWidth(input.layoutWidth, input.type),
       visibilityCondition: this.normalizeCondition(input.visibilityCondition)
     };
   }
@@ -621,10 +631,15 @@ export class SupportPortalService {
   }
 
   private isFieldVisible(field: SupportPortalField, data: PublicFormData) {
-    const condition = this.readCondition(field.visibilityCondition);
-    if (!condition) {
+    const conditions = this.readConditions(field.visibilityCondition);
+    if (conditions.rules.length === 0) {
       return true;
     }
+    const checks = conditions.rules.map((condition) => this.matchesCondition(condition, data));
+    return conditions.logic === "ALL" ? checks.every(Boolean) : checks.some(Boolean);
+  }
+
+  private matchesCondition(condition: SupportPortalVisibilityRule, data: PublicFormData) {
     const currentValue = this.valueAsText(data[condition.fieldKey]);
     const expectedValue = this.valueAsText(condition.value);
     switch (condition.operator) {
@@ -634,6 +649,8 @@ export class SupportPortalService {
         return currentValue !== expectedValue;
       case "contains":
         return currentValue.toLowerCase().includes(expectedValue.toLowerCase());
+      case "is_one_of":
+        return this.valueList(condition.value).some((value) => value.toLowerCase() === currentValue.toLowerCase());
       case "is_empty":
         return !currentValue;
       case "is_not_empty":
@@ -717,34 +734,91 @@ export class SupportPortalService {
   }
 
   private normalizeCondition(value?: Record<string, unknown> | null): Prisma.InputJsonValue | undefined {
-    if (!value || !value.fieldKey || !value.operator) {
+    if (!value) {
       return undefined;
     }
-    const fieldKey = this.normalizeFieldKey(String(value.fieldKey));
-    const operator = String(value.operator);
-    if (!fieldKey || !["equals", "not_equals", "contains", "is_empty", "is_not_empty"].includes(operator)) {
+
+    const rawRules = Array.isArray(value.rules) ? value.rules : [value];
+    const rules = rawRules
+      .map((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          return null;
+        }
+        const condition = entry as Record<string, unknown>;
+        const fieldKey = typeof condition.fieldKey === "string" ? this.normalizeFieldKey(condition.fieldKey) : "";
+        const operator = typeof condition.operator === "string" ? condition.operator : "";
+        if (!fieldKey || !this.isSupportedConditionOperator(operator)) {
+          return null;
+        }
+        return {
+          fieldKey,
+          operator,
+          value: ["is_empty", "is_not_empty"].includes(operator) ? "" : this.valueAsText(condition.value)
+        };
+      })
+      .filter((entry): entry is SupportPortalVisibilityRule => Boolean(entry));
+
+    if (rules.length === 0) {
       return undefined;
+    }
+    if (rules.length === 1 && !Array.isArray(value.rules)) {
+      return rules[0] as Prisma.InputJsonValue;
     }
     return {
-      fieldKey,
-      operator,
-      value: typeof value.value === "string" ? value.value : this.valueAsText(value.value)
+      logic: value.logic === "ALL" ? "ALL" : "ANY",
+      rules: rules as unknown as Prisma.InputJsonValue
     };
   }
 
-  private readCondition(value: Prisma.JsonValue | null) {
+  private readConditions(value: Prisma.JsonValue | null): { logic: "ANY" | "ALL"; rules: SupportPortalVisibilityRule[] } {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return null;
+      return { logic: "ANY", rules: [] };
     }
-    const condition = value as { fieldKey?: unknown; operator?: unknown; value?: unknown };
-    if (typeof condition.fieldKey !== "string" || typeof condition.operator !== "string") {
-      return null;
-    }
+    const condition = value as { fieldKey?: unknown; operator?: unknown; value?: unknown; logic?: unknown; rules?: unknown };
+    const rawRules = Array.isArray(condition.rules) ? condition.rules : [condition];
+    const rules = rawRules
+      .map((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          return null;
+        }
+        const rule = entry as { fieldKey?: unknown; operator?: unknown; value?: unknown };
+        if (typeof rule.fieldKey !== "string" || typeof rule.operator !== "string" || !this.isSupportedConditionOperator(rule.operator)) {
+          return null;
+        }
+        return {
+          fieldKey: rule.fieldKey,
+          operator: rule.operator,
+          value: this.valueAsText(rule.value)
+        };
+      })
+      .filter((entry): entry is SupportPortalVisibilityRule => Boolean(entry));
     return {
-      fieldKey: condition.fieldKey,
-      operator: condition.operator,
-      value: condition.value
+      logic: condition.logic === "ALL" ? "ALL" : "ANY",
+      rules
     };
+  }
+
+  private isSupportedConditionOperator(operator: string) {
+    return ["equals", "not_equals", "contains", "is_one_of", "is_empty", "is_not_empty"].includes(operator);
+  }
+
+  private normalizeLayoutWidth(value: unknown, type: EventServiceFieldType) {
+    if (typeof value === "string" && ["FULL", "HALF", "THIRD", "QUARTER"].includes(value)) {
+      return value;
+    }
+    return this.defaultLayoutWidth(type);
+  }
+
+  private defaultLayoutWidth(type: EventServiceFieldType) {
+    switch (type) {
+      case EventServiceFieldType.TEXTAREA:
+      case EventServiceFieldType.MULTI_SELECT:
+      case EventServiceFieldType.CHECKBOX:
+      case EventServiceFieldType.RADIO:
+        return "FULL";
+      default:
+        return "HALF";
+    }
   }
 
   private condition(fieldKey: string, operator: string, value?: string): Prisma.InputJsonValue {
@@ -760,6 +834,13 @@ export class SupportPortalService {
       return value.map((entry) => String(entry).trim()).filter(Boolean).join(", ");
     }
     return typeof value === "string" ? value.trim() : value == null ? "" : String(value).trim();
+  }
+
+  private valueList(value: unknown) {
+    if (Array.isArray(value)) {
+      return value.map((entry) => this.valueAsText(entry)).filter(Boolean);
+    }
+    return this.valueAsText(value).split(",").map((entry) => entry.trim()).filter(Boolean);
   }
 
   private normalizeOptions(options: string[]) {

@@ -1,5 +1,5 @@
 import { EventServiceFieldType } from "@prisma/client";
-import { IsArray, IsBoolean, IsEnum, IsInt, IsObject, IsOptional, IsString, MaxLength, Min } from "class-validator";
+import { IsArray, IsBoolean, IsEnum, IsIn, IsInt, IsObject, IsOptional, IsString, MaxLength, Min } from "class-validator";
 
 export class UpsertSupportPortalFormFieldDto {
   @IsEnum(EventServiceFieldType)
@@ -40,6 +40,11 @@ export class UpsertSupportPortalFormFieldDto {
   @IsInt()
   @Min(0)
   sortOrder?: number;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(["FULL", "HALF", "THIRD", "QUARTER"])
+  layoutWidth?: string;
 
   @IsOptional()
   @IsObject()
