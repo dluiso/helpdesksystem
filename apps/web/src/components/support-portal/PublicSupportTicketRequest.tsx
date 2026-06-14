@@ -49,6 +49,7 @@ interface SupportPortalConfig {
 }
 
 type FormDataState = Record<string, string | string[]>;
+type LayoutWidth = SupportField["layoutWidth"];
 
 const requesterKeys = new Set(["requesterName", "requesterEmail", "requesterPhone", "department", "location", "supervisor"]);
 const requestKeys = new Set(["requestType", "subject", "description", "occurredAt", "issueFrequency", "category", "hardwareSubcategory", "softwareSubcategory", "priority", "affectedPeople", "impact"]);
@@ -101,6 +102,16 @@ function priorityLabel(option: string) {
   if (option === "HIGH") return "High - Blocks important tasks";
   if (option === "CRITICAL") return "Critical - Service is down";
   return option;
+}
+
+function effectiveLayoutWidth(field: SupportField): LayoutWidth {
+  if (field.layoutWidth) {
+    return field.layoutWidth;
+  }
+  if (["TEXTAREA", "MULTI_SELECT", "CHECKBOX", "RADIO"].includes(field.type)) {
+    return "FULL";
+  }
+  return "HALF";
 }
 
 export function PublicSupportTicketRequest() {
@@ -188,10 +199,14 @@ export function PublicSupportTicketRequest() {
   function renderField(field: SupportField) {
     const label = `${field.label}${field.isRequired ? " *" : ""}`;
     const commonHelp = field.helpText ? <small>{field.helpText}</small> : null;
-    const layoutClass = `support-layout-${(field.layoutWidth ?? "HALF").toLowerCase()}`;
+    const layoutWidth = effectiveLayoutWidth(field);
+    const layoutProps = {
+      className: `support-layout-${layoutWidth.toLowerCase()}`,
+      "data-layout-width": layoutWidth
+    };
     if (field.type === "TEXTAREA") {
       return (
-        <label className={layoutClass} key={field.id}>
+        <label {...layoutProps} key={field.id}>
           {label}
           <textarea className="public-event-input" required={field.isRequired} placeholder={field.placeholder ?? ""} value={fieldValue(formData, field.fieldKey)} onChange={(event) => updateField(field.fieldKey, event.target.value)} />
           {commonHelp}
@@ -200,7 +215,7 @@ export function PublicSupportTicketRequest() {
     }
     if (field.type === "SELECT") {
       return (
-        <label className={layoutClass} key={field.id}>
+        <label {...layoutProps} key={field.id}>
           {label}
           <select className="public-event-input" required={field.isRequired} value={fieldValue(formData, field.fieldKey)} onChange={(event) => updateField(field.fieldKey, event.target.value)}>
             <option value="">Select...</option>
@@ -212,7 +227,7 @@ export function PublicSupportTicketRequest() {
     }
     if (field.type === "MULTI_SELECT") {
       return (
-        <label className={layoutClass} key={field.id}>
+        <label {...layoutProps} key={field.id}>
           {label}
           <select
             className="public-event-input"
@@ -230,7 +245,7 @@ export function PublicSupportTicketRequest() {
     if (field.type === "RADIO" || field.type === "CHECKBOX") {
       const selected = fieldArrayValue(formData, field.fieldKey);
       return (
-        <fieldset className={`public-support-choice-field ${layoutClass}`} key={field.id}>
+        <fieldset {...layoutProps} className={`public-support-choice-field ${layoutProps.className}`} key={field.id}>
           <legend>{label}</legend>
           <div className="public-event-choice-group">
             {field.options.map((option) => (
@@ -269,7 +284,7 @@ export function PublicSupportTicketRequest() {
                 ? "tel"
                 : "text";
     return (
-      <label className={layoutClass} key={field.id}>
+      <label {...layoutProps} key={field.id}>
         {label}
         <input className="public-event-input" type={type} required={field.isRequired} placeholder={type === "datetime-local" ? undefined : (field.placeholder ?? "")} value={fieldValue(formData, field.fieldKey)} onChange={(event) => updateField(field.fieldKey, event.target.value)} />
         {commonHelp}

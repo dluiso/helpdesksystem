@@ -2536,19 +2536,23 @@ select.compact-select {
 }
 
 .public-event-grid .span-2,
-.public-event-grid .support-layout-full {
+.public-event-grid .support-layout-full,
+.public-event-grid > [data-layout-width="FULL"] {
   grid-column: 1 / -1;
 }
 
-.public-event-grid .support-layout-half {
+.public-event-grid .support-layout-half,
+.public-event-grid > [data-layout-width="HALF"] {
   grid-column: span 6;
 }
 
-.public-event-grid .support-layout-third {
+.public-event-grid .support-layout-third,
+.public-event-grid > [data-layout-width="THIRD"] {
   grid-column: span 4;
 }
 
-.public-event-grid .support-layout-quarter {
+.public-event-grid .support-layout-quarter,
+.public-event-grid > [data-layout-width="QUARTER"] {
   grid-column: span 3;
 }
 
