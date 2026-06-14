@@ -28,6 +28,7 @@ import { CreateEventServiceCommentDto } from "./dto/create-event-service-comment
 import { CreateEventServiceMessageDto } from "./dto/create-event-service-message.dto";
 import { CreateEventServiceTaskDto } from "./dto/create-event-service-task.dto";
 import { CreatePublicEventServiceRequestDto } from "./dto/create-public-event-service-request.dto";
+import { ListEventServiceCalendarDto } from "./dto/list-event-service-calendar.dto";
 import { ListEventServiceRequestsDto } from "./dto/list-event-service-requests.dto";
 import { SyncEventServiceTaskCalendarDto } from "./dto/sync-event-service-task-calendar.dto";
 import { UpdateEventServiceCalendarSettingsDto } from "./dto/update-event-service-calendar-settings.dto";
@@ -97,6 +98,13 @@ export class EventServicesController {
   @RequirePermissions("event_services.view")
   myTasks(@CurrentUser() user: AuthenticatedUser) {
     return this.eventServices.listMyTasks(user);
+  }
+
+  @Get("event-services/calendar")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.view")
+  calendar(@CurrentUser() user: AuthenticatedUser, @Query() query: ListEventServiceCalendarDto) {
+    return this.eventServices.listCalendar(user, query);
   }
 
   @Patch("event-services/my-tasks/:taskId")

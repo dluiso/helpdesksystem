@@ -8,6 +8,8 @@ coverage/
 .env.local
 .env.*.local
 *.log
+docs/Avidity-One-Operations-Administration-Runbook.docx
+tools/build_operations_runbook.py
 storage/local/attachments/*
 storage/local/exports/*
 storage/local/temp/*

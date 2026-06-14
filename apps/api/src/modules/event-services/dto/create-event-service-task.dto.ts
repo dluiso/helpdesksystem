@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from "class-validator";
+import { IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
 
 export class CreateEventServiceTaskDto {
   @IsString()
@@ -19,9 +19,4 @@ export class CreateEventServiceTaskDto {
   @MaxLength(80)
   dueAt?: string | null;
 
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(100)
-  progressPercent?: number;
 }

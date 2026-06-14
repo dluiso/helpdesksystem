@@ -1,5 +1,5 @@
 import { EventServiceTaskStatus } from "@prisma/client";
-import { IsEnum, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from "class-validator";
+import { IsEnum, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
 
 export class UpdateEventServiceTaskDto {
   @IsOptional()
@@ -25,9 +25,4 @@ export class UpdateEventServiceTaskDto {
   @MaxLength(80)
   dueAt?: string | null;
 
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(100)
-  progressPercent?: number;
 }

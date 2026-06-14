@@ -1,5 +1,5 @@
 import { EventServiceRequestStatus, TicketPriority } from "@prisma/client";
-import { IsArray, IsEnum, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from "class-validator";
+import { IsArray, IsEnum, IsOptional, IsString, IsUUID, MaxLength } from "class-validator";
 
 export class UpdateEventServiceRequestDto {
   @IsOptional()
@@ -9,16 +9,6 @@ export class UpdateEventServiceRequestDto {
   @IsOptional()
   @IsEnum(TicketPriority)
   priority?: TicketPriority;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(100)
-  progressPercent?: number;
-
-  @IsOptional()
-  @IsUUID()
-  assignedTeamId?: string | null;
 
   @IsOptional()
   @IsArray()

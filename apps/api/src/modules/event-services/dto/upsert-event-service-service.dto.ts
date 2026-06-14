@@ -25,10 +25,6 @@ export class UpsertEventServiceServiceDto {
   sortOrder?: number;
 
   @IsOptional()
-  @IsUUID()
-  defaultTeamId?: string | null;
-
-  @IsOptional()
   @IsArray()
   @IsUUID(undefined, { each: true })
   defaultUserIds?: string[];

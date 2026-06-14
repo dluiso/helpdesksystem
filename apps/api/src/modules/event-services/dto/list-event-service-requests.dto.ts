@@ -15,10 +15,6 @@ export class ListEventServiceRequestsDto {
 
   @IsOptional()
   @IsUUID()
-  assignedTeamId?: string;
-
-  @IsOptional()
-  @IsUUID()
   serviceId?: string;
 
   @IsOptional()

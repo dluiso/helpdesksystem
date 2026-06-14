@@ -11,11 +11,6 @@ interface UserOption {
   email: string;
 }
 
-interface TicketTeam {
-  id: string;
-  name: string;
-}
-
 interface EventServiceCatalogItem {
   id: string;
   name: string;
@@ -23,7 +18,6 @@ interface EventServiceCatalogItem {
   icon: string | null;
   sortOrder: number;
   isActive: boolean;
-  defaultTeamId: string | null;
   defaultUserIds: string[];
 }
 
@@ -96,7 +90,6 @@ type ServiceDraft = {
   icon: string;
   sortOrder: number;
   isActive: boolean;
-  defaultTeamId: string;
   defaultUserIds: string[];
 };
 
@@ -112,7 +105,7 @@ type FieldDraft = {
   isActive: boolean;
 };
 
-const blankServiceDraft: ServiceDraft = { name: "", description: "", icon: "", sortOrder: 100, isActive: true, defaultTeamId: "", defaultUserIds: [] };
+const blankServiceDraft: ServiceDraft = { name: "", description: "", icon: "", sortOrder: 100, isActive: true, defaultUserIds: [] };
 const blankFieldDraft: FieldDraft = { label: "", fieldKey: "", type: "TEXT", placeholder: "", helpText: "", optionsText: "", isRequired: false, sortOrder: 100, isActive: true };
 
 function serviceToDraft(service: EventServiceCatalogItem): ServiceDraft {
@@ -122,7 +115,6 @@ function serviceToDraft(service: EventServiceCatalogItem): ServiceDraft {
     icon: service.icon ?? "",
     sortOrder: service.sortOrder,
     isActive: service.isActive,
-    defaultTeamId: service.defaultTeamId ?? "",
     defaultUserIds: service.defaultUserIds ?? []
   };
 }
@@ -145,7 +137,6 @@ export function EventServicesConfigPanel() {
   const [activeTab, setActiveTab] = useState<"form" | "preview" | "turnstile" | "calendar">("form");
   const [services, setServices] = useState<EventServiceCatalogItem[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
-  const [teams, setTeams] = useState<TicketTeam[]>([]);
   const [form, setForm] = useState<EventForm | null>(null);
   const [turnstile, setTurnstile] = useState<EventTurnstileSettings>({
     eventTurnstileEnabled: false,
@@ -175,18 +166,16 @@ export function EventServicesConfigPanel() {
   async function loadConfig() {
     setError(null);
     try {
-      const [serviceData, formData, turnstileData, calendarData, userData, teamData] = await Promise.all([
+      const [serviceData, formData, turnstileData, calendarData, userData] = await Promise.all([
         apiFetch<EventServiceCatalogItem[]>("/event-services/services"),
         apiFetch<EventForm>("/event-services/form"),
         apiFetch<EventTurnstileSettings>("/event-services/config/turnstile"),
         apiFetch<EventCalendarSettings>("/event-services/config/calendar"),
-        apiFetch<UserOption[]>("/users"),
-        apiFetch<TicketTeam[]>("/ticket-teams")
+        apiFetch<UserOption[]>("/users")
       ]);
       setServices(serviceData);
       setForm(formData);
       setUsers(userData);
-      setTeams(teamData);
       setTurnstile({
         eventTurnstileEnabled: turnstileData.eventTurnstileEnabled,
         eventTurnstileSiteKey: turnstileData.eventTurnstileSiteKey ?? "",
@@ -217,7 +206,6 @@ export function EventServicesConfigPanel() {
       icon: draft.icon.trim() || null,
       sortOrder: draft.sortOrder,
       isActive: draft.isActive,
-      defaultTeamId: draft.defaultTeamId || null,
       defaultUserIds: draft.defaultUserIds
     };
   }
@@ -442,7 +430,7 @@ export function EventServicesConfigPanel() {
         <div className="event-admin-grid settings-section">
           <div className="nested-panel event-config-list-panel">
             <h3>Services</h3>
-            <p className="muted">Manage the service choices shown on the public form and optional default assignment.</p>
+            <p className="muted">Manage the service choices shown on the public form and optional default specialist assignment.</p>
             <div className="event-config-create-grid">
               <input className="input" placeholder="Service name" value={serviceDraft.name} onChange={(event) => setServiceDraft((current) => ({ ...current, name: event.target.value }))} />
               <input className="input" placeholder="Description" value={serviceDraft.description} onChange={(event) => setServiceDraft((current) => ({ ...current, description: event.target.value }))} />
@@ -462,10 +450,6 @@ export function EventServicesConfigPanel() {
                         <input className="input" value={draft.description} placeholder="Description" onChange={(event) => updateServiceEdit(service.id, { description: event.target.value })} />
                         <input className="input" value={draft.icon} placeholder="Icon label" onChange={(event) => updateServiceEdit(service.id, { icon: event.target.value })} />
                         <input className="input" type="number" min={0} value={draft.sortOrder} onChange={(event) => updateServiceEdit(service.id, { sortOrder: Number(event.target.value) })} />
-                        <select className="input" value={draft.defaultTeamId} onChange={(event) => updateServiceEdit(service.id, { defaultTeamId: event.target.value })}>
-                          <option value="">No default team</option>
-                          {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
-                        </select>
                         <div className="event-config-checkbox-grid">
                           {users.map((user) => (
                             <label key={user.id}>
@@ -489,7 +473,7 @@ export function EventServicesConfigPanel() {
                         <div>
                           <strong>{service.name}</strong>
                           <span className="muted">{service.description || "No description"}</span>
-                          <small>{service.defaultTeamId ? `Default team: ${teams.find((team) => team.id === service.defaultTeamId)?.name ?? "Selected team"}` : "No default team"} · {service.defaultUserIds.length} default users</small>
+                          <small>{service.defaultUserIds.length} default specialist{service.defaultUserIds.length === 1 ? "" : "s"}</small>
                         </div>
                         <span className="status-pill">{service.isActive ? "Active" : "Inactive"}</span>
                         <div className="event-config-actions">

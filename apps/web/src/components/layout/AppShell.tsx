@@ -127,11 +127,20 @@ export function AppShell({ children }: { children: ReactNode }) {
           {navigation.map((item) => {
             const Icon = iconMap[item.label as keyof typeof iconMap] ?? LifeBuoy;
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const eventServicesActive = item.label === "Event & Services" && active;
             return (
-              <Link className={`nav-link${active ? " active" : ""}`} href={item.href} key={item.href}>
-                <Icon size={18} aria-hidden="true" />
-                <span>{item.label}</span>
-              </Link>
+              <div className="nav-item-group" key={item.href}>
+                <Link className={`nav-link${active ? " active" : ""}`} href={item.href}>
+                  <Icon size={18} aria-hidden="true" />
+                  <span>{item.label}</span>
+                </Link>
+                {eventServicesActive ? (
+                  <div className="nav-submenu" aria-label="Event & Services subnavigation">
+                    <Link className={pathname === "/event-services" ? "active" : ""} href="/event-services">Requests</Link>
+                    <Link className={pathname === "/event-services/calendar" ? "active" : ""} href="/event-services/calendar">Calendar View</Link>
+                  </div>
+                ) : null}
+              </div>
             );
           })}
         </nav>

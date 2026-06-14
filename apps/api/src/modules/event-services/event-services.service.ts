@@ -13,6 +13,7 @@ import { CreateEventServiceMessageDto } from "./dto/create-event-service-message
 import { CreateEventServiceTaskDto } from "./dto/create-event-service-task.dto";
 import { SyncEventServiceTaskCalendarDto } from "./dto/sync-event-service-task-calendar.dto";
 import { CreatePublicEventServiceRequestDto } from "./dto/create-public-event-service-request.dto";
+import { ListEventServiceCalendarDto } from "./dto/list-event-service-calendar.dto";
 import { ListEventServiceRequestsDto } from "./dto/list-event-service-requests.dto";
 import { UpdateEventServiceCalendarSettingsDto } from "./dto/update-event-service-calendar-settings.dto";
 import { UpdateEventServiceTurnstileDto } from "./dto/update-event-service-turnstile.dto";
@@ -82,7 +83,6 @@ export class EventServicesService {
       throw new BadRequestException("Select at least one active service.");
     }
 
-    const assignedTeamId = services.find((service) => service.defaultTeamId)?.defaultTeamId ?? null;
     const defaultUserIds = [...new Set(services.flatMap((service) => service.defaultUserIds))];
     const validUserIds = await this.validUserIds(organization.id, defaultUserIds);
     const trackingNumber = await this.nextTrackingNumber(organization.id);
@@ -94,7 +94,6 @@ export class EventServicesService {
         trackingNumber,
         clientId: clientMapping.clientId,
         contactId: clientMapping.contactId,
-        assignedTeamId,
         eventName: input.eventName.trim(),
         organizer: this.optionalTrim(input.organizer),
         venue: this.optionalTrim(input.venue),
@@ -105,7 +104,7 @@ export class EventServicesService {
         requesterLastName: input.requesterLastName.trim(),
         requesterEmail: input.requesterEmail.trim().toLowerCase(),
         requesterPhone: this.optionalTrim(input.requesterPhone),
-        status: validUserIds.length || assignedTeamId ? EventServiceRequestStatus.ASSIGNED : EventServiceRequestStatus.NEW,
+        status: validUserIds.length ? EventServiceRequestStatus.ASSIGNED : EventServiceRequestStatus.NEW,
         additionalInfo: this.optionalTrim(input.additionalInfo),
         formData: input.formData ? (input.formData as Prisma.InputJsonValue) : undefined,
         submittedFromIp: context.ipAddress,
@@ -143,9 +142,6 @@ export class EventServicesService {
     if (query.status) {
       where.status = query.status as EventServiceRequestStatus;
     }
-    if (query.assignedTeamId) {
-      where.assignedTeamId = query.assignedTeamId;
-    }
     if (query.assignedUserId) {
       where.assignees = { some: { userId: query.assignedUserId } };
     }
@@ -170,6 +166,40 @@ export class EventServicesService {
       include: this.requestInclude(),
       orderBy: { [sortBy]: "desc" },
       take: 150
+    });
+  }
+
+  async listCalendar(user: AuthenticatedUser, query: ListEventServiceCalendarDto) {
+    const where: Prisma.EventServiceRequestWhereInput = {
+      organizationId: user.organizationId,
+      deletedAt: null
+    };
+    const start = this.parseOptionalDate(query.start);
+    const end = this.parseOptionalDate(query.end);
+    if (start || end) {
+      where.eventDate = {
+        ...(start ? { gte: start } : {}),
+        ...(end ? { lte: end } : {})
+      };
+    }
+    if (query.status) {
+      where.status = query.status as EventServiceRequestStatus;
+    }
+    if (query.assignedUserId) {
+      where.OR = [
+        { assignees: { some: { userId: query.assignedUserId } } },
+        { tasks: { some: { assignedUserId: query.assignedUserId } } }
+      ];
+    }
+    if (query.serviceId) {
+      where.services = { some: { serviceId: query.serviceId } };
+    }
+
+    return this.prisma.eventServiceRequest.findMany({
+      where,
+      include: this.requestInclude(),
+      orderBy: [{ eventDate: "asc" }, { startTime: "asc" }, { updatedAt: "desc" }],
+      take: 250
     });
   }
 
@@ -216,9 +246,6 @@ export class EventServicesService {
   async update(requestId: string, user: AuthenticatedUser, input: UpdateEventServiceRequestDto) {
     const existing = await this.get(requestId, user);
     const assignedUserIds = input.assignedUserIds === undefined ? null : await this.validUserIds(user.organizationId, input.assignedUserIds);
-    if (input.assignedTeamId) {
-      await this.ensureTeam(input.assignedTeamId, user.organizationId);
-    }
 
     const updated = await this.prisma.$transaction(async (tx) => {
       if (assignedUserIds) {
@@ -236,8 +263,6 @@ export class EventServicesService {
         data: {
           status: input.status,
           priority: input.priority,
-          progressPercent: input.progressPercent,
-          assignedTeamId: input.assignedTeamId === undefined ? undefined : input.assignedTeamId,
           additionalInfo: input.additionalInfo === undefined ? undefined : this.optionalTrim(input.additionalInfo),
           completedAt: input.status === EventServiceRequestStatus.COMPLETED ? new Date() : undefined,
           cancelledAt: input.status === EventServiceRequestStatus.CANCELLED ? new Date() : undefined
@@ -249,9 +274,7 @@ export class EventServicesService {
     await this.logActivity(requestId, user.id, "event_service_request.updated", {
       status: input.status,
       priority: input.priority,
-      progressPercent: input.progressPercent,
-      assignedUserIds: assignedUserIds ?? undefined,
-      assignedTeamId: input.assignedTeamId
+      assignedUserIds: assignedUserIds ?? undefined
     });
     await this.notifyAssignedUsers(requestId, "Event request updated", `${updated.trackingNumber}: ${updated.eventName}`, "eventRequestUpdated", user.id);
     if (input.status && input.status !== existing.status) {
@@ -336,8 +359,7 @@ export class EventServicesService {
         title: input.title.trim(),
         description: this.optionalTrim(input.description),
         assignedUserId: input.assignedUserId ?? null,
-        dueAt: this.parseOptionalDate(input.dueAt),
-        progressPercent: input.progressPercent ?? 0
+        dueAt: this.parseOptionalDate(input.dueAt)
       },
       include: { assignedUser: { select: this.userSelect() } }
     });
@@ -360,13 +382,11 @@ export class EventServicesService {
         description: input.description === undefined ? undefined : this.optionalTrim(input.description),
         status: input.status,
         assignedUserId: input.assignedUserId === undefined ? undefined : input.assignedUserId,
-        dueAt: input.dueAt === undefined ? undefined : this.parseOptionalDate(input.dueAt),
-        progressPercent: input.progressPercent
+        dueAt: input.dueAt === undefined ? undefined : this.parseOptionalDate(input.dueAt)
       },
       include: { assignedUser: { select: this.userSelect() } }
     });
-    await this.recalculateProgress(requestId);
-    await this.logActivity(requestId, user.id, "event_service_task.updated", { taskId, status: task.status, progressPercent: task.progressPercent });
+    await this.logActivity(requestId, user.id, "event_service_task.updated", { taskId, status: task.status });
     await this.notifyAssignedUsers(requestId, "Event task updated", `${task.title} is ${this.statusLabel(task.status)}`, "eventTaskUpdated", user.id, taskId);
     return task;
   }
@@ -387,8 +407,7 @@ export class EventServicesService {
     const updated = await this.prisma.eventServiceTask.update({
       where: { id: taskId },
       data: {
-        status: input.status,
-        progressPercent: input.progressPercent
+        status: input.status
       },
       include: {
         assignedUser: { select: this.userSelect() },
@@ -400,14 +419,12 @@ export class EventServicesService {
         data: { requestId: task.requestId, userId: user.id, body: input.comment.trim() }
       });
     }
-    await this.recalculateProgress(task.requestId);
     await this.logActivity(task.requestId, user.id, "event_service_task.self_updated", {
       taskId,
       status: input.status,
-      progressPercent: input.progressPercent,
       commentAdded: Boolean(input.comment?.trim())
     });
-    await this.notifyAssignedUsers(task.requestId, "Event task progress updated", `${task.title} was updated by ${user.email}`, "eventTaskUpdated", user.id, taskId);
+    await this.notifyAssignedUsers(task.requestId, "Event task updated", `${task.title} was updated by ${user.email}`, "eventTaskUpdated", user.id, taskId);
     return updated;
   }
 
@@ -729,7 +746,6 @@ export class EventServicesService {
       client: { select: { id: true, name: true, shortName: true } },
       contact: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
       linkedTicket: { select: { id: true, ticketNumber: true, subject: true } },
-      assignedTeam: { select: { id: true, name: true } },
       services: { include: { service: true }, orderBy: { service: { name: "asc" } } },
       assignees: { include: { user: { select: this.userSelect() } }, orderBy: { createdAt: "asc" } },
       tasks: { include: { assignedUser: { select: this.userSelect() } }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
@@ -904,11 +920,6 @@ export class EventServicesService {
     if (!user) throw new BadRequestException("Selected user was not found.");
   }
 
-  private async ensureTeam(teamId: string, organizationId: string) {
-    const team = await this.prisma.ticketTeam.findFirst({ where: { id: teamId, organizationId, isActive: true } });
-    if (!team) throw new BadRequestException("Selected team was not found.");
-  }
-
   private async ensureService(serviceId: string, organizationId: string) {
     const service = await this.prisma.eventServiceService.findFirst({ where: { id: serviceId, organizationId } });
     if (!service) throw new NotFoundException("Event service was not found.");
@@ -922,7 +933,6 @@ export class EventServicesService {
       icon: this.optionalTrim(input.icon),
       sortOrder: input.sortOrder ?? 0,
       isActive: input.isActive ?? true,
-      defaultTeamId: input.defaultTeamId ?? null,
       defaultUserIds: input.defaultUserIds ?? []
     };
   }
@@ -934,7 +944,6 @@ export class EventServicesService {
       icon: this.optionalTrim(input.icon),
       sortOrder: input.sortOrder ?? 0,
       isActive: input.isActive ?? true,
-      defaultTeamId: input.defaultTeamId ?? null,
       defaultUserIds: input.defaultUserIds ?? []
     };
   }
@@ -979,13 +988,6 @@ export class EventServicesService {
         throw new BadRequestException(`${field.label} is required.`);
       }
     }
-  }
-
-  private async recalculateProgress(requestId: string) {
-    const tasks = await this.prisma.eventServiceTask.findMany({ where: { requestId }, select: { progressPercent: true } });
-    if (!tasks.length) return;
-    const progressPercent = Math.round(tasks.reduce((sum, task) => sum + task.progressPercent, 0) / tasks.length);
-    await this.prisma.eventServiceRequest.update({ where: { id: requestId }, data: { progressPercent } });
   }
 
   private async notifyAssignedUsers(requestId: string, title: string, body: string, eventType: NotificationEventType, excludeUserId?: string, taskId?: string) {

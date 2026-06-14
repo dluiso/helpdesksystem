@@ -17,18 +17,12 @@ interface UserOption {
   email: string;
 }
 
-interface TicketTeam {
-  id: string;
-  name: string;
-}
-
 interface EventServiceCatalogItem {
   id: string;
   name: string;
   description: string | null;
   icon: string | null;
   isActive: boolean;
-  defaultTeamId: string | null;
   defaultUserIds: string[];
 }
 
@@ -47,16 +41,14 @@ interface EventServiceRequest {
   requesterPhone: string | null;
   status: EventStatus;
   priority: Priority;
-  progressPercent: number;
   additionalInfo: string | null;
   createdAt: string;
   updatedAt: string;
   deletedAt?: string | null;
   client: { id: string; name: string; shortName: string | null } | null;
-  assignedTeam: TicketTeam | null;
   services: Array<{ service: EventServiceCatalogItem }>;
   assignees: Array<{ user: UserOption; role: string | null }>;
-  tasks: Array<{ id: string; title: string; description: string | null; status: TaskStatus; progressPercent: number; dueAt: string | null; calendarEventId: string | null; calendarUserEmail: string | null; calendarSyncedAt: string | null; calendarSyncError: string | null; assignedUser: UserOption | null }>;
+  tasks: Array<{ id: string; title: string; description: string | null; status: TaskStatus; dueAt: string | null; calendarEventId: string | null; calendarUserEmail: string | null; calendarSyncedAt: string | null; calendarSyncError: string | null; assignedUser: UserOption | null }>;
   comments?: Array<{ id: string; body: string; createdAt: string; user: UserOption | null }>;
   messages?: Array<{
     id: string;
@@ -77,7 +69,6 @@ interface EventServiceTaskAssignment {
   title: string;
   description: string | null;
   status: TaskStatus;
-  progressPercent: number;
   dueAt: string | null;
   updatedAt: string;
   calendarEventId: string | null;
@@ -136,7 +127,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
   const [activeTab, setActiveTab] = useState<"requests" | "myTasks">("requests");
   const [requests, setRequests] = useState<EventServiceRequest[]>([]);
   const [myTasks, setMyTasks] = useState<EventServiceTaskAssignment[]>([]);
-  const [myTaskDrafts, setMyTaskDrafts] = useState<Record<string, { status: TaskStatus; progressPercent: number; comment: string }>>({});
+  const [myTaskDrafts, setMyTaskDrafts] = useState<Record<string, { status: TaskStatus; comment: string }>>({});
   const [selectedId, setSelectedId] = useState<string | null>(detailTrackingNumber ?? null);
   const [selected, setSelected] = useState<EventServiceRequest | null>(null);
   const [detailSection, setDetailSection] = useState<"overview" | "tasks" | "messages" | "activity">("overview");
@@ -146,9 +137,8 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
   const [recycledRequests, setRecycledRequests] = useState<EventServiceRequest[]>([]);
   const [services, setServices] = useState<EventServiceCatalogItem[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
-  const [teams, setTeams] = useState<TicketTeam[]>([]);
-  const [filters, setFilters] = useState({ search: "", status: "", assignedUserId: "", assignedTeamId: "", serviceId: "" });
-  const [draft, setDraft] = useState({ status: "NEW" as EventStatus, priority: "NORMAL" as Priority, progressPercent: 0, assignedTeamId: "", assignedUserIds: [] as string[], additionalInfo: "" });
+  const [filters, setFilters] = useState({ search: "", status: "", assignedUserId: "", serviceId: "" });
+  const [draft, setDraft] = useState({ status: "NEW" as EventStatus, priority: "NORMAL" as Priority, assignedUserIds: [] as string[], additionalInfo: "" });
   const [taskDraft, setTaskDraft] = useState({ title: "", assignedUserId: "", description: "", dueAt: "" });
   const [commentDraft, setCommentDraft] = useState("");
   const [calendarDrafts, setCalendarDrafts] = useState<Record<string, { startDate: string; startTime: string; endDate: string; endTime: string; location: string; notes: string }>>({});
@@ -160,7 +150,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
   const summary = useMemo(() => ({
     total: requests.length,
     newRequests: requests.filter((item) => item.status === "NEW").length,
-    assigned: requests.filter((item) => item.status === "ASSIGNED" || item.status === "IN_PROGRESS").length,
+    assigned: requests.filter((item) => item.assignees.length > 0 || item.tasks.some((task) => task.assignedUser)).length,
     completed: requests.filter((item) => item.status === "COMPLETED").length
   }), [requests]);
 
@@ -172,25 +162,23 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
       if (value) params.set(key, value);
     });
     try {
-      const [requestData, myTaskData, serviceData, userData, teamData] = await Promise.all([
+      const [requestData, myTaskData, serviceData, userData] = await Promise.all([
         apiFetch<EventServiceRequest[]>(`/event-services?${params.toString()}`),
         apiFetch<EventServiceTaskAssignment[]>("/event-services/my-tasks"),
         apiFetch<EventServiceCatalogItem[]>("/event-services/services"),
-        apiFetch<UserOption[]>("/users"),
-        apiFetch<TicketTeam[]>("/ticket-teams")
+        apiFetch<UserOption[]>("/users")
       ]);
       setRequests(requestData);
       setMyTasks(myTaskData);
       setMyTaskDrafts((current) => {
-        const next: Record<string, { status: TaskStatus; progressPercent: number; comment: string }> = {};
+        const next: Record<string, { status: TaskStatus; comment: string }> = {};
         myTaskData.forEach((task) => {
-          next[task.id] = current[task.id] ?? { status: task.status, progressPercent: task.progressPercent, comment: "" };
+          next[task.id] = current[task.id] ?? { status: task.status, comment: "" };
         });
         return next;
       });
       setServices(serviceData);
       setUsers(userData);
-      setTeams(teamData);
       setSelectedRequestIds((current) => current.filter((id) => requestData.some((request) => request.id === id)));
       if (selectedId && !detailOpen && !requestData.some((request) => request.id === selectedId)) {
         setSelectedId(null);
@@ -216,8 +204,6 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
       setDraft({
         status: item.status,
         priority: item.priority,
-        progressPercent: item.progressPercent,
-        assignedTeamId: item.assignedTeam?.id ?? "",
         assignedUserIds: item.assignees.map((assignee) => assignee.user.id),
         additionalInfo: item.additionalInfo ?? ""
       });
@@ -284,7 +270,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
     setSelected((current) => current?.id === updated.id ? updated : current);
   }
 
-  async function quickUpdateRequest(request: EventServiceRequest, patch: Partial<Pick<EventServiceRequest, "status" | "priority">> & { assignedTeamId?: string | null }) {
+  async function quickUpdateRequest(request: EventServiceRequest, patch: Partial<Pick<EventServiceRequest, "status" | "priority">>) {
     setBusy(`quick-${request.id}`);
     setError(null);
     try {
@@ -364,7 +350,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
     try {
       const updated = await apiFetch<EventServiceRequest>(`/event-services/${selected.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ ...draft, assignedTeamId: draft.assignedTeamId || null })
+        body: JSON.stringify(draft)
       });
       setSelected(updated);
       setNotice("Event request saved.");
@@ -393,7 +379,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
     }
   }
 
-  async function updateTask(taskId: string, patch: Partial<{ status: TaskStatus; progressPercent: number; assignedUserId: string; dueAt: string | null }>) {
+  async function updateTask(taskId: string, patch: Partial<{ status: TaskStatus; assignedUserId: string; dueAt: string | null }>) {
     if (!selected) return;
     await apiFetch(`/event-services/${selected.id}/tasks/${taskId}`, {
       method: "PATCH",
@@ -403,11 +389,11 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
     await loadData();
   }
 
-  function updateMyTaskDraft(taskId: string, patch: Partial<{ status: TaskStatus; progressPercent: number; comment: string }>) {
+  function updateMyTaskDraft(taskId: string, patch: Partial<{ status: TaskStatus; comment: string }>) {
     setMyTaskDrafts((current) => ({
       ...current,
       [taskId]: {
-        ...(current[taskId] ?? { status: "TODO" as TaskStatus, progressPercent: 0, comment: "" }),
+        ...(current[taskId] ?? { status: "TODO" as TaskStatus, comment: "" }),
         ...patch
       }
     }));
@@ -423,14 +409,13 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
         method: "PATCH",
         body: JSON.stringify({
           status: draft.status,
-          progressPercent: draft.progressPercent,
           comment: draft.comment.trim() || undefined
         })
       });
-      setNotice("Task progress saved.");
+      setNotice("Task status saved.");
       await loadData();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to save task progress.");
+      setError(caught instanceof Error ? caught.message : "Unable to save task status.");
     } finally {
       setBusy(null);
     }
@@ -498,6 +483,10 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                 <ExternalLink size={16} aria-hidden="true" />
                 <span>Customer Portal</span>
               </button>
+              <button className="button secondary" type="button" onClick={() => { window.location.href = "/event-services/calendar"; }}>
+                <CalendarDays size={16} aria-hidden="true" />
+                <span>Calendar View</span>
+              </button>
               <button className="button secondary" type="button" onClick={() => void loadRecycleBin()} disabled={busy === "recycle-bin"}>
                 <Trash2 size={16} aria-hidden="true" />
                 <span>Recycle Bin</span>
@@ -516,7 +505,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
       <section className="dashboard-kpi-grid event-kpi-grid event-compact-kpi-grid">
         <div className="dashboard-kpi-card"><ClipboardList size={18} /><span>Total Requests</span><strong>{summary.total}</strong><small>Current filtered view</small></div>
         <div className="dashboard-kpi-card"><CalendarDays size={18} /><span>New</span><strong>{summary.newRequests}</strong><small>Needs review</small></div>
-        <div className="dashboard-kpi-card"><UsersRound size={18} /><span>Assigned / Active</span><strong>{summary.assigned}</strong><small>Team workload</small></div>
+        <div className="dashboard-kpi-card"><UsersRound size={18} /><span>Assigned Specialists</span><strong>{summary.assigned}</strong><small>Direct assignments</small></div>
         <div className="dashboard-kpi-card"><CheckCircle2 size={18} /><span>Completed</span><strong>{summary.completed}</strong><small>Finished events</small></div>
       </section>
 
@@ -582,8 +571,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                   <th>Services</th>
                   <th>Status</th>
                   <th>Priority</th>
-                  <th>Assigned</th>
-                  <th>Progress</th>
+                  <th>Specialists</th>
                   <th>Updated</th>
                   <th>Action</th>
                 </tr>
@@ -591,7 +579,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
               <tbody>
                 {requests.length === 0 ? (
                   <tr>
-                    <td colSpan={12}>
+                    <td colSpan={11}>
                       <span className="muted">{loading ? "Loading requests..." : "No event requests match the filters."}</span>
                     </td>
                   </tr>
@@ -636,23 +624,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                       </span>
                     </td>
                     <td>{label(request.priority)}</td>
-                    <td>
-                      <span className="event-select-wrap">
-                        <select
-                          className="input compact-select event-inline-select"
-                          value={request.assignedTeam?.id ?? ""}
-                          disabled={busy === `quick-${request.id}`}
-                          onChange={(event) => { event.stopPropagation(); void quickUpdateRequest(request, { assignedTeamId: event.target.value || null }); }}
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          <option value="">No team</option>
-                          {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
-                        </select>
-                        <ChevronDown className="event-select-chevron" size={15} aria-hidden="true" />
-                      </span>
-                      <span className="muted">{request.assignees.map((assignee) => userName(assignee.user)).join(", ") || "Unassigned"}</span>
-                    </td>
-                    <td><span className="count-pill">{request.progressPercent}%</span></td>
+                    <td><span className="muted">{request.assignees.map((assignee) => userName(assignee.user)).join(", ") || "Unassigned"}</span></td>
                     <td>{formatDateTime(request.updatedAt)}</td>
                     <td>
                       <button className="event-open-button" type="button" onClick={(event) => { event.stopPropagation(); openRequest(request); }}>
@@ -676,7 +648,6 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                   <p className="muted">{selected.eventName}</p>
                 </div>
                 <div className="button-row">
-                  <span className="count-pill">{selected.progressPercent}%</span>
                   <button className="icon-button" type="button" onClick={closeRequest} aria-label="Close event details">
                     <X size={16} aria-hidden="true" />
                   </button>
@@ -704,15 +675,13 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                   <div className="section-heading compact-heading">
                     <div>
                       <h3>Request Management</h3>
-                      <p className="muted">Update assignment, status, priority, progress, and internal request notes.</p>
+                      <p className="muted">Update status, priority, specialists, and internal request notes.</p>
                     </div>
                     <button className="button" type="button" onClick={saveRequest} disabled={busy === "request"}><Save size={16} />Save Request</button>
                   </div>
                   <div className="event-management-grid">
                     <label>Status<select className="input" value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as EventStatus }))}>{statuses.map((status) => <option key={status} value={status}>{label(status)}</option>)}</select></label>
                     <label>Priority<select className="input" value={draft.priority} onChange={(event) => setDraft((current) => ({ ...current, priority: event.target.value as Priority }))}>{priorities.map((priority) => <option key={priority} value={priority}>{label(priority)}</option>)}</select></label>
-                    <label>Progress<input className="input" type="number" min={0} max={100} value={draft.progressPercent} onChange={(event) => setDraft((current) => ({ ...current, progressPercent: Number(event.target.value) }))} /></label>
-                    <label>Team<select className="input" value={draft.assignedTeamId} onChange={(event) => setDraft((current) => ({ ...current, assignedTeamId: event.target.value }))}><option value="">No team</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
                   </div>
                   <div className="event-assignee-picker">
                     <strong>Technicians</strong>
@@ -736,7 +705,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                   <div className="section-heading compact-heading">
                     <div>
                       <h3>Task Flow</h3>
-                      <p className="muted">Track specialist work, due dates, progress, and optional calendar sync.</p>
+                      <p className="muted">Track specialist work, due dates, status, and optional calendar sync.</p>
                     </div>
                   </div>
                   <div className="event-task-create">
@@ -759,7 +728,6 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                               <span className="muted">Due: {formatDateTime(task.dueAt)}</span>
                               <div className="event-task-controls">
                                 <select className="input compact-select" value={task.status} onChange={(event) => void updateTask(task.id, { status: event.target.value as TaskStatus })}>{taskStatuses.map((item) => <option key={item} value={item}>{label(item)}</option>)}</select>
-                                <input className="input event-progress-input" type="number" min={0} max={100} value={task.progressPercent} onChange={(event) => void updateTask(task.id, { progressPercent: Number(event.target.value) })} />
                               </div>
                               <details className="event-calendar-sync">
                                 <summary><CalendarPlus size={14} /> Calendar</summary>
@@ -841,7 +809,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
           <div className="section-heading compact-heading">
             <div>
               <h2>My Event Tasks</h2>
-              <p className="muted">Update the event tasks assigned to you and report progress to the rest of the team.</p>
+              <p className="muted">Update the event tasks assigned to you and keep the rest of the team informed.</p>
             </div>
             <button className="button secondary" type="button" onClick={() => void loadData()} disabled={loading}>
               <RefreshCw size={16} aria-hidden="true" />
@@ -856,8 +824,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                   <th>Event</th>
                   <th>Date / Time</th>
                   <th>Status</th>
-                  <th>Progress</th>
-                  <th>Progress note</th>
+                  <th>Update note</th>
                   <th>Updated</th>
                   <th>Action</th>
                 </tr>
@@ -865,11 +832,11 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
               <tbody>
                 {myTasks.length === 0 ? (
                   <tr>
-                    <td colSpan={8}><span className="muted">{loading ? "Loading tasks..." : "No event tasks are assigned to you."}</span></td>
+                    <td colSpan={7}><span className="muted">{loading ? "Loading tasks..." : "No event tasks are assigned to you."}</span></td>
                   </tr>
                 ) : null}
                 {myTasks.map((task) => {
-                  const draftTask = myTaskDrafts[task.id] ?? { status: task.status, progressPercent: task.progressPercent, comment: "" };
+                  const draftTask = myTaskDrafts[task.id] ?? { status: task.status, comment: "" };
                   return (
                     <tr key={task.id}>
                       <td>
@@ -888,9 +855,6 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                         <select className="input compact-select event-inline-select" value={draftTask.status} onChange={(event) => updateMyTaskDraft(task.id, { status: event.target.value as TaskStatus })}>
                           {taskStatuses.map((status) => <option key={status} value={status}>{label(status)}</option>)}
                         </select>
-                      </td>
-                      <td>
-                        <input className="input event-progress-input" type="number" min={0} max={100} value={draftTask.progressPercent} onChange={(event) => updateMyTaskDraft(task.id, { progressPercent: Number(event.target.value) })} />
                       </td>
                       <td>
                         <input className="input" placeholder="Optional note..." value={draftTask.comment} onChange={(event) => updateMyTaskDraft(task.id, { comment: event.target.value })} />
