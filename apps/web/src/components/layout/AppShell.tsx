@@ -12,8 +12,7 @@ import {
   Menu,
   Settings,
   UserRound,
-  Ticket,
-  UsersRound
+  Ticket
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -28,7 +27,6 @@ const iconMap = {
   Dashboard: Gauge,
   Tickets: Ticket,
   "Event & Services": CalendarDays,
-  Users: UsersRound,
   Clients: Building2,
   Devices: HardDrive,
   Reports: BarChart3,
@@ -76,7 +74,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const userPermissions = useMemo(() => new Set(user?.permissions ?? []), [user?.permissions]);
   const navigation = useMemo(
-    () => dashboardNavigation.filter((item) => !item.permission || userPermissions.has(item.permission)),
+    () => dashboardNavigation.filter((item) => item.label !== "Users" && (!item.permission || userPermissions.has(item.permission))),
     [userPermissions]
   );
   const primaryMobileNavigation = useMemo(

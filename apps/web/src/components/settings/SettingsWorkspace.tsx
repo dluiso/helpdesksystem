@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { EventServicesConfigPanel } from "@/components/settings/EventServicesConfigPanel";
 import { KnowledgeConfigPanel } from "@/components/settings/KnowledgeConfigPanel";
 import { SupportPortalConfigPanel } from "@/components/settings/SupportPortalConfigPanel";
+import { UsersWorkspace } from "@/components/users/UsersWorkspace";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
 
 interface Mailbox {
@@ -685,7 +686,7 @@ export function SettingsWorkspace() {
   const [selectedClientByDomain, setSelectedClientByDomain] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<"general" | "mailboxes" | "autoReplies" | "teams" | "routing" | "domains" | "supportPortal" | "notifications" | "events" | "knowledge" | "spam" | "maintenance" | "logs" | "security" | "ai">("general");
+  const [activeSection, setActiveSection] = useState<"general" | "users" | "mailboxes" | "autoReplies" | "teams" | "routing" | "domains" | "supportPortal" | "notifications" | "events" | "knowledge" | "spam" | "maintenance" | "logs" | "security" | "ai">("general");
   const [generalTab, setGeneralTab] = useState<GeneralTab>("identity");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1830,6 +1831,9 @@ export function SettingsWorkspace() {
           <button className={activeSection === "general" ? "active" : ""} type="button" onClick={() => setActiveSection("general")}>
             General
           </button>
+          <button className={activeSection === "users" ? "active" : ""} type="button" onClick={() => setActiveSection("users")}>
+            Users
+          </button>
           <button className={activeSection === "mailboxes" ? "active" : ""} type="button" onClick={() => setActiveSection("mailboxes")}>
             Mailboxes
           </button>
@@ -2348,6 +2352,8 @@ export function SettingsWorkspace() {
               </div>
             </section>
           ) : null}
+
+          {activeSection === "users" ? <UsersWorkspace /> : null}
 
           {activeSection === "mailboxes" ? (
       <section className="grid columns-2">
