@@ -9,7 +9,9 @@ interface ReportOption {
   name: string;
 }
 
-interface ReportSummary {
+type ReportType = "ticket-report" | "event-service-report";
+
+interface TicketReportSummary {
   filters: {
     startDate: string;
     endDate: string;
@@ -68,6 +70,63 @@ interface ReportSummary {
   totalMatched: number;
 }
 
+interface EventReportSummary {
+  filters: {
+    startDate: string;
+    endDate: string;
+    groupBy: "day" | "week" | "month" | "year";
+    page: number;
+    pageSize: number;
+  };
+  options: {
+    clients: ReportOption[];
+    users: ReportOption[];
+    services: ReportOption[];
+    statuses: string[];
+    priorities: string[];
+  };
+  summary: {
+    totalRequests: number;
+    newRequests: number;
+    assignedRequests: number;
+    completedRequests: number;
+    cancelledRequests: number;
+    totalTasks: number;
+    openTasks: number;
+    completedTasks: number;
+  };
+  activity: Array<{ period: string; label: string; created: number; completed: number; cancelled: number }>;
+  byStatus: Array<{ label: string; count: number }>;
+  byPriority: Array<{ label: string; count: number }>;
+  byService: Array<{ label: string; count: number }>;
+  byClient: Array<{ label: string; count: number }>;
+  byTechnician: Array<{ label: string; count: number }>;
+  byTaskStatus: Array<{ label: string; count: number }>;
+  detail: Array<{
+    trackingNumber: string;
+    eventName: string;
+    clientName: string;
+    requester: string;
+    requesterEmail: string;
+    eventDate: string;
+    time: string;
+    services: string;
+    status: string;
+    priority: string;
+    assignedTo: string;
+    taskCount: number;
+    completedTaskCount: number;
+    updatedAt: string;
+  }>;
+  detailLimit: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  totalMatched: number;
+}
+
+type ReportSummary = TicketReportSummary | EventReportSummary;
+
 interface SavedReport {
   id: string;
   name: string;
@@ -80,6 +139,7 @@ interface SavedReport {
     clientId: string;
     assignedUserId: string;
     assignedTeamId: string;
+    serviceId: string;
     statuses: string[];
     priority: string;
     source: string;
@@ -164,7 +224,7 @@ function SummaryCard({ title, value, note }: { title: string; value: string | nu
   );
 }
 
-function ActivityChart({ items }: { items: ReportSummary["activity"] }) {
+function ActivityChart({ items }: { items: TicketReportSummary["activity"] }) {
   const maxValue = Math.max(1, ...items.flatMap((item) => [item.created, item.closed, item.resolved]));
   return (
     <div className="panel dashboard-chart-card dashboard-wide-card">
@@ -193,6 +253,35 @@ function ActivityChart({ items }: { items: ReportSummary["activity"] }) {
   );
 }
 
+function EventActivityChart({ items }: { items: EventReportSummary["activity"] }) {
+  const maxValue = Math.max(1, ...items.flatMap((item) => [item.created, item.completed, item.cancelled]));
+  return (
+    <div className="panel dashboard-chart-card dashboard-wide-card">
+      <div>
+        <h2>Event Activity</h2>
+        <p className="muted">Created, completed, and cancelled event requests in the selected period.</p>
+      </div>
+      <div className="report-activity-chart">
+        {items.map((item, index) => (
+          <div className="report-activity-day" key={item.period} title={`${item.period}: ${item.created} created, ${item.completed} completed, ${item.cancelled} cancelled`}>
+            <div className="report-activity-bars">
+              <span className="created" style={{ height: `${Math.max(5, (item.created / maxValue) * 100)}%` }} />
+              <span className="resolved" style={{ height: `${Math.max(5, (item.completed / maxValue) * 100)}%` }} />
+              <span className="cancelled" style={{ height: `${Math.max(5, (item.cancelled / maxValue) * 100)}%` }} />
+            </div>
+            {index % 4 === 0 || index === items.length - 1 ? <small>{item.label}</small> : <small />}
+          </div>
+        ))}
+      </div>
+      <div className="dashboard-chart-legend">
+        <span><i className="created" /> Created</span>
+        <span><i className="resolved" /> Completed</span>
+        <span><i className="cancelled" /> Cancelled</span>
+      </div>
+    </div>
+  );
+}
+
 function HorizontalBars({ title, subtitle, items }: { title: string; subtitle: string; items: Array<{ label: string; count: number }> }) {
   const maxValue = Math.max(1, ...items.map((item) => item.count));
   return (
@@ -215,12 +304,14 @@ function HorizontalBars({ title, subtitle, items }: { title: string; subtitle: s
 }
 
 export function ReportsWorkspace() {
+  const [reportType, setReportType] = useState<ReportType>("ticket-report");
   const [startDate, setStartDate] = useState(defaultStartDate());
   const [endDate, setEndDate] = useState(today());
   const [groupBy, setGroupBy] = useState<"day" | "week" | "month" | "year">("day");
   const [clientId, setClientId] = useState("");
   const [assignedUserId, setAssignedUserId] = useState("");
   const [assignedTeamId, setAssignedTeamId] = useState("");
+  const [serviceId, setServiceId] = useState("");
   const [priority, setPriority] = useState("");
   const [source, setSource] = useState("");
   const [attachments, setAttachments] = useState<"all" | "with" | "without">("all");
@@ -257,7 +348,8 @@ export function ReportsWorkspace() {
     params.set("groupBy", groupBy);
     if (clientId) params.set("clientId", clientId);
     if (assignedUserId) params.set("assignedUserId", assignedUserId);
-    if (assignedTeamId) params.set("assignedTeamId", assignedTeamId);
+    if (reportType === "ticket-report" && assignedTeamId) params.set("assignedTeamId", assignedTeamId);
+    if (reportType === "event-service-report" && serviceId) params.set("serviceId", serviceId);
     if (statuses.length) params.set("statuses", statuses.join(","));
     if (priority) params.set("priority", priority);
     if (source) params.set("source", source);
@@ -269,17 +361,18 @@ export function ReportsWorkspace() {
     params.set("page", String(detailPage));
     params.set("pageSize", detailPageSize);
     return params;
-  }, [assignedTeamId, assignedUserId, attachments, clientId, detailPage, detailPageSize, endDate, estimateMode, groupBy, priority, source, startDate, statuses, valuePerTicket]);
+  }, [assignedTeamId, assignedUserId, attachments, clientId, detailPage, detailPageSize, endDate, estimateMode, groupBy, priority, reportType, serviceId, source, startDate, statuses, valuePerTicket]);
 
   useEffect(() => {
     setDetailPage(1);
-  }, [assignedTeamId, assignedUserId, attachments, clientId, endDate, estimateMode, groupBy, priority, source, startDate, statuses, valuePerTicket]);
+  }, [assignedTeamId, assignedUserId, attachments, clientId, endDate, estimateMode, groupBy, priority, reportType, serviceId, source, startDate, statuses, valuePerTicket]);
 
   async function loadReport() {
     setLoading(true);
     setError("");
     try {
-      const result = await apiFetch<ReportSummary>(`/reports/tickets/summary?${query.toString()}`);
+      const endpoint = reportType === "ticket-report" ? "/reports/tickets/summary" : "/reports/event-services/summary";
+      const result = await apiFetch<ReportSummary>(`${endpoint}?${query.toString()}`);
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load report.");
@@ -290,7 +383,7 @@ export function ReportsWorkspace() {
 
   async function loadSavedReports() {
     try {
-      const reports = await apiFetch<SavedReport[]>("/reports/definitions");
+      const reports = await apiFetch<SavedReport[]>(`/reports/definitions?reportType=${reportType}`);
       setSavedReports(reports);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load saved reports.");
@@ -300,7 +393,7 @@ export function ReportsWorkspace() {
   async function loadReportMeta() {
     try {
       const [templateResult, scheduleResult, exportResult] = await Promise.all([
-        apiFetch<ReportTemplate[]>("/reports/templates"),
+        apiFetch<ReportTemplate[]>(`/reports/templates?reportType=${reportType}`),
         apiFetch<ReportSchedule[]>("/reports/schedules"),
         apiFetch<ReportExportHistory[]>("/reports/exports")
       ]);
@@ -320,9 +413,26 @@ export function ReportsWorkspace() {
   useEffect(() => {
     void loadSavedReports();
     void loadReportMeta();
-  }, []);
+    setSelectedSavedReportId("");
+    setSaveName("");
+    setSaveDescription("");
+    setStatuses([]);
+  }, [reportType]);
 
   function currentFilters(): SavedReport["filters"] {
+    if (reportType === "event-service-report") {
+      return {
+        startDate,
+        endDate,
+        groupBy,
+        clientId,
+        assignedUserId,
+        serviceId,
+        statuses,
+        priority
+      };
+    }
+
     return {
       startDate,
       endDate,
@@ -346,6 +456,7 @@ export function ReportsWorkspace() {
     setClientId(filters.clientId ?? "");
     setAssignedUserId(filters.assignedUserId ?? "");
     setAssignedTeamId(filters.assignedTeamId ?? "");
+    setServiceId(filters.serviceId ?? "");
     setStatuses(Array.isArray(filters.statuses) ? filters.statuses : []);
     setPriority(filters.priority ?? "");
     setSource(filters.source ?? "");
@@ -382,7 +493,7 @@ export function ReportsWorkspace() {
     try {
       const report = await apiFetch<SavedReport>("/reports/definitions", {
         method: "POST",
-        body: JSON.stringify({ name, description: saveDescription.trim() || undefined, filters: currentFilters() })
+        body: JSON.stringify({ name, description: saveDescription.trim() || undefined, reportType, filters: currentFilters() })
       });
       await loadSavedReports();
       setSelectedSavedReportId(report.id);
@@ -440,7 +551,8 @@ export function ReportsWorkspace() {
     setDeliveryBusy(true);
     setError("");
     try {
-      await apiFetch(`/reports/tickets/send?${query.toString()}&format=${emailFormat}`, {
+      const endpoint = reportType === "ticket-report" ? "/reports/tickets/send" : "/reports/event-services/send";
+      await apiFetch(`${endpoint}?${query.toString()}&format=${emailFormat}`, {
         method: "POST",
         body: JSON.stringify({ recipientEmails: recipients, format: emailFormat })
       });
@@ -470,7 +582,7 @@ export function ReportsWorkspace() {
         method: "POST",
         body: JSON.stringify({
           definitionId: selectedSavedReportId,
-          name: scheduleName.trim() || saveName.trim() || "Scheduled Ticket Report",
+          name: scheduleName.trim() || saveName.trim() || (reportType === "ticket-report" ? "Scheduled Ticket Report" : "Scheduled Event Services Report"),
           frequency: scheduleFrequency,
           format: scheduleFormat,
           recipientEmails: recipients,
@@ -522,11 +634,15 @@ export function ReportsWorkspace() {
   }
 
   function exportReport(format: "csv" | "xlsx" | "pdf") {
-    window.location.href = `${apiBaseUrl}/reports/tickets/export?${query.toString()}&format=${format}`;
+    const endpoint = reportType === "ticket-report" ? "/reports/tickets/export" : "/reports/event-services/export";
+    window.location.href = `${apiBaseUrl}${endpoint}?${query.toString()}&format=${format}`;
     setTimeout(() => void loadReportMeta(), 1000);
   }
 
   const options = data?.options;
+  const isTicketReport = reportType === "ticket-report";
+  const ticketData = isTicketReport ? data as TicketReportSummary | null : null;
+  const eventData = !isTicketReport ? data as EventReportSummary | null : null;
   const totalPages = data?.totalPages ?? 1;
   const firstDetailRow = data && data.totalMatched > 0 ? ((data.page - 1) * data.pageSize) + 1 : 0;
   const lastDetailRow = data ? Math.min(data.totalMatched, data.page * data.pageSize) : 0;
@@ -537,10 +653,14 @@ export function ReportsWorkspace() {
       <section className="panel reports-filter-panel">
         <div className="section-heading compact-heading">
           <div>
-            <h2>Ticket Reports</h2>
-            <p className="muted">Operational ticket performance, workload, status, and export reporting.</p>
+            <h2>{isTicketReport ? "Ticket Reports" : "Event & Services Reports"}</h2>
+            <p className="muted">{isTicketReport ? "Operational ticket performance, workload, status, and export reporting." : "Event request volume, service workload, task status, and export reporting."}</p>
           </div>
           <div className="form-actions">
+            <div className="segmented-control">
+              <button className={isTicketReport ? "active" : ""} type="button" onClick={() => setReportType("ticket-report")}>Tickets</button>
+              <button className={!isTicketReport ? "active" : ""} type="button" onClick={() => setReportType("event-service-report")}>Events & Services</button>
+            </div>
             <button className="button secondary" type="button" onClick={() => void loadReport()}>
               <RefreshCw size={16} aria-hidden="true" />
               <span>Refresh</span>
@@ -649,31 +769,42 @@ export function ReportsWorkspace() {
           <div className="reports-advanced-panel">
             <div className="reports-filter-grid">
           <select className="input" value={assignedUserId} onChange={(event) => setAssignedUserId(event.target.value)}>
-            <option value="">All technicians</option>
+            <option value="">{isTicketReport ? "All technicians" : "All specialists"}</option>
             {options?.users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
           </select>
-          <select className="input" value={assignedTeamId} onChange={(event) => setAssignedTeamId(event.target.value)}>
-            <option value="">All teams</option>
-            {options?.teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
-          </select>
+          {isTicketReport ? (
+            <select className="input" value={assignedTeamId} onChange={(event) => setAssignedTeamId(event.target.value)}>
+              <option value="">All teams</option>
+              {ticketData?.options.teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+            </select>
+          ) : (
+            <select className="input" value={serviceId} onChange={(event) => setServiceId(event.target.value)}>
+              <option value="">All services</option>
+              {eventData?.options.services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}
+            </select>
+          )}
           <select className="input" value={priority} onChange={(event) => setPriority(event.target.value)}>
             <option value="">All priorities</option>
             {options?.priorities.map((item) => <option key={item} value={item}>{label(item)}</option>)}
           </select>
-          <select className="input" value={source} onChange={(event) => setSource(event.target.value)}>
-            <option value="">All sources</option>
-            {options?.sources.map((item) => <option key={item} value={item}>{label(item)}</option>)}
-          </select>
-          <select className="input" value={attachments} onChange={(event) => setAttachments(event.target.value as typeof attachments)}>
-            <option value="all">All attachments</option>
-            <option value="with">With attachments</option>
-            <option value="without">Without attachments</option>
-          </select>
-          <select className="input" value={estimateMode} onChange={(event) => setEstimateMode(event.target.value as typeof estimateMode)}>
-            <option value="none">No estimate</option>
-            <option value="perTicket">Value per ticket</option>
-          </select>
-          <input className="input" type="number" min="0" step="0.01" value={valuePerTicket} onChange={(event) => setValuePerTicket(event.target.value)} disabled={estimateMode === "none"} placeholder="Value per ticket" />
+          {isTicketReport ? (
+            <>
+              <select className="input" value={source} onChange={(event) => setSource(event.target.value)}>
+                <option value="">All sources</option>
+                {ticketData?.options.sources.map((item) => <option key={item} value={item}>{label(item)}</option>)}
+              </select>
+              <select className="input" value={attachments} onChange={(event) => setAttachments(event.target.value as typeof attachments)}>
+                <option value="all">All attachments</option>
+                <option value="with">With attachments</option>
+                <option value="without">Without attachments</option>
+              </select>
+              <select className="input" value={estimateMode} onChange={(event) => setEstimateMode(event.target.value as typeof estimateMode)}>
+                <option value="none">No estimate</option>
+                <option value="perTicket">Value per ticket</option>
+              </select>
+              <input className="input" type="number" min="0" step="0.01" value={valuePerTicket} onChange={(event) => setValuePerTicket(event.target.value)} disabled={estimateMode === "none"} placeholder="Value per ticket" />
+            </>
+          ) : null}
             </div>
             <div className="reports-status-filter">
               <span><Filter size={14} aria-hidden="true" /> Status</span>
@@ -695,34 +826,66 @@ export function ReportsWorkspace() {
       {data && !loading ? (
         <>
           <section className="dashboard-kpi-grid reports-kpi-grid">
-            <SummaryCard title="Total tickets" value={data.summary.totalTickets} note="Created in range" />
-            <SummaryCard title="Active tickets" value={data.summary.activeTickets} note="Current active workload" />
-            <SummaryCard title="Closed tickets" value={data.summary.closedTickets} note="Closed in result set" />
-            <SummaryCard title="Resolved tickets" value={data.summary.resolvedTickets} note="Resolved in result set" />
-            <SummaryCard title="Unassigned" value={data.summary.unassignedTickets} note="No owner" />
-            <SummaryCard title="High priority" value={data.summary.highPriorityTickets} note="High, urgent, critical" />
-            <SummaryCard title="With attachments" value={data.summary.withAttachments} note={`${data.summary.withoutAttachments} without files`} />
-            <SummaryCard title="Estimated total" value={currency(data.summary.estimatedTotal)} note="Optional estimate" />
+            {ticketData ? (
+              <>
+                <SummaryCard title="Total tickets" value={ticketData.summary.totalTickets} note="Created in range" />
+                <SummaryCard title="Active tickets" value={ticketData.summary.activeTickets} note="Current active workload" />
+                <SummaryCard title="Closed tickets" value={ticketData.summary.closedTickets} note="Closed in result set" />
+                <SummaryCard title="Resolved tickets" value={ticketData.summary.resolvedTickets} note="Resolved in result set" />
+                <SummaryCard title="Unassigned" value={ticketData.summary.unassignedTickets} note="No owner" />
+                <SummaryCard title="High priority" value={ticketData.summary.highPriorityTickets} note="High, urgent, critical" />
+                <SummaryCard title="With attachments" value={ticketData.summary.withAttachments} note={`${ticketData.summary.withoutAttachments} without files`} />
+                <SummaryCard title="Estimated total" value={currency(ticketData.summary.estimatedTotal)} note="Optional estimate" />
+              </>
+            ) : null}
+            {eventData ? (
+              <>
+                <SummaryCard title="Total requests" value={eventData.summary.totalRequests} note="Created in range" />
+                <SummaryCard title="New requests" value={eventData.summary.newRequests} note="Needs review" />
+                <SummaryCard title="Assigned" value={eventData.summary.assignedRequests} note="Specialist workload" />
+                <SummaryCard title="Completed" value={eventData.summary.completedRequests} note="Finished requests" />
+                <SummaryCard title="Cancelled" value={eventData.summary.cancelledRequests} note="Cancelled requests" />
+                <SummaryCard title="Total tasks" value={eventData.summary.totalTasks} note="All event tasks" />
+                <SummaryCard title="Open tasks" value={eventData.summary.openTasks} note="Pending work" />
+                <SummaryCard title="Completed tasks" value={eventData.summary.completedTasks} note="Done work" />
+              </>
+            ) : null}
           </section>
 
           <section className="dashboard-main-grid">
-            <ActivityChart items={data.activity} />
-            <HorizontalBars title="Tickets by Status" subtitle="Distribution by current ticket state." items={data.byStatus} />
-            <HorizontalBars title="Tickets by Client" subtitle="Top clients in the selected period." items={data.byClient} />
-            <HorizontalBars title="Technician Workload" subtitle="Assigned ticket distribution." items={data.byTechnician} />
-            <HorizontalBars title="Tickets by Team" subtitle="Operational team distribution." items={data.byTeam} />
-            <HorizontalBars title="Tickets by Priority" subtitle="Urgency distribution." items={data.byPriority} />
-            <HorizontalBars title="Tickets by Source" subtitle="Where tickets entered the system." items={data.bySource} />
+            {ticketData ? (
+              <>
+                <ActivityChart items={ticketData.activity} />
+                <HorizontalBars title="Tickets by Status" subtitle="Distribution by current ticket state." items={ticketData.byStatus} />
+                <HorizontalBars title="Tickets by Client" subtitle="Top clients in the selected period." items={ticketData.byClient} />
+                <HorizontalBars title="Technician Workload" subtitle="Assigned ticket distribution." items={ticketData.byTechnician} />
+                <HorizontalBars title="Tickets by Team" subtitle="Operational team distribution." items={ticketData.byTeam} />
+                <HorizontalBars title="Tickets by Priority" subtitle="Urgency distribution." items={ticketData.byPriority} />
+                <HorizontalBars title="Tickets by Source" subtitle="Where tickets entered the system." items={ticketData.bySource} />
+              </>
+            ) : null}
+            {eventData ? (
+              <>
+                <EventActivityChart items={eventData.activity} />
+                <HorizontalBars title="Requests by Status" subtitle="Distribution by current event state." items={eventData.byStatus} />
+                <HorizontalBars title="Requests by Service" subtitle="Requested service mix." items={eventData.byService} />
+                <HorizontalBars title="Specialist Workload" subtitle="Assigned request and task distribution." items={eventData.byTechnician} />
+                <HorizontalBars title="Tasks by Status" subtitle="Event task completion state." items={eventData.byTaskStatus} />
+                <HorizontalBars title="Requests by Client" subtitle="Top clients in the selected period." items={eventData.byClient} />
+                <HorizontalBars title="Requests by Priority" subtitle="Urgency distribution." items={eventData.byPriority} />
+              </>
+            ) : null}
           </section>
 
           <section className="panel">
             <div className="section-heading compact-heading">
               <div>
                 <h2>Report Detail</h2>
-                <p className="muted">Showing {firstDetailRow}-{lastDetailRow} of {data.totalMatched} tickets. Exports include the full filtered result.</p>
+                <p className="muted">Showing {firstDetailRow}-{lastDetailRow} of {data.totalMatched} {isTicketReport ? "tickets" : "event requests"}. Exports include the full filtered result.</p>
               </div>
             </div>
             <div className="table-scroll">
+              {ticketData ? (
               <table className="tickets-table">
                 <thead>
                   <tr>
@@ -738,7 +901,7 @@ export function ReportsWorkspace() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.detail.map((ticket) => (
+                  {ticketData.detail.map((ticket) => (
                     <tr key={ticket.ticketNumber}>
                       <td>{ticket.ticketNumber}</td>
                       <td>
@@ -763,6 +926,51 @@ export function ReportsWorkspace() {
                   ))}
                 </tbody>
               </table>
+              ) : null}
+              {eventData ? (
+              <table className="tickets-table">
+                <thead>
+                  <tr>
+                    <th>Tracking</th>
+                    <th>Event</th>
+                    <th>Client</th>
+                    <th>Date / Time</th>
+                    <th>Services</th>
+                    <th>Status</th>
+                    <th>Priority</th>
+                    <th>Assigned</th>
+                    <th>Tasks</th>
+                    <th>Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {eventData.detail.map((request) => (
+                    <tr key={request.trackingNumber}>
+                      <td>{request.trackingNumber}</td>
+                      <td>
+                        <span className="report-cell-stack">
+                          <strong>{request.eventName}</strong>
+                          <span className="muted">{request.requester} | {request.requesterEmail}</span>
+                        </span>
+                      </td>
+                      <td>{request.clientName}</td>
+                      <td>
+                        <span className="report-cell-stack">
+                          <strong>{request.eventDate}</strong>
+                          <span className="muted">{request.time}</span>
+                        </span>
+                      </td>
+                      <td>{request.services}</td>
+                      <td><span className={`status-pill event-status-${request.status.toLowerCase().replaceAll("_", "-")}`}>{label(request.status)}</span></td>
+                      <td>{label(request.priority)}</td>
+                      <td>{request.assignedTo}</td>
+                      <td>{request.completedTaskCount}/{request.taskCount}</td>
+                      <td>{formatDate(request.updatedAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              ) : null}
             </div>
             <div className="pagination-bar">
               <div className="form-actions">
@@ -824,7 +1032,7 @@ export function ReportsWorkspace() {
                 {exportHistory.length ? exportHistory.slice(0, 10).map((item) => (
                   <div className="report-admin-row compact" key={item.id}>
                     <span className="report-cell-stack">
-                      <strong>{item.definitionName ?? "Ticket report"}</strong>
+                      <strong>{item.definitionName ?? (item.reportType === "event-service-report" ? "Event services report" : "Ticket report")}</strong>
                       <span className="muted">{item.format.toUpperCase()} | {item.deliveryStatus}{item.recipientEmail ? ` to ${item.recipientEmail}` : ""}</span>
                     </span>
                     <span className="muted">{formatDate(item.createdAt)}</span>

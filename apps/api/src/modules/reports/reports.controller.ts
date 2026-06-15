@@ -6,7 +6,7 @@ import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
 import { RequirePermissions } from "../permissions/decorators/require-permissions.decorator";
 import { PermissionsGuard } from "../permissions/guards/permissions.guard";
 import { CreateReportDefinitionDto, CreateReportScheduleDto, SendReportDto, UpdateReportDefinitionDto, UpdateReportScheduleDto } from "./dto/report-definition.dto";
-import { TicketReportExportQueryDto, TicketReportQueryDto } from "./dto/ticket-report-query.dto";
+import { EventServiceReportExportQueryDto, EventServiceReportQueryDto, TicketReportExportQueryDto, TicketReportQueryDto } from "./dto/ticket-report-query.dto";
 import { ReportsService } from "./reports.service";
 
 @Controller("reports")
@@ -20,16 +20,22 @@ export class ReportsController {
     return this.reportsService.ticketSummary(user, query);
   }
 
+  @Get("event-services/summary")
+  @RequirePermissions("reports.view")
+  eventServiceSummary(@Query() query: EventServiceReportQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.reportsService.eventServiceSummary(user, query);
+  }
+
   @Get("definitions")
   @RequirePermissions("reports.view")
-  listDefinitions(@CurrentUser() user: AuthenticatedUser) {
-    return this.reportsService.listDefinitions(user);
+  listDefinitions(@Query("reportType") reportType: string | undefined, @CurrentUser() user: AuthenticatedUser) {
+    return this.reportsService.listDefinitions(user, reportType);
   }
 
   @Get("templates")
   @RequirePermissions("reports.view")
-  listTemplates() {
-    return this.reportsService.listTemplates();
+  listTemplates(@Query("reportType") reportType: string | undefined) {
+    return this.reportsService.listTemplates(reportType);
   }
 
   @Get("exports")
@@ -93,5 +99,20 @@ export class ReportsController {
   @RequirePermissions("reports.view")
   sendTicketsReport(@Query() query: TicketReportExportQueryDto, @Body() body: SendReportDto, @CurrentUser() user: AuthenticatedUser) {
     return this.reportsService.sendTicketsReport(user, query, body);
+  }
+
+  @Get("event-services/export")
+  @RequirePermissions("reports.view")
+  async exportEventServices(@Query() query: EventServiceReportExportQueryDto, @CurrentUser() user: AuthenticatedUser, @Res() response: Response) {
+    const exportResult = await this.reportsService.exportEventServices(user, query);
+    response.setHeader("Content-Type", exportResult.contentType);
+    response.setHeader("Content-Disposition", `attachment; filename="${exportResult.filename}"`);
+    response.send(exportResult.body);
+  }
+
+  @Post("event-services/send")
+  @RequirePermissions("reports.view")
+  sendEventServicesReport(@Query() query: EventServiceReportExportQueryDto, @Body() body: SendReportDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.reportsService.sendEventServicesReport(user, query, body);
   }
 }

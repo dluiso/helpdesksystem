@@ -1,12 +1,12 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Workbook } from "exceljs";
 import PDFDocument from "pdfkit";
-import { Prisma, TicketPriority, TicketSource, TicketStatus } from "@prisma/client";
+import { EventServiceRequestStatus, EventServiceTaskStatus, Prisma, TicketPriority, TicketSource, TicketStatus } from "@prisma/client";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { MailDeliveryService } from "../mailboxes/mail-delivery.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateReportDefinitionDto, CreateReportScheduleDto, SendReportDto, UpdateReportDefinitionDto, UpdateReportScheduleDto } from "./dto/report-definition.dto";
-import { TicketReportExportQueryDto, TicketReportQueryDto } from "./dto/ticket-report-query.dto";
+import { EventServiceReportExportQueryDto, EventServiceReportQueryDto, TicketReportExportQueryDto, TicketReportQueryDto } from "./dto/ticket-report-query.dto";
 
 const ACTIVE_STATUSES: TicketStatus[] = [
   TicketStatus.NEW,
@@ -21,17 +21,22 @@ const ACTIVE_STATUSES: TicketStatus[] = [
 type ReportTicket = Prisma.TicketGetPayload<{
   select: ReturnType<ReportsService["ticketSelect"]>;
 }>;
+type ReportEventServiceRequest = Prisma.EventServiceRequestGetPayload<{
+  select: ReturnType<ReportsService["eventServiceSelect"]>;
+}>;
 
 type ReportFormat = "csv" | "xlsx" | "pdf";
 type ReportFilters = Partial<TicketReportQueryDto> & { statuses?: string | string[] };
+type EventReportFilters = Partial<EventServiceReportQueryDto> & { statuses?: string | string[] };
 type GeneratedReport = {
   filename: string;
   contentType: string;
   body: string | Buffer;
   format: ReportFormat;
-  result: Awaited<ReturnType<ReportsService["ticketSummary"]>>;
+  result: Awaited<ReturnType<ReportsService["ticketSummary"]>> | Awaited<ReturnType<ReportsService["eventServiceSummary"]>>;
 };
 type TicketSummaryOptions = { detailMode?: "paged" | "all" };
+type EventSummaryOptions = { detailMode?: "paged" | "all" };
 
 @Injectable()
 export class ReportsService implements OnModuleInit, OnModuleDestroy {
@@ -55,9 +60,9 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async listDefinitions(user: AuthenticatedUser) {
+  async listDefinitions(user: AuthenticatedUser, reportType = "ticket-report") {
     const definitions = await this.prisma.reportDefinition.findMany({
-      where: { organizationId: user.organizationId, reportType: "ticket-report" },
+      where: { organizationId: user.organizationId, reportType },
       select: {
         id: true,
         name: true,
@@ -77,7 +82,33 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     }));
   }
 
-  listTemplates() {
+  listTemplates(reportType = "ticket-report") {
+    if (reportType === "event-service-report") {
+      return [
+        {
+          id: "event-operational-summary",
+          name: "Event Operational Summary",
+          description: "Event request volume, service mix, task workload, and completion trends.",
+          filters: { groupBy: "month" }
+        },
+        {
+          id: "event-service-workload",
+          name: "Service Workload",
+          description: "Requests grouped by requested services and assigned specialists.",
+          filters: { groupBy: "week" }
+        },
+        {
+          id: "event-completion-review",
+          name: "Completion Review",
+          description: "Completed and cancelled event requests for closeout review.",
+          filters: {
+            groupBy: "month",
+            statuses: [EventServiceRequestStatus.COMPLETED, EventServiceRequestStatus.CANCELLED]
+          }
+        }
+      ];
+    }
+
     return [
       {
         id: "executive-summary",
@@ -337,10 +368,100 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  async eventServiceSummary(user: AuthenticatedUser, query: EventServiceReportQueryDto, options: EventSummaryOptions = {}) {
+    const range = this.resolveDateRange(query);
+    const where = this.buildEventServiceWhere(user, query, range);
+
+    const [requests, clients, users, services] = await Promise.all([
+      this.prisma.eventServiceRequest.findMany({
+        where,
+        select: this.eventServiceSelect(),
+        orderBy: [{ eventDate: "desc" }, { createdAt: "desc" }],
+        take: 2000
+      }),
+      this.prisma.client.findMany({
+        where: { organizationId: user.organizationId, deletedAt: null },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" }
+      }),
+      this.prisma.user.findMany({
+        where: { organizationId: user.organizationId, deletedAt: null, isActive: true },
+        select: { id: true, firstName: true, lastName: true },
+        orderBy: [{ firstName: "asc" }, { lastName: "asc" }]
+      }),
+      this.prisma.eventServiceService.findMany({
+        where: { organizationId: user.organizationId, isActive: true },
+        select: { id: true, name: true },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
+      })
+    ]);
+
+    const closedTaskStatuses: EventServiceTaskStatus[] = [EventServiceTaskStatus.DONE, EventServiceTaskStatus.CANCELLED];
+    const totalTasks = requests.reduce((total, request) => total + request.tasks.length, 0);
+    const completedTasks = requests.reduce((total, request) => total + request.tasks.filter((task) => task.status === EventServiceTaskStatus.DONE).length, 0);
+    const openTasks = requests.reduce((total, request) => total + request.tasks.filter((task) => !closedTaskStatuses.includes(task.status)).length, 0);
+    const assignedRequests = requests.filter((request) => request.assignees.length > 0 || request.tasks.some((task) => task.assignedUserId)).length;
+    const totalMatched = requests.length;
+    const detailPage = this.resolveDetailPage(query, totalMatched, options);
+    const detailRows = requests
+      .slice(detailPage.offset, detailPage.offset + detailPage.pageSize)
+      .map((request) => this.toEventDetailRow(request));
+
+    return {
+      filters: {
+        startDate: range.start.toISOString(),
+        endDate: range.end.toISOString(),
+        groupBy: query.groupBy ?? "day",
+        page: detailPage.page,
+        pageSize: detailPage.pageSize
+      },
+      options: {
+        clients,
+        users: users.map((item) => ({ id: item.id, name: `${item.firstName} ${item.lastName}` })),
+        services,
+        statuses: Object.values(EventServiceRequestStatus),
+        priorities: Object.values(TicketPriority)
+      },
+      summary: {
+        totalRequests: requests.length,
+        newRequests: requests.filter((request) => request.status === EventServiceRequestStatus.NEW).length,
+        assignedRequests,
+        completedRequests: requests.filter((request) => request.status === EventServiceRequestStatus.COMPLETED).length,
+        cancelledRequests: requests.filter((request) => request.status === EventServiceRequestStatus.CANCELLED).length,
+        totalTasks,
+        openTasks,
+        completedTasks
+      },
+      activity: this.buildEventActivity(requests, range, query.groupBy ?? "day"),
+      byStatus: this.groupEventsBy(requests, (request) => request.status),
+      byPriority: this.groupEventsBy(requests, (request) => request.priority),
+      byService: this.groupEventsBy(requests.flatMap((request) => request.services.map((item) => item.service.name))),
+      byClient: this.groupEventsBy(requests, (request) => request.client?.name ?? "Unmapped / no client").slice(0, 12),
+      byTechnician: this.groupEventsBy(requests.flatMap((request) => [
+        ...request.assignees.map((assignee) => `${assignee.user.firstName} ${assignee.user.lastName}`),
+        ...request.tasks.flatMap((task) => task.assignedUser ? [`${task.assignedUser.firstName} ${task.assignedUser.lastName}`] : [])
+      ])).slice(0, 12),
+      byTaskStatus: this.groupEventsBy(requests.flatMap((request) => request.tasks.map((task) => task.status))),
+      detail: detailRows,
+      detailLimit: detailPage.pageSize,
+      page: detailPage.page,
+      pageSize: detailPage.pageSize,
+      totalPages: detailPage.totalPages,
+      totalMatched
+    };
+  }
+
   async exportTickets(user: AuthenticatedUser, query: TicketReportExportQueryDto) {
     const format = query.format ?? "csv";
     const report = await this.generateTicketsReport(user, query, format);
-    await this.logReportExport(user, query, format, "downloaded");
+    await this.logReportExport(user, query, format, "downloaded", undefined, undefined, undefined, "ticket-report");
+    return report;
+  }
+
+  async exportEventServices(user: AuthenticatedUser, query: EventServiceReportExportQueryDto) {
+    const format = query.format ?? "csv";
+    const report = await this.generateEventServiceReport(user, query, format);
+    await this.logReportExport(user, query, format, "downloaded", undefined, undefined, undefined, "event-service-report");
     return report;
   }
 
@@ -369,7 +490,36 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       }]
     });
 
-    await Promise.all(recipients.map((recipient) => this.logReportExport(user, query, format, "emailed", recipient)));
+    await Promise.all(recipients.map((recipient) => this.logReportExport(user, query, format, "emailed", recipient, undefined, undefined, "ticket-report")));
+    return { sent: true, recipients, filename: report.filename };
+  }
+
+  async sendEventServicesReport(user: AuthenticatedUser, query: EventServiceReportExportQueryDto, input: SendReportDto) {
+    const format = input.format ?? query.format ?? "pdf";
+    const report = await this.generateEventServiceReport(user, query, format);
+    const subject = input.subject?.trim() || `Event services report - ${new Date().toLocaleDateString()}`;
+    const message = input.message?.trim() || "Attached is the requested Event & Services report.";
+    const recipients = this.normalizeEmails(input.recipientEmails);
+    if (!recipients.length) {
+      throw new BadRequestException("At least one recipient email is required.");
+    }
+
+    await this.mailDelivery.sendTicketReply({
+      organizationId: user.organizationId,
+      to: recipients,
+      subject,
+      bodyText: message,
+      bodyHtml: `<p>${this.escapeHtml(message).replace(/\n/g, "<br />")}</p>`,
+      rawAttachments: [{
+        originalFilename: report.filename,
+        mimeType: report.contentType,
+        sizeBytes: Buffer.byteLength(report.body),
+        contentBytes: Buffer.isBuffer(report.body) ? report.body : Buffer.from(report.body),
+        isInline: false
+      }]
+    });
+
+    await Promise.all(recipients.map((recipient) => this.logReportExport(user, query, format, "emailed", recipient, undefined, undefined, "event-service-report")));
     return { sent: true, recipients, filename: report.filename };
   }
 
@@ -377,6 +527,12 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     if (format === "xlsx") return this.exportTicketsXlsx(user, query);
     if (format === "pdf") return this.exportTicketsPdf(user, query);
     return this.exportTicketsCsv(user, query);
+  }
+
+  private async generateEventServiceReport(user: AuthenticatedUser, query: EventServiceReportQueryDto, format: ReportFormat): Promise<GeneratedReport> {
+    if (format === "xlsx") return this.exportEventServicesXlsx(user, query);
+    if (format === "pdf") return this.exportEventServicesPdf(user, query);
+    return this.exportEventServicesCsv(user, query);
   }
 
   private async exportTicketsCsv(user: AuthenticatedUser, query: TicketReportQueryDto): Promise<GeneratedReport> {
@@ -529,7 +685,156 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  private resolveDetailPage(query: TicketReportQueryDto, totalMatched: number, options: TicketSummaryOptions) {
+  private async exportEventServicesCsv(user: AuthenticatedUser, query: EventServiceReportQueryDto): Promise<GeneratedReport> {
+    const result = await this.eventServiceSummary(user, query, { detailMode: "all" });
+    const rows = result.detail.map((request) => [
+      request.trackingNumber,
+      request.eventName,
+      request.clientName,
+      request.requester,
+      request.eventDate,
+      request.time,
+      request.services,
+      request.status,
+      request.priority,
+      request.assignedTo,
+      String(request.taskCount),
+      String(request.completedTaskCount),
+      request.updatedAt
+    ]);
+    const csv = this.toCsv([
+      ["Tracking", "Event", "Client", "Requester", "Date", "Time", "Services", "Status", "Priority", "Assigned To", "Tasks", "Completed Tasks", "Updated"],
+      ...rows
+    ]);
+
+    return {
+      filename: `event-services-report-${new Date().toISOString().slice(0, 10)}.csv`,
+      contentType: "text/csv; charset=utf-8",
+      body: csv,
+      format: "csv",
+      result
+    };
+  }
+
+  private async exportEventServicesXlsx(user: AuthenticatedUser, query: EventServiceReportQueryDto): Promise<GeneratedReport> {
+    const result = await this.eventServiceSummary(user, query, { detailMode: "all" });
+    const workbook = new Workbook();
+    workbook.creator = "Avidity IT Management Tool";
+    workbook.created = new Date();
+
+    const summary = workbook.addWorksheet("Summary");
+    summary.columns = [
+      { header: "Metric", key: "metric", width: 30 },
+      { header: "Value", key: "value", width: 18 }
+    ];
+    summary.addRows([
+      { metric: "Total requests", value: result.summary.totalRequests },
+      { metric: "New requests", value: result.summary.newRequests },
+      { metric: "Assigned requests", value: result.summary.assignedRequests },
+      { metric: "Completed requests", value: result.summary.completedRequests },
+      { metric: "Cancelled requests", value: result.summary.cancelledRequests },
+      { metric: "Total tasks", value: result.summary.totalTasks },
+      { metric: "Open tasks", value: result.summary.openTasks },
+      { metric: "Completed tasks", value: result.summary.completedTasks }
+    ]);
+
+    const detail = workbook.addWorksheet("Event Requests");
+    detail.columns = [
+      { header: "Tracking", key: "trackingNumber", width: 16 },
+      { header: "Event", key: "eventName", width: 36 },
+      { header: "Client", key: "clientName", width: 28 },
+      { header: "Requester", key: "requester", width: 28 },
+      { header: "Date", key: "eventDate", width: 18 },
+      { header: "Time", key: "time", width: 18 },
+      { header: "Services", key: "services", width: 38 },
+      { header: "Status", key: "status", width: 20 },
+      { header: "Priority", key: "priority", width: 14 },
+      { header: "Assigned To", key: "assignedTo", width: 32 },
+      { header: "Tasks", key: "taskCount", width: 10 },
+      { header: "Completed Tasks", key: "completedTaskCount", width: 16 },
+      { header: "Updated", key: "updatedAt", width: 24 }
+    ];
+    detail.addRows(result.detail);
+
+    for (const sheet of [summary, detail]) {
+      sheet.getRow(1).font = { bold: true };
+      sheet.views = [{ state: "frozen", ySplit: 1 }];
+      sheet.autoFilter = { from: "A1", to: `${sheet.getColumn(sheet.columnCount).letter}1` };
+    }
+
+    const body = Buffer.from(await workbook.xlsx.writeBuffer());
+    return {
+      filename: `event-services-report-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      body,
+      format: "xlsx",
+      result
+    };
+  }
+
+  private async exportEventServicesPdf(user: AuthenticatedUser, query: EventServiceReportQueryDto): Promise<GeneratedReport> {
+    const result = await this.eventServiceSummary(user, query, { detailMode: "all" });
+    const doc = new PDFDocument({ margin: 42, size: "LETTER", bufferPages: true });
+    const chunks: Buffer[] = [];
+    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+    const done = new Promise<void>((resolve) => doc.on("end", resolve));
+
+    doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(20).text("Event & Services Report");
+    doc.moveDown(0.25);
+    doc.fillColor("#64748b").font("Helvetica").fontSize(9).text(`Generated ${new Date().toLocaleString()}`);
+    doc.text(`Range ${this.formatShortDate(result.filters.startDate)} - ${this.formatShortDate(result.filters.endDate)} | Grouped by ${this.label(result.filters.groupBy)}`);
+    doc.moveDown(0.8);
+
+    this.drawPdfSummaryGrid(doc, [
+      ["Total", String(result.summary.totalRequests)],
+      ["New", String(result.summary.newRequests)],
+      ["Assigned", String(result.summary.assignedRequests)],
+      ["Completed", String(result.summary.completedRequests)],
+      ["Cancelled", String(result.summary.cancelledRequests)],
+      ["Tasks", String(result.summary.totalTasks)],
+      ["Open Tasks", String(result.summary.openTasks)],
+      ["Done Tasks", String(result.summary.completedTasks)]
+    ]);
+
+    this.drawPdfSection(doc, "Event Activity");
+    this.drawPdfGroupedBars(doc, result.activity.slice(-18).map((item) => ({
+      label: item.label,
+      values: [
+        { label: "Created", value: item.created, color: "#2563eb" },
+        { label: "Completed", value: item.completed, color: "#16a34a" },
+        { label: "Cancelled", value: item.cancelled, color: "#ef4444" }
+      ]
+    })), "Blue: Created   Green: Completed   Red: Cancelled");
+
+    this.drawPdfSection(doc, "Operational Distribution");
+    this.drawPdfBarChart(doc, "Requests by Status", result.byStatus.slice(0, 8));
+    this.drawPdfBarChart(doc, "Requests by Service", result.byService.slice(0, 8));
+    this.drawPdfBarChart(doc, "Specialist Workload", result.byTechnician.slice(0, 8));
+    this.drawPdfBarChart(doc, "Tasks by Status", result.byTaskStatus.slice(0, 8));
+
+    this.drawPdfSection(doc, "Report Detail");
+    doc.fillColor("#64748b").font("Helvetica").fontSize(8).text(`Showing ${Math.min(result.detail.length, 80)} of ${result.totalMatched} event requests in this PDF. CSV and Excel exports include the full detail table.`);
+    doc.moveDown(0.5);
+    this.drawPdfEventTable(doc, result.detail.slice(0, 80));
+
+    const pages = doc.bufferedPageRange();
+    for (let i = 0; i < pages.count; i += 1) {
+      doc.switchToPage(i);
+      doc.fontSize(8).fillColor("#94a3b8").text(`Page ${i + 1} of ${pages.count}`, 42, 748, { align: "right", width: 528 });
+    }
+
+    doc.end();
+    await done;
+    return {
+      filename: `event-services-report-${new Date().toISOString().slice(0, 10)}.pdf`,
+      contentType: "application/pdf",
+      body: Buffer.concat(chunks),
+      format: "pdf",
+      result
+    };
+  }
+
+  private resolveDetailPage(query: { page?: string; pageSize?: string }, totalMatched: number, options: TicketSummaryOptions | EventSummaryOptions) {
     if (options.detailMode === "all") {
       return {
         page: 1,
@@ -577,10 +882,34 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     } satisfies Prisma.TicketSelect;
   }
 
+  private eventServiceSelect() {
+    return {
+      id: true,
+      trackingNumber: true,
+      eventName: true,
+      eventDate: true,
+      startTime: true,
+      endTime: true,
+      requesterFirstName: true,
+      requesterLastName: true,
+      requesterEmail: true,
+      status: true,
+      priority: true,
+      createdAt: true,
+      updatedAt: true,
+      completedAt: true,
+      cancelledAt: true,
+      client: { select: { id: true, name: true } },
+      services: { select: { service: { select: { name: true } } } },
+      assignees: { select: { user: { select: { firstName: true, lastName: true } } } },
+      tasks: { select: { status: true, assignedUserId: true, assignedUser: { select: { firstName: true, lastName: true } } } }
+    } satisfies Prisma.EventServiceRequestSelect;
+  }
+
   private async ensureDefinitionAccess(user: AuthenticatedUser, definitionId: string) {
     const definition = await this.prisma.reportDefinition.findFirst({
       where: { id: definitionId, organizationId: user.organizationId },
-      select: { id: true, filters: true, name: true, organizationId: true }
+      select: { id: true, filters: true, name: true, organizationId: true, reportType: true }
     });
     if (!definition) {
       throw new NotFoundException("Saved report was not found.");
@@ -598,13 +927,13 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     return schedule;
   }
 
-  private async logReportExport(user: AuthenticatedUser, query: TicketReportQueryDto, format: ReportFormat, deliveryStatus: string, recipientEmail?: string, definitionId?: string | null, errorMessage?: string) {
+  private async logReportExport(user: AuthenticatedUser, query: TicketReportQueryDto | EventServiceReportQueryDto, format: ReportFormat, deliveryStatus: string, recipientEmail?: string, definitionId?: string | null, errorMessage?: string, reportType = "ticket-report") {
     await this.prisma.reportExport.create({
       data: {
         organizationId: user.organizationId,
         requestedById: user.id,
         definitionId: definitionId ?? null,
-        reportType: "ticket-report",
+        reportType,
         filters: query as Prisma.InputJsonValue,
         format,
         recipientEmail,
@@ -640,14 +969,25 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
         forcePasswordChange: user.forcePasswordChange,
         permissions: ["reports.view"]
       };
-      const query = this.filtersToQuery(schedule.definition.filters as ReportFilters);
+      const reportType = schedule.definition.reportType;
       try {
-        await this.sendTicketsReport(authUser, { ...query, format: schedule.format as ReportFormat }, {
-          recipientEmails: schedule.recipientEmails,
-          format: schedule.format as ReportFormat,
-          subject: `${schedule.name} - Ticket report`,
-          message: `Attached is the scheduled report "${schedule.name}".`
-        });
+        if (reportType === "event-service-report") {
+          const query = this.eventFiltersToQuery(schedule.definition.filters as EventReportFilters);
+          await this.sendEventServicesReport(authUser, { ...query, format: schedule.format as ReportFormat }, {
+            recipientEmails: schedule.recipientEmails,
+            format: schedule.format as ReportFormat,
+            subject: `${schedule.name} - Event & Services report`,
+            message: `Attached is the scheduled report "${schedule.name}".`
+          });
+        } else {
+          const query = this.filtersToQuery(schedule.definition.filters as ReportFilters);
+          await this.sendTicketsReport(authUser, { ...query, format: schedule.format as ReportFormat }, {
+            recipientEmails: schedule.recipientEmails,
+            format: schedule.format as ReportFormat,
+            subject: `${schedule.name} - Ticket report`,
+            message: `Attached is the scheduled report "${schedule.name}".`
+          });
+        }
         await this.prisma.reportSchedule.update({
           where: { id: schedule.id },
           data: {
@@ -674,8 +1014,8 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
             organizationId: schedule.organizationId,
             requestedById: user.id,
             definitionId: schedule.definitionId,
-            reportType: "ticket-report",
-            filters: query as Prisma.InputJsonValue,
+            reportType,
+            filters: schedule.definition.filters as Prisma.InputJsonValue,
             format: schedule.format,
             deliveryStatus: "failed",
             errorMessage: message.slice(0, 1000)
@@ -694,6 +1034,13 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       ...filters,
       statuses: Array.isArray(filters.statuses) ? filters.statuses.join(",") : filters.statuses
     } as TicketReportQueryDto;
+  }
+
+  private eventFiltersToQuery(filters: EventReportFilters): EventServiceReportQueryDto {
+    return {
+      ...filters,
+      statuses: Array.isArray(filters.statuses) ? filters.statuses.join(",") : filters.statuses
+    } as EventServiceReportQueryDto;
   }
 
   private nextScheduleRun(frequency: string) {
@@ -733,7 +1080,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     doc.y += 2 * (cardHeight + gap);
   }
 
-  private drawPdfGroupedBars(doc: PDFKit.PDFDocument, groups: Array<{ label: string; values: Array<{ label: string; value: number; color: string }> }>) {
+  private drawPdfGroupedBars(doc: PDFKit.PDFDocument, groups: Array<{ label: string; values: Array<{ label: string; value: number; color: string }> }>, legend = "Blue: Created   Green: Resolved   Gray: Closed") {
     this.ensurePdfSpace(doc, 170);
     const chartX = 42;
     const chartY = doc.y;
@@ -757,7 +1104,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     });
 
     doc.y = chartY + chartHeight + 22;
-    doc.fillColor("#64748b").font("Helvetica").fontSize(7).text("Blue: Created   Green: Resolved   Gray: Closed");
+    doc.fillColor("#64748b").font("Helvetica").fontSize(7).text(legend);
   }
 
   private drawPdfBarChart(doc: PDFKit.PDFDocument, title: string, items: Array<{ label: string; count: number }>) {
@@ -818,6 +1165,45 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  private drawPdfEventTable(doc: PDFKit.PDFDocument, requests: Awaited<ReturnType<ReportsService["eventServiceSummary"]>>["detail"]) {
+    const columns = [
+      { label: "Tracking", x: 42, width: 64 },
+      { label: "Event", x: 112, width: 150 },
+      { label: "Date", x: 270, width: 76 },
+      { label: "Status", x: 352, width: 82 },
+      { label: "Assigned", x: 440, width: 122 }
+    ];
+    const drawHeader = () => {
+      this.ensurePdfSpace(doc, 34);
+      const y = doc.y;
+      doc.roundedRect(42, y, 520, 20, 4).fill("#f1f5f9");
+      columns.forEach((column) => {
+        doc.fillColor("#334155").font("Helvetica-Bold").fontSize(7).text(column.label, column.x, y + 6, { width: column.width });
+      });
+      doc.y = y + 24;
+    };
+
+    drawHeader();
+    requests.forEach((request) => {
+      if (doc.y > 705) {
+        doc.addPage();
+        drawHeader();
+      }
+      const y = doc.y;
+      const rowHeight = 30;
+      doc.strokeColor("#e2e8f0").moveTo(42, y + rowHeight).lineTo(562, y + rowHeight).stroke();
+      doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(7).text(request.trackingNumber, 42, y + 4, { width: 64 });
+      doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(7).text(request.eventName, 112, y + 4, { width: 150, ellipsis: true });
+      doc.fillColor("#64748b").font("Helvetica").fontSize(6).text(request.requester, 112, y + 14, { width: 150, ellipsis: true });
+      doc.fillColor("#0f172a").font("Helvetica").fontSize(7).text(request.eventDate, 270, y + 4, { width: 76 });
+      doc.fillColor("#64748b").font("Helvetica").fontSize(6).text(request.time, 270, y + 14, { width: 76 });
+      doc.fillColor("#0f172a").font("Helvetica").fontSize(7).text(this.label(request.status), 352, y + 4, { width: 82, ellipsis: true });
+      doc.fillColor("#0f172a").font("Helvetica").fontSize(7).text(request.assignedTo, 440, y + 4, { width: 122, ellipsis: true });
+      doc.fillColor("#64748b").font("Helvetica").fontSize(6).text(`${request.taskCount} tasks, ${request.completedTaskCount} done`, 440, y + 14, { width: 122 });
+      doc.y = y + rowHeight + 2;
+    });
+  }
+
   private ensurePdfSpace(doc: PDFKit.PDFDocument, requiredHeight: number) {
     if (doc.y + requiredHeight > 730) {
       doc.addPage();
@@ -864,6 +1250,26 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     return where;
   }
 
+  private buildEventServiceWhere(user: AuthenticatedUser, query: EventServiceReportQueryDto, range: { start: Date; end: Date }) {
+    const where: Prisma.EventServiceRequestWhereInput = {
+      organizationId: user.organizationId,
+      deletedAt: null,
+      createdAt: { gte: range.start, lte: range.end }
+    };
+    if (query.clientId) where.clientId = query.clientId;
+    if (query.assignedUserId) {
+      where.OR = [
+        { assignees: { some: { userId: query.assignedUserId } } },
+        { tasks: { some: { assignedUserId: query.assignedUserId } } }
+      ];
+    }
+    if (query.serviceId) where.services = { some: { serviceId: query.serviceId } };
+    const statuses = this.parseEventStatuses(query.statuses);
+    if (statuses.length) where.status = { in: statuses };
+    if (query.priority) where.priority = query.priority;
+    return where;
+  }
+
   private resolveDateRange(query: TicketReportQueryDto) {
     const end = query.endDate ? new Date(query.endDate) : new Date();
     const start = query.startDate ? new Date(query.startDate) : new Date(end.getTime() - 29 * 24 * 60 * 60 * 1000);
@@ -882,6 +1288,12 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     if (!value) return [];
     const allowed = new Set(Object.values(TicketStatus));
     return value.split(",").map((item) => item.trim().toUpperCase()).filter((item): item is TicketStatus => allowed.has(item as TicketStatus));
+  }
+
+  private parseEventStatuses(value?: string) {
+    if (!value) return [];
+    const allowed = new Set(Object.values(EventServiceRequestStatus));
+    return value.split(",").map((item) => item.trim().toUpperCase()).filter((item): item is EventServiceRequestStatus => allowed.has(item as EventServiceRequestStatus));
   }
 
   private resolveValuePerTicket(query: TicketReportQueryDto) {
@@ -905,6 +1317,27 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       buckets.set(key, { label: key, created: 0, closed: 0, resolved: 0 });
     }
     return [...buckets.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([period, value]) => ({ period, ...value }));
+  }
+
+  private buildEventActivity(requests: ReportEventServiceRequest[], range: { start: Date; end: Date }, groupBy: "day" | "week" | "month" | "year") {
+    const buckets = new Map<string, { label: string; created: number; completed: number; cancelled: number }>();
+    for (const request of requests) {
+      this.incrementEventBucket(buckets, request.createdAt, groupBy, "created");
+      if (request.completedAt) this.incrementEventBucket(buckets, request.completedAt, groupBy, "completed");
+      if (request.cancelledAt) this.incrementEventBucket(buckets, request.cancelledAt, groupBy, "cancelled");
+    }
+    if (buckets.size === 0) {
+      const key = this.bucketKey(range.start, groupBy);
+      buckets.set(key, { label: key, created: 0, completed: 0, cancelled: 0 });
+    }
+    return [...buckets.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([period, value]) => ({ period, ...value }));
+  }
+
+  private incrementEventBucket(buckets: Map<string, { label: string; created: number; completed: number; cancelled: number }>, date: Date, groupBy: "day" | "week" | "month" | "year", field: "created" | "completed" | "cancelled") {
+    const key = this.bucketKey(date, groupBy);
+    const bucket = buckets.get(key) ?? { label: key, created: 0, completed: 0, cancelled: 0 };
+    bucket[field] += 1;
+    buckets.set(key, bucket);
   }
 
   private incrementBucket(buckets: Map<string, { label: string; created: number; closed: number; resolved: number }>, date: Date, groupBy: "day" | "week" | "month" | "year", field: "created" | "closed" | "resolved") {
@@ -936,6 +1369,15 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     return [...counts.entries()].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
   }
 
+  private groupEventsBy<T>(items: T[], getKey?: (item: T) => string) {
+    const counts = new Map<string, number>();
+    for (const item of items) {
+      const key = getKey ? getKey(item) : String(item);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return [...counts.entries()].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  }
+
   private toDetailRow(ticket: ReportTicket, valuePerTicket: number | null) {
     const requester = ticket.contact ? `${ticket.contact.firstName} ${ticket.contact.lastName}` : ticket.senderEmail ?? "Unknown";
     return {
@@ -953,6 +1395,31 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       closedAt: ticket.closedAt?.toISOString() ?? null,
       attachmentCount: ticket._count.attachments,
       estimatedValue: valuePerTicket
+    };
+  }
+
+  private toEventDetailRow(request: ReportEventServiceRequest) {
+    const assignees = [
+      ...request.assignees.map((assignee) => `${assignee.user.firstName} ${assignee.user.lastName}`),
+      ...request.tasks.flatMap((task) => task.assignedUser ? [`${task.assignedUser.firstName} ${task.assignedUser.lastName}`] : [])
+    ];
+    const uniqueAssignees = [...new Set(assignees)];
+    const completedTaskCount = request.tasks.filter((task) => task.status === EventServiceTaskStatus.DONE).length;
+    return {
+      trackingNumber: request.trackingNumber,
+      eventName: request.eventName,
+      clientName: request.client?.name ?? "Unmapped / no client",
+      requester: `${request.requesterFirstName} ${request.requesterLastName}`,
+      requesterEmail: request.requesterEmail,
+      eventDate: request.eventDate ? this.formatShortDate(request.eventDate.toISOString()) : "Not scheduled",
+      time: `${request.startTime ?? "Not set"} - ${request.endTime ?? "Not set"}`,
+      services: request.services.map((item) => item.service.name).join(", ") || "No services",
+      status: request.status,
+      priority: request.priority,
+      assignedTo: uniqueAssignees.length ? uniqueAssignees.join(", ") : "Unassigned",
+      taskCount: request.tasks.length,
+      completedTaskCount,
+      updatedAt: request.updatedAt.toISOString()
     };
   }
 

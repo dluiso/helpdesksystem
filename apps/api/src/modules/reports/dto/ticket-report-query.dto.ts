@@ -66,3 +66,53 @@ export class TicketReportExportQueryDto extends TicketReportQueryDto {
   @IsIn(["csv", "xlsx", "pdf"])
   format?: "csv" | "xlsx" | "pdf";
 }
+
+export class EventServiceReportQueryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  startDate?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  endDate?: string;
+
+  @IsOptional()
+  @IsIn(["day", "week", "month", "year"])
+  groupBy?: "day" | "week" | "month" | "year";
+
+  @IsOptional()
+  @IsUUID("4")
+  clientId?: string;
+
+  @IsOptional()
+  @IsUUID("4")
+  assignedUserId?: string;
+
+  @IsOptional()
+  @IsUUID("4")
+  serviceId?: string;
+
+  @IsOptional()
+  @IsString()
+  statuses?: string;
+
+  @IsOptional()
+  @IsEnum(TicketPriority)
+  priority?: TicketPriority;
+
+  @IsOptional()
+  @IsNumberString()
+  page?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  pageSize?: string;
+}
+
+export class EventServiceReportExportQueryDto extends EventServiceReportQueryDto {
+  @IsOptional()
+  @IsIn(["csv", "xlsx", "pdf"])
+  format?: "csv" | "xlsx" | "pdf";
+}
