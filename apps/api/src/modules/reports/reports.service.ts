@@ -672,11 +672,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     doc.moveDown(0.5);
     this.drawPdfTicketTable(doc, result.detail.slice(0, 80));
 
-    const pages = doc.bufferedPageRange();
-    for (let i = 0; i < pages.count; i += 1) {
-      doc.switchToPage(i);
-      doc.fontSize(8).fillColor("#94a3b8").text(`Page ${i + 1} of ${pages.count}`, 42, 748, { align: "right", width: 528 });
-    }
+    this.drawPdfPageNumbers(doc);
 
     doc.end();
     await done;
@@ -821,11 +817,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     doc.moveDown(0.5);
     this.drawPdfEventTable(doc, result.detail.slice(0, 80));
 
-    const pages = doc.bufferedPageRange();
-    for (let i = 0; i < pages.count; i += 1) {
-      doc.switchToPage(i);
-      doc.fontSize(8).fillColor("#94a3b8").text(`Page ${i + 1} of ${pages.count}`, 42, 748, { align: "right", width: 528 });
-    }
+    this.drawPdfPageNumbers(doc);
 
     doc.end();
     await done;
@@ -1206,6 +1198,18 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       doc.fillColor("#64748b").font("Helvetica").fontSize(6).text(`${request.taskCount} tasks, ${request.completedTaskCount} done`, 440, y + 14, { width: 122 });
       doc.y = y + rowHeight + 2;
     });
+  }
+
+  private drawPdfPageNumbers(doc: PDFKit.PDFDocument) {
+    const pages = doc.bufferedPageRange();
+    for (let index = 0; index < pages.count; index += 1) {
+      doc.switchToPage(pages.start + index);
+      doc.font("Helvetica").fontSize(8).fillColor("#94a3b8").text(`Page ${index + 1} of ${pages.count}`, 42, 734, {
+        align: "right",
+        width: 528,
+        lineBreak: false
+      });
+    }
   }
 
   private ensurePdfSpace(doc: PDFKit.PDFDocument, requiredHeight: number) {

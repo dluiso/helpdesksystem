@@ -669,8 +669,8 @@ export function ReportsWorkspace() {
           </div>
           <div className="form-actions">
             <div className="segmented-control">
-              <button className={isTicketReport ? "active" : ""} type="button" onClick={() => setReportType("ticket-report")}>Tickets</button>
-              <button className={!isTicketReport ? "active" : ""} type="button" onClick={() => setReportType("event-service-report")}>Events & Services</button>
+              <button className={isTicketReport ? "active" : ""} type="button" aria-pressed={isTicketReport} onClick={() => setReportType("ticket-report")}>Tickets</button>
+              <button className={!isTicketReport ? "active" : ""} type="button" aria-pressed={!isTicketReport} onClick={() => setReportType("event-service-report")}>Events & Services</button>
             </div>
             <button className="button secondary" type="button" onClick={() => void loadReport()}>
               <RefreshCw size={16} aria-hidden="true" />
