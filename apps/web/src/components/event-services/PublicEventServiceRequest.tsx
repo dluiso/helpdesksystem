@@ -23,6 +23,7 @@ interface ServiceOption {
 
 interface PublicFormConfig {
   organization: { name: string; supportEmail: string };
+  portal: { browserTitle: string };
   turnstileSiteKey: string | null;
   services: ServiceOption[];
   form: {
@@ -81,6 +82,11 @@ export function PublicEventServiceRequest() {
       .catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to load event request form."))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!config) return;
+    document.title = `${branding.applicationName} - ${config.portal.browserTitle || "Schedule Event Support"}`;
+  }, [branding.applicationName, config]);
 
   function updateField(key: string, value: string | string[]) {
     setFormData((current) => ({ ...current, [key]: value }));

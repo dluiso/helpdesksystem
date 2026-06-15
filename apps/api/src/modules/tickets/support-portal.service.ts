@@ -96,6 +96,7 @@ export class SupportPortalService {
         companyName: true,
         supportEmail: true,
         supportPortalEnabled: true,
+        supportPortalBrowserTitle: true,
         supportPortalTitle: true,
         supportPortalIntroText: true,
         supportPortalSuccessMessage: true,
@@ -114,6 +115,7 @@ export class SupportPortalService {
         supportEmail: settings?.supportEmail ?? "support@aviditytechnologies.com"
       },
       portal: {
+        browserTitle: settings?.supportPortalBrowserTitle ?? "Support Portal",
         title: settings?.supportPortalTitle ?? "Submit a Support Request",
         introText: settings?.supportPortalIntroText ?? form.introText,
         successMessage:
@@ -131,6 +133,7 @@ export class SupportPortalService {
       where: { organizationId: user.organizationId },
       select: {
         supportPortalEnabled: true,
+        supportPortalBrowserTitle: true,
         supportPortalTitle: true,
         supportPortalIntroText: true,
         supportPortalSuccessMessage: true,
@@ -143,6 +146,7 @@ export class SupportPortalService {
     return {
       settings: {
         supportPortalEnabled: settings?.supportPortalEnabled ?? true,
+        supportPortalBrowserTitle: settings?.supportPortalBrowserTitle ?? "Support Portal",
         supportPortalTitle: settings?.supportPortalTitle ?? "Submit a Support Request",
         supportPortalIntroText: settings?.supportPortalIntroText ?? null,
         supportPortalSuccessMessage: settings?.supportPortalSuccessMessage ?? null,
@@ -168,6 +172,7 @@ export class SupportPortalService {
         companyName: this.config.get<string>("DEFAULT_COMPANY_NAME") ?? "Avidity Technologies",
         supportEmail: this.config.get<string>("DEFAULT_SUPPORT_EMAIL") ?? "support@aviditytechnologies.com",
         supportPortalEnabled: input.supportPortalEnabled,
+        supportPortalBrowserTitle: this.optionalTrim(input.supportPortalBrowserTitle) ?? "Support Portal",
         supportPortalTitle: input.supportPortalTitle.trim() || "Submit a Support Request",
         supportPortalIntroText: this.optionalTrim(input.supportPortalIntroText),
         supportPortalSuccessMessage: this.optionalTrim(input.supportPortalSuccessMessage),
@@ -177,6 +182,7 @@ export class SupportPortalService {
       },
       update: {
         supportPortalEnabled: input.supportPortalEnabled,
+        supportPortalBrowserTitle: this.optionalTrim(input.supportPortalBrowserTitle) ?? "Support Portal",
         supportPortalTitle: input.supportPortalTitle.trim() || "Submit a Support Request",
         supportPortalIntroText: this.optionalTrim(input.supportPortalIntroText),
         supportPortalSuccessMessage: this.optionalTrim(input.supportPortalSuccessMessage),
@@ -186,6 +192,7 @@ export class SupportPortalService {
       },
       select: {
         supportPortalEnabled: true,
+        supportPortalBrowserTitle: true,
         supportPortalTitle: true,
         supportPortalIntroText: true,
         supportPortalSuccessMessage: true,

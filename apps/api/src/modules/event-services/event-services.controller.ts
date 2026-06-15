@@ -32,6 +32,7 @@ import { ListEventServiceCalendarDto } from "./dto/list-event-service-calendar.d
 import { ListEventServiceRequestsDto } from "./dto/list-event-service-requests.dto";
 import { SyncEventServiceTaskCalendarDto } from "./dto/sync-event-service-task-calendar.dto";
 import { UpdateEventServiceCalendarSettingsDto } from "./dto/update-event-service-calendar-settings.dto";
+import { UpdateEventServicePortalSettingsDto } from "./dto/update-event-service-portal-settings.dto";
 import { UpdateEventServiceTurnstileDto } from "./dto/update-event-service-turnstile.dto";
 import { UpdateEventServiceRequestDto } from "./dto/update-event-service-request.dto";
 import { UpdateEventServiceTaskDto } from "./dto/update-event-service-task.dto";
@@ -126,6 +127,20 @@ export class EventServicesController {
   @RequirePermissions("event_services.manage_forms")
   getTurnstileConfig(@CurrentUser() user: AuthenticatedUser) {
     return this.eventServices.getTurnstileConfig(user);
+  }
+
+  @Get("event-services/config/portal")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.manage_forms")
+  getPortalConfig(@CurrentUser() user: AuthenticatedUser) {
+    return this.eventServices.getPortalConfig(user);
+  }
+
+  @Patch("event-services/config/portal")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.manage_forms")
+  updatePortalConfig(@CurrentUser() user: AuthenticatedUser, @Body() body: UpdateEventServicePortalSettingsDto) {
+    return this.eventServices.updatePortalConfig(user, body);
   }
 
   @Patch("event-services/config/turnstile")

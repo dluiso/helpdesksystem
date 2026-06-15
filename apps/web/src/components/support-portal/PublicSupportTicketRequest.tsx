@@ -48,6 +48,7 @@ type VisibilityRule = { fieldKey?: string; operator?: string; value?: string };
 interface SupportPortalConfig {
   organization: { name: string; supportEmail: string };
   portal: {
+    browserTitle: string;
     title: string;
     introText: string | null;
     successMessage: string;
@@ -178,6 +179,11 @@ export function PublicSupportTicketRequest() {
       .catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to load the support request form."))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!config) return;
+    document.title = `${branding.applicationName} - ${config.portal.browserTitle || "Support Portal"}`;
+  }, [branding.applicationName, config]);
 
   function updateField(key: string, value: string | string[]) {
     setFormData((current) => ({ ...current, [key]: value }));

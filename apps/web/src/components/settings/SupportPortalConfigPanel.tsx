@@ -3,6 +3,7 @@
 import { Eye, GripVertical, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
 import type { DragEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { useBranding } from "@/components/providers/BrandingProvider";
 import { apiFetch } from "@/lib/api";
 
 type FieldType = "TEXT" | "TEXTAREA" | "EMAIL" | "PHONE" | "DATE" | "TIME" | "SELECT" | "MULTI_SELECT" | "CHECKBOX" | "RADIO" | "NUMBER";
@@ -42,6 +43,7 @@ interface SupportPortalSection {
 interface SupportPortalConfig {
   settings: {
     supportPortalEnabled: boolean;
+    supportPortalBrowserTitle: string;
     supportPortalTitle: string;
     supportPortalIntroText: string | null;
     supportPortalSuccessMessage: string | null;
@@ -220,6 +222,7 @@ function sortFields(fields: SupportPortalField[]) {
 }
 
 export function SupportPortalConfigPanel() {
+  const branding = useBranding();
   const [activeTab, setActiveTab] = useState<"form" | "preview" | "security">("form");
   const [config, setConfig] = useState<SupportPortalConfig | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<SettingsDraft | null>(null);
@@ -660,6 +663,8 @@ export function SupportPortalConfigPanel() {
           <div className="support-settings-grid">
             <label><input type="checkbox" checked={settingsDraft.supportPortalEnabled} onChange={(event) => setSettingsDraft({ ...settingsDraft, supportPortalEnabled: event.target.checked })} /> Enable public support portal</label>
             <label>Portal title<input value={settingsDraft.supportPortalTitle} onChange={(event) => setSettingsDraft({ ...settingsDraft, supportPortalTitle: event.target.value })} /></label>
+            <label>Browser title<input value={settingsDraft.supportPortalBrowserTitle} onChange={(event) => setSettingsDraft({ ...settingsDraft, supportPortalBrowserTitle: event.target.value })} /></label>
+            <label>Browser tab preview<input readOnly value={`${branding.applicationName} - ${settingsDraft.supportPortalBrowserTitle || "Support Portal"}`} /></label>
             <label className="span-2">Intro text<textarea value={settingsDraft.supportPortalIntroText ?? ""} onChange={(event) => setSettingsDraft({ ...settingsDraft, supportPortalIntroText: event.target.value })} /></label>
             <label className="span-2">Success message<textarea value={settingsDraft.supportPortalSuccessMessage ?? ""} onChange={(event) => setSettingsDraft({ ...settingsDraft, supportPortalSuccessMessage: event.target.value })} /></label>
             <button className="button" type="button" disabled={busy === "settings"} onClick={saveSettings}><Save size={15} /> Save Portal Settings</button>

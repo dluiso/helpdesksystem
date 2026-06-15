@@ -16,6 +16,7 @@ import { CreatePublicEventServiceRequestDto } from "./dto/create-public-event-se
 import { ListEventServiceCalendarDto } from "./dto/list-event-service-calendar.dto";
 import { ListEventServiceRequestsDto } from "./dto/list-event-service-requests.dto";
 import { UpdateEventServiceCalendarSettingsDto } from "./dto/update-event-service-calendar-settings.dto";
+import { UpdateEventServicePortalSettingsDto } from "./dto/update-event-service-portal-settings.dto";
 import { UpdateEventServiceTurnstileDto } from "./dto/update-event-service-turnstile.dto";
 import { UpdateEventServiceRequestDto } from "./dto/update-event-service-request.dto";
 import { UpdateEventServiceTaskDto } from "./dto/update-event-service-task.dto";
@@ -48,7 +49,7 @@ export class EventServicesService {
     const [settings, services, form] = await Promise.all([
       this.prisma.systemSetting.findUnique({
         where: { organizationId: organization.id },
-        select: { companyName: true, supportEmail: true, eventTurnstileEnabled: true, eventTurnstileSiteKey: true }
+        select: { companyName: true, supportEmail: true, eventPortalBrowserTitle: true, eventTurnstileEnabled: true, eventTurnstileSiteKey: true }
       }),
       this.prisma.eventServiceService.findMany({
         where: { organizationId: organization.id, isActive: true },
@@ -61,6 +62,9 @@ export class EventServicesService {
       organization: {
         name: settings?.companyName ?? organization.name,
         supportEmail: settings?.supportEmail ?? "support@aviditytechnologies.com"
+      },
+      portal: {
+        browserTitle: settings?.eventPortalBrowserTitle ?? "Schedule Event Support"
       },
       turnstileSiteKey: settings?.eventTurnstileEnabled ? settings.eventTurnstileSiteKey : null,
       services,
@@ -650,6 +654,46 @@ export class EventServicesService {
       eventTurnstileSiteKey: settings?.eventTurnstileSiteKey ?? null,
       eventTurnstileSecretReference: settings?.eventTurnstileSecretReference ?? DEFAULT_EVENT_TURNSTILE_SECRET_REFERENCE
     };
+  }
+
+  async getPortalConfig(user: AuthenticatedUser) {
+    const settings = await this.prisma.systemSetting.findUnique({
+      where: { organizationId: user.organizationId },
+      select: { eventPortalBrowserTitle: true }
+    });
+
+    return {
+      eventPortalBrowserTitle: settings?.eventPortalBrowserTitle ?? "Schedule Event Support"
+    };
+  }
+
+  async updatePortalConfig(user: AuthenticatedUser, input: UpdateEventServicePortalSettingsDto) {
+    const settings = await this.prisma.systemSetting.upsert({
+      where: { organizationId: user.organizationId },
+      create: {
+        organizationId: user.organizationId,
+        applicationName: this.config.get<string>("APP_NAME") ?? "Avidity IT Management Tool",
+        companyName: this.config.get<string>("DEFAULT_COMPANY_NAME") ?? "Avidity Technologies",
+        supportEmail: this.config.get<string>("DEFAULT_SUPPORT_EMAIL") ?? "support@aviditytechnologies.com",
+        eventPortalBrowserTitle: input.eventPortalBrowserTitle.trim() || "Schedule Event Support"
+      },
+      update: {
+        eventPortalBrowserTitle: input.eventPortalBrowserTitle.trim() || "Schedule Event Support"
+      },
+      select: {
+        eventPortalBrowserTitle: true
+      }
+    });
+
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "EventServiceConfig",
+      entityId: user.organizationId,
+      action: "event_service.portal_updated",
+      metadata: { eventPortalBrowserTitle: settings.eventPortalBrowserTitle }
+    });
+
+    return settings;
   }
 
   async updateTurnstileConfig(user: AuthenticatedUser, input: UpdateEventServiceTurnstileDto) {

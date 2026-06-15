@@ -338,7 +338,9 @@ model SystemSetting {
   eventTurnstileEnabled      Boolean  @default(false)
   eventTurnstileSiteKey      String?
   eventTurnstileSecretReference String?
+  eventPortalBrowserTitle    String   @default("Schedule Event Support")
   supportPortalEnabled       Boolean  @default(true)
+  supportPortalBrowserTitle  String   @default("Support Portal")
   supportPortalTitle         String   @default("Submit a Support Request")
   supportPortalIntroText     String?
   supportPortalSuccessMessage String?

@@ -10,6 +10,11 @@ export class UpdateSupportPortalSettingsDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(180)
+  supportPortalBrowserTitle?: string | null;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(1000)
   supportPortalIntroText?: string | null;
 

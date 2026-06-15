@@ -2,6 +2,7 @@
 
 import { ArrowDown, ArrowUp, Eye, Save, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useBranding } from "@/components/providers/BrandingProvider";
 import { apiFetch } from "@/lib/api";
 
 interface UserOption {
@@ -45,6 +46,10 @@ interface EventTurnstileSettings {
   eventTurnstileEnabled: boolean;
   eventTurnstileSiteKey: string | null;
   eventTurnstileSecretReference: string | null;
+}
+
+interface EventPortalSettings {
+  eventPortalBrowserTitle: string;
 }
 
 interface EventCalendarSettings {
@@ -134,6 +139,7 @@ function fieldToDraft(field: EventFormField): FieldDraft {
 }
 
 export function EventServicesConfigPanel() {
+  const branding = useBranding();
   const [activeTab, setActiveTab] = useState<"form" | "preview" | "turnstile" | "calendar">("form");
   const [services, setServices] = useState<EventServiceCatalogItem[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
@@ -142,6 +148,9 @@ export function EventServicesConfigPanel() {
     eventTurnstileEnabled: false,
     eventTurnstileSiteKey: "",
     eventTurnstileSecretReference: "env:EVENT_TURNSTILE_SECRET_KEY"
+  });
+  const [portalSettings, setPortalSettings] = useState<EventPortalSettings>({
+    eventPortalBrowserTitle: "Schedule Event Support"
   });
   const [calendarSettings, setCalendarSettings] = useState<EventCalendarSettings>({
     eventCalendarSyncEnabled: false,
@@ -166,9 +175,10 @@ export function EventServicesConfigPanel() {
   async function loadConfig() {
     setError(null);
     try {
-      const [serviceData, formData, turnstileData, calendarData, userData] = await Promise.all([
+      const [serviceData, formData, portalData, turnstileData, calendarData, userData] = await Promise.all([
         apiFetch<EventServiceCatalogItem[]>("/event-services/services"),
         apiFetch<EventForm>("/event-services/form"),
+        apiFetch<EventPortalSettings>("/event-services/config/portal"),
         apiFetch<EventTurnstileSettings>("/event-services/config/turnstile"),
         apiFetch<EventCalendarSettings>("/event-services/config/calendar"),
         apiFetch<UserOption[]>("/users")
@@ -176,6 +186,9 @@ export function EventServicesConfigPanel() {
       setServices(serviceData);
       setForm(formData);
       setUsers(userData);
+      setPortalSettings({
+        eventPortalBrowserTitle: portalData.eventPortalBrowserTitle || "Schedule Event Support"
+      });
       setTurnstile({
         eventTurnstileEnabled: turnstileData.eventTurnstileEnabled,
         eventTurnstileSiteKey: turnstileData.eventTurnstileSiteKey ?? "",
@@ -325,6 +338,25 @@ export function EventServicesConfigPanel() {
     }
   }
 
+  async function savePortalSettings() {
+    setBusy("portal");
+    setError(null);
+    try {
+      const saved = await apiFetch<EventPortalSettings>("/event-services/config/portal", {
+        method: "PATCH",
+        body: JSON.stringify(portalSettings)
+      });
+      setPortalSettings({
+        eventPortalBrowserTitle: saved.eventPortalBrowserTitle || "Schedule Event Support"
+      });
+      setNotice("Event portal settings saved.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to save event portal settings.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function saveCalendarSettings() {
     setBusy("calendar");
     setError(null);
@@ -428,6 +460,21 @@ export function EventServicesConfigPanel() {
 
       {activeTab === "form" ? (
         <div className="event-admin-grid settings-section">
+          <div className="nested-panel event-config-list-panel span-2">
+            <h3>Public Portal</h3>
+            <p className="muted">Set browser presentation for the public Event & Services portal.</p>
+            <div className="grid columns-2">
+              <label className="field">
+                <span>Browser title</span>
+                <input className="input" value={portalSettings.eventPortalBrowserTitle} onChange={(event) => setPortalSettings({ eventPortalBrowserTitle: event.target.value })} />
+              </label>
+              <div className="field">
+                <span>Browser tab preview</span>
+                <input className="input" readOnly value={`${branding.applicationName} - ${portalSettings.eventPortalBrowserTitle || "Schedule Event Support"}`} />
+              </div>
+            </div>
+            <button className="button" type="button" onClick={savePortalSettings} disabled={busy === "portal"}><Save size={15} /> Save Portal Settings</button>
+          </div>
           <div className="nested-panel event-config-list-panel">
             <h3>Services</h3>
             <p className="muted">Manage the service choices shown on the public form and optional default specialist assignment.</p>
