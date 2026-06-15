@@ -31,6 +31,7 @@ type GeneratedReport = {
   format: ReportFormat;
   result: Awaited<ReturnType<ReportsService["ticketSummary"]>>;
 };
+type TicketSummaryOptions = { detailMode?: "paged" | "all" };
 
 @Injectable()
 export class ReportsService implements OnModuleInit, OnModuleDestroy {
@@ -250,7 +251,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     return { deleted: true };
   }
 
-  async ticketSummary(user: AuthenticatedUser, query: TicketReportQueryDto) {
+  async ticketSummary(user: AuthenticatedUser, query: TicketReportQueryDto, options: TicketSummaryOptions = {}) {
     const range = this.resolveDateRange(query);
     const where = this.buildTicketWhere(user, query, range);
     const valuePerTicket = this.resolveValuePerTicket(query);
@@ -285,6 +286,11 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     const unassignedCount = tickets.filter((ticket) => !ticket.assignedUserId && !ticket.assignedTeamId && ticket.assignees.length === 0).length;
     const withAttachments = tickets.filter((ticket) => ticket._count.attachments > 0).length;
     const estimatedTotal = valuePerTicket ? tickets.length * valuePerTicket : null;
+    const totalMatched = tickets.length;
+    const detailPage = this.resolveDetailPage(query, totalMatched, options);
+    const detailRows = tickets
+      .slice(detailPage.offset, detailPage.offset + detailPage.pageSize)
+      .map((ticket) => this.toDetailRow(ticket, valuePerTicket));
 
     return {
       filters: {
@@ -292,7 +298,9 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
         endDate: range.end.toISOString(),
         groupBy: query.groupBy ?? "day",
         estimateMode: query.estimateMode ?? "none",
-        valuePerTicket
+        valuePerTicket,
+        page: detailPage.page,
+        pageSize: detailPage.pageSize
       },
       options: {
         clients,
@@ -320,9 +328,12 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       byClient: this.groupBy(tickets, (ticket) => ticket.client?.name ?? "Unmapped / no client").slice(0, 12),
       byTechnician: this.groupBy(tickets, (ticket) => ticket.assignedUser ? `${ticket.assignedUser.firstName} ${ticket.assignedUser.lastName}` : "Unassigned").slice(0, 12),
       byTeam: this.groupBy(tickets, (ticket) => ticket.assignedTeam?.name ?? "No team").slice(0, 12),
-      detail: tickets.slice(0, 250).map((ticket) => this.toDetailRow(ticket, valuePerTicket)),
-      detailLimit: 250,
-      totalMatched: tickets.length
+      detail: detailRows,
+      detailLimit: detailPage.pageSize,
+      page: detailPage.page,
+      pageSize: detailPage.pageSize,
+      totalPages: detailPage.totalPages,
+      totalMatched
     };
   }
 
@@ -369,7 +380,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async exportTicketsCsv(user: AuthenticatedUser, query: TicketReportQueryDto): Promise<GeneratedReport> {
-    const result = await this.ticketSummary(user, query);
+    const result = await this.ticketSummary(user, query, { detailMode: "all" });
     const rows = result.detail.map((ticket) => [
       ticket.ticketNumber,
       ticket.subject,
@@ -401,7 +412,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async exportTicketsXlsx(user: AuthenticatedUser, query: TicketReportQueryDto): Promise<GeneratedReport> {
-    const result = await this.ticketSummary(user, query);
+    const result = await this.ticketSummary(user, query, { detailMode: "all" });
     const workbook = new Workbook();
     workbook.creator = "Avidity IT Management Tool";
     workbook.created = new Date();
@@ -458,43 +469,48 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async exportTicketsPdf(user: AuthenticatedUser, query: TicketReportQueryDto): Promise<GeneratedReport> {
-    const result = await this.ticketSummary(user, query);
+    const result = await this.ticketSummary(user, query, { detailMode: "all" });
     const doc = new PDFDocument({ margin: 42, size: "LETTER", bufferPages: true });
     const chunks: Buffer[] = [];
     doc.on("data", (chunk: Buffer) => chunks.push(chunk));
     const done = new Promise<void>((resolve) => doc.on("end", resolve));
 
-    doc.fontSize(18).text("Ticket Report", { continued: false });
-    doc.moveDown(0.2);
-    doc.fontSize(9).fillColor("#64748b").text(`Generated ${new Date().toLocaleString()}`);
-    doc.moveDown();
+    doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(20).text("Ticket Report");
+    doc.moveDown(0.25);
+    doc.fillColor("#64748b").font("Helvetica").fontSize(9).text(`Generated ${new Date().toLocaleString()}`);
+    doc.text(`Range ${this.formatShortDate(result.filters.startDate)} - ${this.formatShortDate(result.filters.endDate)} | Grouped by ${this.label(result.filters.groupBy)}`);
+    doc.moveDown(0.8);
 
-    const summaryRows = [
-      ["Total tickets", result.summary.totalTickets],
-      ["Active", result.summary.activeTickets],
-      ["Closed", result.summary.closedTickets],
-      ["Resolved", result.summary.resolvedTickets],
-      ["Unassigned", result.summary.unassignedTickets],
-      ["High priority", result.summary.highPriorityTickets],
-      ["With attachments", result.summary.withAttachments],
-      ["Estimated total", result.summary.estimatedTotal === null ? "-" : `$${result.summary.estimatedTotal.toFixed(2)}`]
-    ];
-    this.drawPdfSection(doc, "Summary");
-    summaryRows.forEach(([key, value]) => this.drawPdfKeyValue(doc, String(key), String(value)));
+    this.drawPdfSummaryGrid(doc, [
+      ["Total", String(result.summary.totalTickets)],
+      ["Active", String(result.summary.activeTickets)],
+      ["Closed", String(result.summary.closedTickets)],
+      ["Resolved", String(result.summary.resolvedTickets)],
+      ["Unassigned", String(result.summary.unassignedTickets)],
+      ["High Priority", String(result.summary.highPriorityTickets)],
+      ["With Files", String(result.summary.withAttachments)],
+      ["Estimate", result.summary.estimatedTotal === null ? "-" : `$${result.summary.estimatedTotal.toFixed(2)}`]
+    ]);
 
-    this.drawPdfSection(doc, "Tickets by Status");
-    result.byStatus.slice(0, 10).forEach((item) => this.drawPdfKeyValue(doc, this.label(item.label), String(item.count)));
+    this.drawPdfSection(doc, "Ticket Activity");
+    this.drawPdfGroupedBars(doc, result.activity.slice(-18).map((item) => ({
+      label: item.label,
+      values: [
+        { label: "Created", value: item.created, color: "#2563eb" },
+        { label: "Resolved", value: item.resolved, color: "#16a34a" },
+        { label: "Closed", value: item.closed, color: "#64748b" }
+      ]
+    })));
 
-    this.drawPdfSection(doc, "Top Clients");
-    result.byClient.slice(0, 10).forEach((item) => this.drawPdfKeyValue(doc, item.label, String(item.count)));
+    this.drawPdfSection(doc, "Operational Distribution");
+    this.drawPdfBarChart(doc, "Tickets by Status", result.byStatus.slice(0, 8));
+    this.drawPdfBarChart(doc, "Top Clients", result.byClient.slice(0, 8));
+    this.drawPdfBarChart(doc, "Technician Workload", result.byTechnician.slice(0, 8));
 
     this.drawPdfSection(doc, "Report Detail");
-    result.detail.slice(0, 35).forEach((ticket) => {
-      doc.fillColor("#0f172a").fontSize(9).font("Helvetica-Bold").text(`${ticket.ticketNumber}  ${ticket.subject}`, { width: 520 });
-      doc.fillColor("#64748b").font("Helvetica").text(`${ticket.clientName} | ${this.label(ticket.status)} | ${ticket.assignedTo} | ${this.formatShortDate(ticket.createdAt)}`);
-      doc.moveDown(0.35);
-      if (doc.y > 710) doc.addPage();
-    });
+    doc.fillColor("#64748b").font("Helvetica").fontSize(8).text(`Showing ${Math.min(result.detail.length, 80)} of ${result.totalMatched} tickets in this PDF. CSV and Excel exports include the full detail table.`);
+    doc.moveDown(0.5);
+    this.drawPdfTicketTable(doc, result.detail.slice(0, 80));
 
     const pages = doc.bufferedPageRange();
     for (let i = 0; i < pages.count; i += 1) {
@@ -510,6 +526,30 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       body: Buffer.concat(chunks),
       format: "pdf",
       result
+    };
+  }
+
+  private resolveDetailPage(query: TicketReportQueryDto, totalMatched: number, options: TicketSummaryOptions) {
+    if (options.detailMode === "all") {
+      return {
+        page: 1,
+        pageSize: Math.max(totalMatched, 1),
+        totalPages: 1,
+        offset: 0
+      };
+    }
+
+    const parsedPageSize = Number(query.pageSize ?? "25");
+    const pageSize = Number.isFinite(parsedPageSize) ? Math.min(100, Math.max(10, Math.floor(parsedPageSize))) : 25;
+    const totalPages = Math.max(1, Math.ceil(totalMatched / pageSize));
+    const parsedPage = Number(query.page ?? "1");
+    const page = Number.isFinite(parsedPage) ? Math.min(totalPages, Math.max(1, Math.floor(parsedPage))) : 1;
+
+    return {
+      page,
+      pageSize,
+      totalPages,
+      offset: (page - 1) * pageSize
     };
   }
 
@@ -670,9 +710,118 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private drawPdfSection(doc: PDFKit.PDFDocument, title: string) {
+    this.ensurePdfSpace(doc, 80);
     doc.moveDown(0.8);
     doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(12).text(title);
     doc.moveDown(0.3);
+  }
+
+  private drawPdfSummaryGrid(doc: PDFKit.PDFDocument, rows: Array<[string, string]>) {
+    const startX = 42;
+    const cardWidth = 122;
+    const cardHeight = 42;
+    const gap = 10;
+    rows.forEach(([label, value], index) => {
+      const column = index % 4;
+      const row = Math.floor(index / 4);
+      const x = startX + column * (cardWidth + gap);
+      const y = doc.y + row * (cardHeight + gap);
+      doc.roundedRect(x, y, cardWidth, cardHeight, 6).fillAndStroke("#f8fafc", "#dbe3ef");
+      doc.fillColor("#64748b").font("Helvetica").fontSize(7).text(label, x + 10, y + 8, { width: cardWidth - 20 });
+      doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(15).text(value, x + 10, y + 21, { width: cardWidth - 20 });
+    });
+    doc.y += 2 * (cardHeight + gap);
+  }
+
+  private drawPdfGroupedBars(doc: PDFKit.PDFDocument, groups: Array<{ label: string; values: Array<{ label: string; value: number; color: string }> }>) {
+    this.ensurePdfSpace(doc, 170);
+    const chartX = 42;
+    const chartY = doc.y;
+    const chartWidth = 520;
+    const chartHeight = 120;
+    const maxValue = Math.max(1, ...groups.flatMap((group) => group.values.map((value) => value.value)));
+    const groupWidth = chartWidth / Math.max(1, groups.length);
+
+    doc.strokeColor("#dbe3ef").moveTo(chartX, chartY + chartHeight).lineTo(chartX + chartWidth, chartY + chartHeight).stroke();
+
+    groups.forEach((group, groupIndex) => {
+      const baseX = chartX + groupIndex * groupWidth + 3;
+      const barWidth = Math.max(3, Math.min(8, (groupWidth - 8) / group.values.length));
+      group.values.forEach((value, valueIndex) => {
+        const height = Math.max(2, (value.value / maxValue) * chartHeight);
+        doc.rect(baseX + valueIndex * (barWidth + 2), chartY + chartHeight - height, barWidth, height).fill(value.color);
+      });
+      if (groupIndex % Math.ceil(groups.length / 6 || 1) === 0) {
+        doc.fillColor("#64748b").font("Helvetica").fontSize(6).text(group.label, baseX, chartY + chartHeight + 4, { width: groupWidth + 10, align: "left" });
+      }
+    });
+
+    doc.y = chartY + chartHeight + 22;
+    doc.fillColor("#64748b").font("Helvetica").fontSize(7).text("Blue: Created   Green: Resolved   Gray: Closed");
+  }
+
+  private drawPdfBarChart(doc: PDFKit.PDFDocument, title: string, items: Array<{ label: string; count: number }>) {
+    this.ensurePdfSpace(doc, 96);
+    doc.fillColor("#334155").font("Helvetica-Bold").fontSize(9).text(title);
+    doc.moveDown(0.2);
+    const maxValue = Math.max(1, ...items.map((item) => item.count));
+    const x = 42;
+    const barX = 220;
+    const barWidth = 250;
+    for (const item of items) {
+      this.ensurePdfSpace(doc, 18);
+      const y = doc.y;
+      doc.fillColor("#475569").font("Helvetica").fontSize(8).text(this.label(item.label), x, y, { width: 170, ellipsis: true });
+      doc.roundedRect(barX, y + 1, barWidth, 8, 4).fill("#e2e8f0");
+      doc.roundedRect(barX, y + 1, Math.max(8, (item.count / maxValue) * barWidth), 8, 4).fill("#2563eb");
+      doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(8).text(String(item.count), barX + barWidth + 12, y, { width: 50, align: "right" });
+      doc.y = y + 17;
+    }
+    doc.moveDown(0.3);
+  }
+
+  private drawPdfTicketTable(doc: PDFKit.PDFDocument, tickets: Awaited<ReturnType<ReportsService["ticketSummary"]>>["detail"]) {
+    const columns = [
+      { label: "Ticket", x: 42, width: 62 },
+      { label: "Subject", x: 110, width: 165 },
+      { label: "Client", x: 282, width: 100 },
+      { label: "Status", x: 390, width: 72 },
+      { label: "Assigned", x: 468, width: 94 }
+    ];
+    const drawHeader = () => {
+      this.ensurePdfSpace(doc, 34);
+      const y = doc.y;
+      doc.roundedRect(42, y, 520, 20, 4).fill("#f1f5f9");
+      columns.forEach((column) => {
+        doc.fillColor("#334155").font("Helvetica-Bold").fontSize(7).text(column.label, column.x, y + 6, { width: column.width });
+      });
+      doc.y = y + 24;
+    };
+
+    drawHeader();
+    tickets.forEach((ticket) => {
+      if (doc.y > 705) {
+        doc.addPage();
+        drawHeader();
+      }
+      const y = doc.y;
+      const rowHeight = 28;
+      doc.strokeColor("#e2e8f0").moveTo(42, y + rowHeight).lineTo(562, y + rowHeight).stroke();
+      doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(7).text(ticket.ticketNumber, 42, y + 4, { width: 62 });
+      doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(7).text(ticket.subject, 110, y + 4, { width: 165, ellipsis: true });
+      doc.fillColor("#64748b").font("Helvetica").fontSize(6).text(ticket.requester, 110, y + 14, { width: 165, ellipsis: true });
+      doc.fillColor("#0f172a").font("Helvetica").fontSize(7).text(ticket.clientName, 282, y + 4, { width: 100, ellipsis: true });
+      doc.fillColor("#0f172a").font("Helvetica").fontSize(7).text(this.label(ticket.status), 390, y + 4, { width: 72, ellipsis: true });
+      doc.fillColor("#0f172a").font("Helvetica").fontSize(7).text(ticket.assignedTo, 468, y + 4, { width: 94, ellipsis: true });
+      doc.fillColor("#64748b").font("Helvetica").fontSize(6).text(this.formatShortDate(ticket.createdAt), 468, y + 14, { width: 94 });
+      doc.y = y + rowHeight + 2;
+    });
+  }
+
+  private ensurePdfSpace(doc: PDFKit.PDFDocument, requiredHeight: number) {
+    if (doc.y + requiredHeight > 730) {
+      doc.addPage();
+    }
   }
 
   private drawPdfKeyValue(doc: PDFKit.PDFDocument, key: string, value: string) {

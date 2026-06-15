@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, Download, FileSpreadsheet, FileText, Filter, History, Mail, RefreshCw, Save, Trash2 } from "lucide-react";
+import { CalendarClock, ChevronDown, ChevronUp, Download, FileSpreadsheet, FileText, Filter, History, Mail, RefreshCw, Save, SlidersHorizontal, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
 
@@ -16,6 +16,8 @@ interface ReportSummary {
     groupBy: "day" | "week" | "month" | "year";
     estimateMode: "none" | "perTicket";
     valuePerTicket: number | null;
+    page: number;
+    pageSize: number;
   };
   options: {
     clients: ReportOption[];
@@ -60,6 +62,9 @@ interface ReportSummary {
     estimatedValue: number | null;
   }>;
   detailLimit: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
   totalMatched: number;
 }
 
@@ -222,6 +227,10 @@ export function ReportsWorkspace() {
   const [statuses, setStatuses] = useState<string[]>([]);
   const [estimateMode, setEstimateMode] = useState<"none" | "perTicket">("none");
   const [valuePerTicket, setValuePerTicket] = useState("0");
+  const [detailPage, setDetailPage] = useState(1);
+  const [detailPageSize, setDetailPageSize] = useState("25");
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [showReportTools, setShowReportTools] = useState(false);
   const [data, setData] = useState<ReportSummary | null>(null);
   const [savedReports, setSavedReports] = useState<SavedReport[]>([]);
   const [templates, setTemplates] = useState<ReportTemplate[]>([]);
@@ -257,7 +266,13 @@ export function ReportsWorkspace() {
       params.set("estimateMode", estimateMode);
       params.set("valuePerTicket", valuePerTicket || "0");
     }
+    params.set("page", String(detailPage));
+    params.set("pageSize", detailPageSize);
     return params;
+  }, [assignedTeamId, assignedUserId, attachments, clientId, detailPage, detailPageSize, endDate, estimateMode, groupBy, priority, source, startDate, statuses, valuePerTicket]);
+
+  useEffect(() => {
+    setDetailPage(1);
   }, [assignedTeamId, assignedUserId, attachments, clientId, endDate, estimateMode, groupBy, priority, source, startDate, statuses, valuePerTicket]);
 
   async function loadReport() {
@@ -512,6 +527,9 @@ export function ReportsWorkspace() {
   }
 
   const options = data?.options;
+  const totalPages = data?.totalPages ?? 1;
+  const firstDetailRow = data && data.totalMatched > 0 ? ((data.page - 1) * data.pageSize) + 1 : 0;
+  const lastDetailRow = data ? Math.min(data.totalMatched, data.page * data.pageSize) : 0;
 
   return (
     <div className="reports-workspace">
@@ -519,8 +537,8 @@ export function ReportsWorkspace() {
       <section className="panel reports-filter-panel">
         <div className="section-heading compact-heading">
           <div>
-            <h2>Ticket Report Filters</h2>
-            <p className="muted">Build operational ticket reports by period, client, technician, team, status, and estimated value.</p>
+            <h2>Ticket Reports</h2>
+            <p className="muted">Operational ticket performance, workload, status, and export reporting.</p>
           </div>
           <div className="form-actions">
             <button className="button secondary" type="button" onClick={() => void loadReport()}>
@@ -539,67 +557,75 @@ export function ReportsWorkspace() {
               <FileText size={16} aria-hidden="true" />
               <span>PDF</span>
             </button>
+            <button className="button secondary" type="button" onClick={() => setShowReportTools((current) => !current)}>
+              {showReportTools ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
+              <span>Report Tools</span>
+            </button>
           </div>
         </div>
-        <div className="reports-saved-row">
-          <select className="input" defaultValue="" onChange={(event) => applyTemplate(event.target.value)}>
-            <option value="">Report templates</option>
-            {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
-          </select>
-          <select className="input" value={selectedSavedReportId} onChange={(event) => applySavedReport(event.target.value)}>
-            <option value="">Saved reports</option>
-            {savedReports.map((report) => <option key={report.id} value={report.id}>{report.name}</option>)}
-          </select>
-          <input className="input" value={saveName} onChange={(event) => setSaveName(event.target.value)} placeholder="Report name" />
-          <input className="input" value={saveDescription} onChange={(event) => setSaveDescription(event.target.value)} placeholder="Optional description" />
-          <button className="button secondary" type="button" onClick={saveReport} disabled={savedBusy}>
-            <Save size={16} aria-hidden="true" />
-            <span>Save</span>
-          </button>
-          <button className="button secondary" type="button" onClick={updateSavedReport} disabled={savedBusy || !selectedSavedReportId}>
-            <span>Update</span>
-          </button>
-          <button className="button secondary danger-soft" type="button" onClick={deleteSavedReport} disabled={savedBusy || !selectedSavedReportId}>
-            <Trash2 size={16} aria-hidden="true" />
-            <span>Delete</span>
-          </button>
-        </div>
-        <div className="reports-delivery-grid">
-          <div className="reports-delivery-card">
-            <h3><Mail size={16} aria-hidden="true" /> Send Report</h3>
-            <div className="reports-inline-controls">
-              <input className="input" value={emailRecipients} onChange={(event) => setEmailRecipients(event.target.value)} placeholder="email@domain.com, manager@domain.com" />
-              <select className="input" value={emailFormat} onChange={(event) => setEmailFormat(event.target.value as typeof emailFormat)}>
-                <option value="pdf">PDF</option>
-                <option value="xlsx">Excel</option>
-                <option value="csv">CSV</option>
+        {showReportTools ? (
+          <div className="reports-tools-panel">
+            <div className="reports-saved-row">
+              <select className="input" defaultValue="" onChange={(event) => applyTemplate(event.target.value)}>
+                <option value="">Report templates</option>
+                {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
               </select>
-              <button className="button" type="button" onClick={sendReport} disabled={deliveryBusy || !data}>
-                Send
+              <select className="input" value={selectedSavedReportId} onChange={(event) => applySavedReport(event.target.value)}>
+                <option value="">Saved reports</option>
+                {savedReports.map((report) => <option key={report.id} value={report.id}>{report.name}</option>)}
+              </select>
+              <input className="input" value={saveName} onChange={(event) => setSaveName(event.target.value)} placeholder="Report name" />
+              <input className="input" value={saveDescription} onChange={(event) => setSaveDescription(event.target.value)} placeholder="Optional description" />
+              <button className="button secondary" type="button" onClick={saveReport} disabled={savedBusy}>
+                <Save size={16} aria-hidden="true" />
+                <span>Save</span>
+              </button>
+              <button className="button secondary" type="button" onClick={updateSavedReport} disabled={savedBusy || !selectedSavedReportId}>
+                <span>Update</span>
+              </button>
+              <button className="button secondary danger-soft" type="button" onClick={deleteSavedReport} disabled={savedBusy || !selectedSavedReportId}>
+                <Trash2 size={16} aria-hidden="true" />
+                <span>Delete</span>
               </button>
             </div>
-          </div>
-          <div className="reports-delivery-card">
-            <h3><CalendarClock size={16} aria-hidden="true" /> Schedule Saved Report</h3>
-            <div className="reports-inline-controls">
-              <input className="input" value={scheduleName} onChange={(event) => setScheduleName(event.target.value)} placeholder="Schedule name" />
-              <select className="input" value={scheduleFrequency} onChange={(event) => setScheduleFrequency(event.target.value as typeof scheduleFrequency)}>
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-              </select>
-              <select className="input" value={scheduleFormat} onChange={(event) => setScheduleFormat(event.target.value as typeof scheduleFormat)}>
-                <option value="pdf">PDF</option>
-                <option value="xlsx">Excel</option>
-                <option value="csv">CSV</option>
-              </select>
-              <input className="input" value={scheduleRecipients} onChange={(event) => setScheduleRecipients(event.target.value)} placeholder="Recipients" />
-              <button className="button secondary" type="button" onClick={createSchedule} disabled={deliveryBusy || !selectedSavedReportId}>
-                Create
-              </button>
+            <div className="reports-delivery-grid">
+              <div className="reports-delivery-card">
+                <h3><Mail size={16} aria-hidden="true" /> Send Report</h3>
+                <div className="reports-inline-controls">
+                  <input className="input" value={emailRecipients} onChange={(event) => setEmailRecipients(event.target.value)} placeholder="email@domain.com, manager@domain.com" />
+                  <select className="input" value={emailFormat} onChange={(event) => setEmailFormat(event.target.value as typeof emailFormat)}>
+                    <option value="pdf">PDF</option>
+                    <option value="xlsx">Excel</option>
+                    <option value="csv">CSV</option>
+                  </select>
+                  <button className="button" type="button" onClick={sendReport} disabled={deliveryBusy || !data}>
+                    Send
+                  </button>
+                </div>
+              </div>
+              <div className="reports-delivery-card">
+                <h3><CalendarClock size={16} aria-hidden="true" /> Schedule Saved Report</h3>
+                <div className="reports-inline-controls">
+                  <input className="input" value={scheduleName} onChange={(event) => setScheduleName(event.target.value)} placeholder="Schedule name" />
+                  <select className="input" value={scheduleFrequency} onChange={(event) => setScheduleFrequency(event.target.value as typeof scheduleFrequency)}>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                  <select className="input" value={scheduleFormat} onChange={(event) => setScheduleFormat(event.target.value as typeof scheduleFormat)}>
+                    <option value="pdf">PDF</option>
+                    <option value="xlsx">Excel</option>
+                    <option value="csv">CSV</option>
+                  </select>
+                  <input className="input" value={scheduleRecipients} onChange={(event) => setScheduleRecipients(event.target.value)} placeholder="Recipients" />
+                  <button className="button secondary" type="button" onClick={createSchedule} disabled={deliveryBusy || !selectedSavedReportId}>
+                    Create
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        ) : null}
         <div className="reports-filter-grid">
           <input className="input" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
           <input className="input" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
@@ -613,6 +639,15 @@ export function ReportsWorkspace() {
             <option value="">All clients</option>
             {options?.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
           </select>
+        </div>
+        <button className="button secondary reports-advanced-toggle" type="button" onClick={() => setShowAdvancedFilters((current) => !current)}>
+          <SlidersHorizontal size={16} aria-hidden="true" />
+          <span>{showAdvancedFilters ? "Hide Advanced Filters" : "Show Advanced Filters"}</span>
+          {showAdvancedFilters ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
+        </button>
+        {showAdvancedFilters ? (
+          <div className="reports-advanced-panel">
+            <div className="reports-filter-grid">
           <select className="input" value={assignedUserId} onChange={(event) => setAssignedUserId(event.target.value)}>
             <option value="">All technicians</option>
             {options?.users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
@@ -639,18 +674,20 @@ export function ReportsWorkspace() {
             <option value="perTicket">Value per ticket</option>
           </select>
           <input className="input" type="number" min="0" step="0.01" value={valuePerTicket} onChange={(event) => setValuePerTicket(event.target.value)} disabled={estimateMode === "none"} placeholder="Value per ticket" />
-        </div>
-        <div className="reports-status-filter">
-          <span><Filter size={14} aria-hidden="true" /> Status</span>
-          <div>
-            {options?.statuses.map((item) => (
-              <label className="checkbox-row" key={item}>
-                <input type="checkbox" checked={statuses.includes(item)} onChange={() => toggleStatus(item)} />
-                {label(item)}
-              </label>
-            ))}
+            </div>
+            <div className="reports-status-filter">
+              <span><Filter size={14} aria-hidden="true" /> Status</span>
+              <div>
+                {options?.statuses.map((item) => (
+                  <label className="checkbox-row" key={item}>
+                    <input type="checkbox" checked={statuses.includes(item)} onChange={() => toggleStatus(item)} />
+                    {label(item)}
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
+        ) : null}
       </section>
 
       {loading ? <div className="panel dashboard-loading">Loading report...</div> : null}
@@ -682,7 +719,7 @@ export function ReportsWorkspace() {
             <div className="section-heading compact-heading">
               <div>
                 <h2>Report Detail</h2>
-                <p className="muted">Showing {data.detail.length} of {data.totalMatched} tickets. Export CSV or Excel for the report table.</p>
+                <p className="muted">Showing {firstDetailRow}-{lastDetailRow} of {data.totalMatched} tickets. Exports include the full filtered result.</p>
               </div>
             </div>
             <div className="table-scroll">
@@ -726,6 +763,26 @@ export function ReportsWorkspace() {
                   ))}
                 </tbody>
               </table>
+            </div>
+            <div className="pagination-bar">
+              <div className="form-actions">
+                <span className="muted">Rows</span>
+                <select className="input compact-select" value={detailPageSize} onChange={(event) => { setDetailPageSize(event.target.value); setDetailPage(1); }}>
+                  <option value="10">10</option>
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </div>
+              <div className="form-actions">
+                <button className="button secondary" type="button" onClick={() => setDetailPage((current) => Math.max(1, current - 1))} disabled={detailPage <= 1}>
+                  Previous
+                </button>
+                <span className="muted">Page {data.page} of {totalPages}</span>
+                <button className="button secondary" type="button" onClick={() => setDetailPage((current) => Math.min(totalPages, current + 1))} disabled={detailPage >= totalPages}>
+                  Next
+                </button>
+              </div>
             </div>
           </section>
 

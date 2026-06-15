@@ -51,6 +51,14 @@ export class TicketReportQueryDto {
   @IsOptional()
   @IsNumberString()
   valuePerTicket?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  page?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  pageSize?: string;
 }
 
 export class TicketReportExportQueryDto extends TicketReportQueryDto {
