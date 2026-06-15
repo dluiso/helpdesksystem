@@ -17,14 +17,30 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { TicketRoutingService } from "../ticket-routing/ticket-routing.service";
 import { CreatePublicSupportTicketDto } from "./dto/create-public-support-ticket.dto";
+import { ReorderSupportPortalFieldsDto, ReorderSupportPortalSectionsDto } from "./dto/reorder-support-portal-form.dto";
 import { UpdateSupportPortalSettingsDto } from "./dto/update-support-portal-settings.dto";
 import { UpsertSupportPortalFormFieldDto } from "./dto/upsert-support-portal-form-field.dto";
+import { UpsertSupportPortalFormSectionDto } from "./dto/upsert-support-portal-form-section.dto";
 
 const DEFAULT_SUPPORT_TURNSTILE_SECRET_REFERENCE = "env:SUPPORT_PORTAL_TURNSTILE_SECRET_KEY";
 const CORE_FIELD_KEYS = new Set(["requesterName", "requesterEmail", "subject", "description"]);
+const REQUESTER_FIELD_KEYS = new Set(["requesterName", "requesterEmail", "requesterPhone", "department", "location", "supervisor"]);
+const REQUEST_FIELD_KEYS = new Set(["requestType", "subject", "description", "occurredAt", "issueFrequency", "category", "hardwareSubcategory", "softwareSubcategory", "priority", "affectedPeople", "impact"]);
+const ASSET_FIELD_KEYS = new Set(["deviceName", "assetTag", "serialNumber", "ipAddress", "systemName", "systemUrl", "systemVersion"]);
+
+const supportPortalFormInclude = Prisma.validator<Prisma.SupportPortalFormInclude>()({
+  fields: { orderBy: [{ sortOrder: "asc" }, { label: "asc" }] },
+  sections: {
+    orderBy: [{ sortOrder: "asc" }, { title: "asc" }],
+    include: { fields: { orderBy: [{ sortOrder: "asc" }, { label: "asc" }] } }
+  }
+});
+
+type SupportPortalFormWithRelations = Prisma.SupportPortalFormGetPayload<{ include: typeof supportPortalFormInclude }>;
 
 type SupportPortalField = {
   id: string;
+  sectionId: string | null;
   type: EventServiceFieldType;
   label: string;
   fieldKey: string;
@@ -37,6 +53,17 @@ type SupportPortalField = {
   isCore: boolean;
   layoutWidth: string;
   visibilityCondition: Prisma.JsonValue | null;
+};
+
+type SupportPortalSection = {
+  id: string;
+  title: string;
+  sectionKey: string;
+  icon: string | null;
+  sortOrder: number;
+  isCore: boolean;
+  isActive: boolean;
+  fields: SupportPortalField[];
 };
 
 type SupportPortalVisibilityRule = {
@@ -94,7 +121,7 @@ export class SupportPortalService {
           "Your support request was submitted successfully. Keep the ticket number for follow-up.",
         turnstileSiteKey: settings?.supportPortalTurnstileEnabled ? settings.supportPortalTurnstileSiteKey : null
       },
-      form: this.serializeForm(form)
+      form: this.serializeForm(form, true)
     };
   }
 
@@ -185,10 +212,12 @@ export class SupportPortalService {
     if (CORE_FIELD_KEYS.has(data.fieldKey)) {
       throw new BadRequestException("Core support portal fields already exist and cannot be recreated.");
     }
+    const sectionId = await this.resolveSectionId(form.id, input.sectionId);
 
     const field = await this.prisma.supportPortalFormField.create({
       data: {
         ...data,
+        sectionId,
         formId: form.id
       }
     });
@@ -215,6 +244,7 @@ export class SupportPortalService {
     }
 
     const data = this.fieldData(input);
+    const sectionId = await this.resolveSectionId(existing.formId, input.sectionId ?? existing.sectionId);
     const nextData = existing.isCore
       ? {
           label: data.label,
@@ -223,11 +253,12 @@ export class SupportPortalService {
           sortOrder: data.sortOrder,
           options: data.options,
           layoutWidth: this.normalizeLayoutWidth(input.layoutWidth ?? existing.layoutWidth, existing.type),
+          sectionId,
           isRequired: true,
           isActive: true,
           visibilityCondition: Prisma.JsonNull
         }
-      : data;
+      : { ...data, sectionId };
 
     const field = await this.prisma.supportPortalFormField.update({
       where: { id: fieldId },
@@ -268,6 +299,136 @@ export class SupportPortalService {
     return { deleted: true };
   }
 
+  async createSection(user: AuthenticatedUser, input: UpsertSupportPortalFormSectionDto) {
+    const form = await this.ensureDefaultForm(user.organizationId);
+    const title = input.title.trim();
+    if (!title) {
+      throw new BadRequestException("Section title is required.");
+    }
+    const sectionKey = await this.uniqueSectionKey(form.id, title);
+    const section = await this.prisma.supportPortalFormSection.create({
+      data: {
+        formId: form.id,
+        title,
+        sectionKey,
+        icon: this.optionalTrim(input.icon),
+        sortOrder: input.sortOrder ?? Math.max(10, Math.max(0, ...form.sections.map((section) => section.sortOrder)) + 10),
+        isActive: input.isActive ?? true,
+        isCore: false
+      }
+    });
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "SupportPortalFormSection",
+      entityId: section.id,
+      action: "support_portal.section_created",
+      metadata: { title: section.title, sectionKey: section.sectionKey }
+    });
+    return section;
+  }
+
+  async updateSection(user: AuthenticatedUser, sectionId: string, input: UpsertSupportPortalFormSectionDto) {
+    const existing = await this.prisma.supportPortalFormSection.findFirst({
+      where: { id: sectionId, form: { organizationId: user.organizationId } }
+    });
+    if (!existing) {
+      throw new NotFoundException("Support portal section was not found.");
+    }
+    const title = input.title.trim();
+    if (!title) {
+      throw new BadRequestException("Section title is required.");
+    }
+    const section = await this.prisma.supportPortalFormSection.update({
+      where: { id: sectionId },
+      data: {
+        title,
+        icon: this.optionalTrim(input.icon),
+        sortOrder: input.sortOrder ?? existing.sortOrder,
+        isActive: input.isActive ?? existing.isActive
+      }
+    });
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "SupportPortalFormSection",
+      entityId: section.id,
+      action: "support_portal.section_updated",
+      metadata: { title: section.title, sectionKey: section.sectionKey }
+    });
+    return section;
+  }
+
+  async deleteSection(user: AuthenticatedUser, sectionId: string) {
+    const existing = await this.prisma.supportPortalFormSection.findFirst({
+      where: { id: sectionId, form: { organizationId: user.organizationId } },
+      include: { _count: { select: { fields: true } } }
+    });
+    if (!existing) {
+      throw new NotFoundException("Support portal section was not found.");
+    }
+    if (existing.isCore) {
+      throw new BadRequestException("Core support portal sections cannot be deleted.");
+    }
+    if (existing._count.fields > 0) {
+      throw new BadRequestException("Move or delete the section fields before deleting this section.");
+    }
+    await this.prisma.supportPortalFormSection.delete({ where: { id: sectionId } });
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "SupportPortalFormSection",
+      entityId: sectionId,
+      action: "support_portal.section_deleted",
+      metadata: { title: existing.title, sectionKey: existing.sectionKey }
+    });
+    return { deleted: true };
+  }
+
+  async reorderSections(user: AuthenticatedUser, input: ReorderSupportPortalSectionsDto) {
+    const form = await this.ensureDefaultForm(user.organizationId);
+    const ids = new Set(form.sections.map((section) => section.id));
+    if (input.sections.some((section) => !ids.has(section.id))) {
+      throw new BadRequestException("Section reorder payload contains an invalid section.");
+    }
+    await this.prisma.$transaction(
+      input.sections.map((section) =>
+        this.prisma.supportPortalFormSection.update({
+          where: { id: section.id },
+          data: { sortOrder: section.sortOrder }
+        })
+      )
+    );
+    return this.getConfig(user);
+  }
+
+  async reorderFields(user: AuthenticatedUser, input: ReorderSupportPortalFieldsDto) {
+    const form = await this.ensureDefaultForm(user.organizationId);
+    const fieldIds = new Set(form.fields.map((field) => field.id));
+    const sectionIds = new Set(form.sections.map((section) => section.id));
+    if (input.fields.some((field) => !fieldIds.has(field.id) || !sectionIds.has(field.sectionId))) {
+      throw new BadRequestException("Field reorder payload contains an invalid field or section.");
+    }
+    await this.prisma.$transaction(
+      input.fields.map((field) =>
+        this.prisma.supportPortalFormField.update({
+          where: { id: field.id },
+          data: {
+            sectionId: field.sectionId,
+            sortOrder: field.sortOrder
+          }
+        })
+      )
+    );
+    if (input.movedFieldId) {
+      await this.auditLogs.create({
+        userId: user.id,
+        entityType: "SupportPortalFormField",
+        entityId: input.movedFieldId,
+        action: "support_portal.field_reordered",
+        metadata: { fieldId: input.movedFieldId }
+      });
+    }
+    return this.getConfig(user);
+  }
+
   async createPublicTicket(input: CreatePublicSupportTicketDto, context: { ipAddress?: string; userAgent?: string }) {
     const organization = await this.getPublicOrganization();
     const form = await this.ensureDefaultForm(organization.id);
@@ -286,8 +447,9 @@ export class SupportPortalService {
     }
     await this.verifyTurnstile(settings, input.captchaToken, context.ipAddress);
 
+    const publicFields = this.publicFields(form);
     const formData = input.formData ?? {};
-    this.validateRequiredFields(form.fields, formData);
+    this.validateRequiredFields(publicFields, formData);
     const requesterName = this.valueFrom(input.requesterName, formData.requesterName);
     const requesterEmail = this.valueFrom(input.requesterEmail, formData.requesterEmail).toLowerCase();
     const subject = this.valueFrom(input.subject, formData.subject);
@@ -301,7 +463,7 @@ export class SupportPortalService {
       createIfMissing: true
     });
     const { bodyText, bodyHtml } = this.buildStructuredBody({
-      fields: form.fields,
+      fields: publicFields,
       formData: { ...formData, requesterName, requesterEmail, subject, description, priority },
       requesterName,
       requesterEmail,
@@ -391,14 +553,32 @@ export class SupportPortalService {
     };
   }
 
-  private serializeForm(form: { id: string; name: string; slug: string; introText: string | null; fields: SupportPortalField[] }) {
+  private serializeForm(form: SupportPortalFormWithRelations, publicOnly = false) {
+    const sections = this.formSections(form, publicOnly);
+    const fields = publicOnly ? sections.flatMap((section) => section.fields) : form.fields;
     return {
       id: form.id,
       name: form.name,
       slug: form.slug,
       introText: form.introText,
-      fields: form.fields.map((field) => ({
+      sections: sections.map((section) => ({
+        id: section.id,
+        title: section.title,
+        sectionKey: section.sectionKey,
+        icon: section.icon,
+        sortOrder: section.sortOrder,
+        isCore: section.isCore,
+        isActive: section.isActive,
+        fields: section.fields.map((field) => this.serializeField(field))
+      })),
+      fields: fields.map((field) => this.serializeField(field))
+    };
+  }
+
+  private serializeField(field: SupportPortalField) {
+    return {
         id: field.id,
+        sectionId: field.sectionId,
         type: field.type,
         label: field.label,
         fieldKey: field.fieldKey,
@@ -411,8 +591,30 @@ export class SupportPortalService {
         isCore: field.isCore,
         layoutWidth: field.layoutWidth,
         visibilityCondition: field.visibilityCondition
-      }))
     };
+  }
+
+  private publicFields(form: SupportPortalFormWithRelations) {
+    return this.formSections(form, true).flatMap((section) => section.fields);
+  }
+
+  private formSections(form: SupportPortalFormWithRelations, publicOnly: boolean): SupportPortalSection[] {
+    const sections = publicOnly ? form.sections.filter((section) => section.isActive) : form.sections;
+    const sectionIds = new Set(sections.map((section) => section.id));
+    const unsectionedFields = form.fields.filter((field) => !field.sectionId || !sectionIds.has(field.sectionId));
+    const fallbackSection = sections.find((section) => section.sectionKey === "diagnostics") ?? sections[sections.length - 1];
+    const mappedSections = sections.map((section) => ({
+      ...section,
+      fields: section.fields.filter((field) => !publicOnly || field.isActive)
+    }));
+    if (fallbackSection && unsectionedFields.length > 0) {
+      return mappedSections.map((section) =>
+        section.id === fallbackSection.id
+          ? { ...section, fields: [...section.fields, ...unsectionedFields.filter((field) => !publicOnly || field.isActive)] }
+          : section
+      );
+    }
+    return mappedSections;
   }
 
   private async getPublicOrganization() {
@@ -423,10 +625,10 @@ export class SupportPortalService {
     return organization;
   }
 
-  private async ensureDefaultForm(organizationId: string) {
+  private async ensureDefaultForm(organizationId: string): Promise<SupportPortalFormWithRelations> {
     let form = await this.prisma.supportPortalForm.findFirst({
       where: { organizationId, slug: "default" },
-      include: { fields: { orderBy: [{ sortOrder: "asc" }, { label: "asc" }] } }
+      include: supportPortalFormInclude
     });
 
     if (!form) {
@@ -435,31 +637,125 @@ export class SupportPortalService {
           organizationId,
           name: "Default Support Request",
           slug: "default",
-          introText: "Tell us what is happening so our team can route and resolve your request.",
-          fields: {
-            create: this.defaultFields()
-          }
+          introText: "Tell us what is happening so our team can route and resolve your request."
         },
-        include: { fields: { orderBy: [{ sortOrder: "asc" }, { label: "asc" }] } }
+        include: supportPortalFormInclude
       });
-      return form;
     }
 
-    const existingForm = form;
-    const formId = existingForm.id;
-    const missingCoreFields = this.defaultFields().filter((field) => CORE_FIELD_KEYS.has(field.fieldKey) && !existingForm.fields.some((existing) => existing.fieldKey === field.fieldKey));
+    await this.ensureDefaultSections(form.id);
+    form = await this.prisma.supportPortalForm.findFirstOrThrow({
+      where: { id: form.id },
+      include: supportPortalFormInclude
+    });
+
+    const formId = form.id;
+    const sectionByKey = new Map(form.sections.map((section) => [section.sectionKey, section.id]));
+    const missingCoreFields = this.defaultFields().filter((field) => CORE_FIELD_KEYS.has(field.fieldKey) && !form.fields.some((existing) => existing.fieldKey === field.fieldKey));
     if (missingCoreFields.length > 0) {
       await this.prisma.supportPortalFormField.createMany({
-        data: missingCoreFields.map((field) => ({ ...field, formId })),
+        data: missingCoreFields.map((field) => ({
+          ...field,
+          formId,
+          sectionId: sectionByKey.get(this.sectionKeyForFieldKey(field.fieldKey)) ?? sectionByKey.get("diagnostics")
+        })),
         skipDuplicates: true
       });
-      form = await this.prisma.supportPortalForm.findFirstOrThrow({
-        where: { id: formId },
-        include: { fields: { orderBy: [{ sortOrder: "asc" }, { label: "asc" }] } }
+    }
+    await this.assignMissingFieldSections(formId);
+
+    return this.prisma.supportPortalForm.findFirstOrThrow({
+      where: { id: formId },
+      include: supportPortalFormInclude
+    });
+  }
+
+  private async ensureDefaultSections(formId: string) {
+    const existingSections = await this.prisma.supportPortalFormSection.findMany({ where: { formId } });
+    const existingKeys = new Set(existingSections.map((section) => section.sectionKey));
+    const missingSections = this.defaultSections().filter((section) => !existingKeys.has(section.sectionKey));
+    if (missingSections.length === 0) {
+      return;
+    }
+    await this.prisma.supportPortalFormSection.createMany({
+      data: missingSections.map((section) => ({ ...section, formId })),
+      skipDuplicates: true
+    });
+  }
+
+  private async assignMissingFieldSections(formId: string) {
+    const sections = await this.prisma.supportPortalFormSection.findMany({ where: { formId } });
+    const sectionByKey = new Map(sections.map((section) => [section.sectionKey, section.id]));
+    for (const [sectionKey, fieldKeys] of [
+      ["requester", REQUESTER_FIELD_KEYS],
+      ["request", REQUEST_FIELD_KEYS],
+      ["asset", ASSET_FIELD_KEYS]
+    ] as const) {
+      const sectionId = sectionByKey.get(sectionKey);
+      if (!sectionId) continue;
+      await this.prisma.supportPortalFormField.updateMany({
+        where: { formId, sectionId: null, fieldKey: { in: Array.from(fieldKeys) } },
+        data: { sectionId }
       });
     }
+    const diagnosticsSectionId = sectionByKey.get("diagnostics");
+    if (diagnosticsSectionId) {
+      await this.prisma.supportPortalFormField.updateMany({
+        where: { formId, sectionId: null },
+        data: { sectionId: diagnosticsSectionId }
+      });
+    }
+  }
 
-    return form;
+  private defaultSections(): Prisma.SupportPortalFormSectionCreateManyInput[] {
+    return [
+      { formId: "", title: "Requester Information", sectionKey: "requester", icon: "user", sortOrder: 10, isCore: true, isActive: true },
+      { formId: "", title: "Request Information", sectionKey: "request", icon: "clipboard", sortOrder: 20, isCore: true, isActive: true },
+      { formId: "", title: "Affected Asset or System", sectionKey: "asset", icon: "building", sortOrder: 30, isCore: true, isActive: true },
+      { formId: "", title: "Diagnostic Details", sectionKey: "diagnostics", icon: "mail", sortOrder: 40, isCore: true, isActive: true }
+    ];
+  }
+
+  private sectionKeyForFieldKey(fieldKey: string) {
+    if (REQUESTER_FIELD_KEYS.has(fieldKey)) return "requester";
+    if (REQUEST_FIELD_KEYS.has(fieldKey)) return "request";
+    if (ASSET_FIELD_KEYS.has(fieldKey)) return "asset";
+    return "diagnostics";
+  }
+
+  private async resolveSectionId(formId: string, sectionId?: string | null) {
+    if (sectionId) {
+      const section = await this.prisma.supportPortalFormSection.findFirst({ where: { id: sectionId, formId } });
+      if (!section) {
+        throw new BadRequestException("Support portal section was not found.");
+      }
+      return section.id;
+    }
+    const fallback = await this.prisma.supportPortalFormSection.findFirst({
+      where: { formId, sectionKey: "diagnostics" },
+      orderBy: { sortOrder: "asc" }
+    });
+    return fallback?.id ?? null;
+  }
+
+  private async uniqueSectionKey(formId: string, title: string) {
+    const baseKey = this.normalizeSectionKey(title);
+    let candidate = baseKey;
+    let suffix = 2;
+    while (await this.prisma.supportPortalFormSection.findUnique({ where: { formId_sectionKey: { formId, sectionKey: candidate } } })) {
+      candidate = `${baseKey}-${suffix}`;
+      suffix += 1;
+    }
+    return candidate;
+  }
+
+  private normalizeSectionKey(value: string) {
+    const key = value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return key || "section";
   }
 
   private defaultFields(): Prisma.SupportPortalFormFieldCreateWithoutFormInput[] {

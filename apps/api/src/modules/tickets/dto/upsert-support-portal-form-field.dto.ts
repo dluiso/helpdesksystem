@@ -47,6 +47,10 @@ export class UpsertSupportPortalFormFieldDto {
   layoutWidth?: string;
 
   @IsOptional()
+  @IsString()
+  sectionId?: string | null;
+
+  @IsOptional()
   @IsObject()
   visibilityCondition?: Record<string, unknown> | null;
 }

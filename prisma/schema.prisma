@@ -1657,6 +1657,7 @@ model SupportPortalForm {
   createdAt      DateTime                 @default(now())
   updatedAt      DateTime                 @updatedAt
   organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sections       SupportPortalFormSection[]
   fields         SupportPortalFormField[]
 
   @@unique([organizationId, slug])
@@ -1664,9 +1665,29 @@ model SupportPortalForm {
   @@map("support_portal_forms")
 }
 
+model SupportPortalFormSection {
+  id        String                   @id @default(uuid()) @db.Uuid
+  formId    String                   @db.Uuid
+  title     String
+  sectionKey String
+  icon      String?
+  sortOrder Int                      @default(100)
+  isCore    Boolean                  @default(false)
+  isActive  Boolean                  @default(true)
+  createdAt DateTime                 @default(now())
+  updatedAt DateTime                 @updatedAt
+  form      SupportPortalForm        @relation(fields: [formId], references: [id], onDelete: Cascade)
+  fields    SupportPortalFormField[]
+
+  @@unique([formId, sectionKey])
+  @@index([formId, sortOrder])
+  @@map("support_portal_form_sections")
+}
+
 model SupportPortalFormField {
   id                  String                @id @default(uuid()) @db.Uuid
   formId              String                @db.Uuid
+  sectionId           String?               @db.Uuid
   type                EventServiceFieldType
   label               String
   fieldKey            String
@@ -1682,9 +1703,11 @@ model SupportPortalFormField {
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   form                SupportPortalForm     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  section             SupportPortalFormSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
 
   @@unique([formId, fieldKey])
   @@index([formId, sortOrder])
+  @@index([sectionId, sortOrder])
   @@map("support_portal_form_fields")
 }
 

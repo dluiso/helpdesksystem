@@ -6,8 +6,10 @@ import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
 import { RequirePermissions } from "../permissions/decorators/require-permissions.decorator";
 import { PermissionsGuard } from "../permissions/guards/permissions.guard";
 import { CreatePublicSupportTicketDto } from "./dto/create-public-support-ticket.dto";
+import { ReorderSupportPortalFieldsDto, ReorderSupportPortalSectionsDto } from "./dto/reorder-support-portal-form.dto";
 import { UpdateSupportPortalSettingsDto } from "./dto/update-support-portal-settings.dto";
 import { UpsertSupportPortalFormFieldDto } from "./dto/upsert-support-portal-form-field.dto";
+import { UpsertSupportPortalFormSectionDto } from "./dto/upsert-support-portal-form-section.dto";
 import { SupportPortalService } from "./support-portal.service";
 
 @Controller()
@@ -48,6 +50,13 @@ export class SupportPortalController {
     return this.supportPortal.createField(user, body);
   }
 
+  @Patch("support-portal/form/fields/reorder")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("system_settings.update")
+  reorderFields(@CurrentUser() user: AuthenticatedUser, @Body() body: ReorderSupportPortalFieldsDto) {
+    return this.supportPortal.reorderFields(user, body);
+  }
+
   @Patch("support-portal/form/fields/:fieldId")
   @UseGuards(SessionAuthGuard, PermissionsGuard)
   @RequirePermissions("system_settings.update")
@@ -60,5 +69,33 @@ export class SupportPortalController {
   @RequirePermissions("system_settings.update")
   deleteField(@CurrentUser() user: AuthenticatedUser, @Param("fieldId") fieldId: string) {
     return this.supportPortal.deleteField(user, fieldId);
+  }
+
+  @Post("support-portal/form/sections")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("system_settings.update")
+  createSection(@CurrentUser() user: AuthenticatedUser, @Body() body: UpsertSupportPortalFormSectionDto) {
+    return this.supportPortal.createSection(user, body);
+  }
+
+  @Patch("support-portal/form/sections/reorder")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("system_settings.update")
+  reorderSections(@CurrentUser() user: AuthenticatedUser, @Body() body: ReorderSupportPortalSectionsDto) {
+    return this.supportPortal.reorderSections(user, body);
+  }
+
+  @Patch("support-portal/form/sections/:sectionId")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("system_settings.update")
+  updateSection(@CurrentUser() user: AuthenticatedUser, @Param("sectionId") sectionId: string, @Body() body: UpsertSupportPortalFormSectionDto) {
+    return this.supportPortal.updateSection(user, sectionId, body);
+  }
+
+  @Delete("support-portal/form/sections/:sectionId")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("system_settings.update")
+  deleteSection(@CurrentUser() user: AuthenticatedUser, @Param("sectionId") sectionId: string) {
+    return this.supportPortal.deleteSection(user, sectionId);
   }
 }

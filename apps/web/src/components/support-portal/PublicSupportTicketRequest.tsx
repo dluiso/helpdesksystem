@@ -17,6 +17,7 @@ declare global {
 
 interface SupportField {
   id: string;
+  sectionId: string | null;
   type: "TEXT" | "TEXTAREA" | "EMAIL" | "PHONE" | "DATE" | "TIME" | "SELECT" | "MULTI_SELECT" | "CHECKBOX" | "RADIO" | "NUMBER";
   label: string;
   fieldKey: string;
@@ -29,6 +30,17 @@ interface SupportField {
   isCore: boolean;
   layoutWidth: "FULL" | "HALF" | "THIRD" | "QUARTER";
   visibilityCondition: { fieldKey?: string; operator?: string; value?: string } | { logic?: "ANY" | "ALL"; rules?: Array<{ fieldKey?: string; operator?: string; value?: string }> } | null;
+}
+
+interface SupportSection {
+  id: string;
+  title: string;
+  sectionKey: string;
+  icon: string | null;
+  sortOrder: number;
+  isCore: boolean;
+  isActive: boolean;
+  fields: SupportField[];
 }
 
 type VisibilityRule = { fieldKey?: string; operator?: string; value?: string };
@@ -44,6 +56,7 @@ interface SupportPortalConfig {
   form: {
     name: string;
     introText: string | null;
+    sections?: SupportSection[];
     fields: SupportField[];
   };
 }
@@ -127,16 +140,29 @@ export function PublicSupportTicketRequest() {
     background: branding.brandLogoTransparentBackground ? "transparent" : (branding.brandLogoBackgroundColor ?? "#ffffff")
   };
 
-  const activeFields = useMemo(() => (config?.form.fields ?? []).filter((field) => field.isActive).sort((a, b) => a.sortOrder - b.sortOrder), [config]);
-  const fieldGroups = useMemo(() => {
-    const visibleFields = activeFields.filter((field) => isVisible(field, formData));
-    return {
-      requester: visibleFields.filter((field) => requesterKeys.has(field.fieldKey)),
-      request: visibleFields.filter((field) => requestKeys.has(field.fieldKey)),
-      asset: visibleFields.filter((field) => assetKeys.has(field.fieldKey)),
-      diagnostics: visibleFields.filter((field) => !requesterKeys.has(field.fieldKey) && !requestKeys.has(field.fieldKey) && !assetKeys.has(field.fieldKey))
-    };
-  }, [activeFields, formData]);
+  const activeSections = useMemo<SupportSection[]>(() => {
+    const sections = config?.form.sections ?? [];
+    if (sections.length > 0) {
+      return sections
+        .filter((section) => section.isActive)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((section) => ({
+          ...section,
+          fields: section.fields.filter((field) => field.isActive).sort((a, b) => a.sortOrder - b.sortOrder)
+        }));
+    }
+    const fields = (config?.form.fields ?? []).filter((field) => field.isActive).sort((a, b) => a.sortOrder - b.sortOrder);
+    return [
+      { id: "requester", title: "Requester Information", sectionKey: "requester", icon: "user", sortOrder: 10, isCore: true, isActive: true, fields: fields.filter((field) => requesterKeys.has(field.fieldKey)) },
+      { id: "request", title: "Request Information", sectionKey: "request", icon: "clipboard", sortOrder: 20, isCore: true, isActive: true, fields: fields.filter((field) => requestKeys.has(field.fieldKey)) },
+      { id: "asset", title: "Affected Asset or System", sectionKey: "asset", icon: "building", sortOrder: 30, isCore: true, isActive: true, fields: fields.filter((field) => assetKeys.has(field.fieldKey)) },
+      { id: "diagnostics", title: "Diagnostic Details", sectionKey: "diagnostics", icon: "mail", sortOrder: 40, isCore: true, isActive: true, fields: fields.filter((field) => !requesterKeys.has(field.fieldKey) && !requestKeys.has(field.fieldKey) && !assetKeys.has(field.fieldKey)) }
+    ];
+  }, [config]);
+  const activeFields = useMemo(() => activeSections.flatMap((section) => section.fields), [activeSections]);
+  const visibleSections = useMemo(() => activeSections
+    .map((section) => ({ ...section, fields: section.fields.filter((field) => isVisible(field, formData)) }))
+    .filter((section) => section.fields.length > 0), [activeSections, formData]);
 
   useEffect(() => {
     apiFetch<SupportPortalConfig>("/public/support/form")
@@ -292,14 +318,18 @@ export function PublicSupportTicketRequest() {
     );
   }
 
-  function renderSection(title: string, icon: ReactNode, fields: SupportField[]) {
-    if (fields.length === 0) {
-      return null;
-    }
+  function sectionIcon(section: SupportSection): ReactNode {
+    if (section.icon === "building") return <Building2 size={18} />;
+    if (section.icon === "mail") return <Mail size={18} />;
+    if (section.icon === "clipboard") return <ClipboardList size={18} />;
+    return <UserRound size={18} />;
+  }
+
+  function renderSection(section: SupportSection) {
     return (
-      <section className="public-support-section">
-        <h3>{icon}{title}</h3>
-        <div className="public-event-grid">{fields.map(renderField)}</div>
+      <section className="public-support-section" key={section.id}>
+        <h3>{sectionIcon(section)}{section.title}</h3>
+        <div className="public-event-grid">{section.fields.map(renderField)}</div>
       </section>
     );
   }
@@ -355,10 +385,7 @@ export function PublicSupportTicketRequest() {
           Attachments are not accepted here yet. Email files to <strong>{config.organization.supportEmail}</strong> after submitting and include your ticket number.
         </div>
         {error ? <p className="form-error">{error}</p> : null}
-        {renderSection("Requester Information", <UserRound size={18} />, fieldGroups.requester)}
-        {renderSection("Request Information", <ClipboardList size={18} />, fieldGroups.request)}
-        {renderSection("Affected Asset or System", <Building2 size={18} />, fieldGroups.asset)}
-        {renderSection("Diagnostic Details", <Mail size={18} />, fieldGroups.diagnostics)}
+        {visibleSections.map(renderSection)}
         {config.portal.turnstileSiteKey ? (
           <>
             <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" strategy="afterInteractive" />

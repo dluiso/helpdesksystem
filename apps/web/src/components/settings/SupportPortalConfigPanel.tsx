@@ -1,6 +1,7 @@
 "use client";
 
-import { Eye, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
+import { Eye, GripVertical, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
+import type { DragEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
@@ -12,6 +13,7 @@ type VisibilityCondition = { fieldKey?: string; operator?: string; value?: strin
 
 interface SupportPortalField {
   id: string;
+  sectionId: string | null;
   type: FieldType;
   label: string;
   fieldKey: string;
@@ -24,6 +26,17 @@ interface SupportPortalField {
   isCore: boolean;
   layoutWidth: LayoutWidth;
   visibilityCondition: VisibilityCondition;
+}
+
+interface SupportPortalSection {
+  id: string;
+  title: string;
+  sectionKey: string;
+  icon: string | null;
+  sortOrder: number;
+  isCore: boolean;
+  isActive: boolean;
+  fields: SupportPortalField[];
 }
 
 interface SupportPortalConfig {
@@ -41,6 +54,7 @@ interface SupportPortalConfig {
     name: string;
     slug: string;
     introText: string | null;
+    sections: SupportPortalSection[];
     fields: SupportPortalField[];
   };
 }
@@ -58,12 +72,21 @@ type FieldDraft = {
   isActive: boolean;
   sortOrder: number;
   layoutWidth: LayoutWidth;
+  sectionId: string;
   conditionLogic: VisibilityLogic;
   conditionRules: VisibilityRule[];
 };
 
+type SectionDraft = {
+  title: string;
+  icon: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
 const fieldTypes: FieldType[] = ["TEXT", "TEXTAREA", "EMAIL", "PHONE", "DATE", "TIME", "SELECT", "MULTI_SELECT", "CHECKBOX", "RADIO", "NUMBER"];
 const optionFieldTypes = new Set<FieldType>(["SELECT", "MULTI_SELECT", "CHECKBOX", "RADIO"]);
+const sectionIcons = ["user", "clipboard", "building", "mail", "settings"];
 const blankFieldDraft: FieldDraft = {
   label: "",
   fieldKey: "",
@@ -75,9 +98,11 @@ const blankFieldDraft: FieldDraft = {
   isActive: true,
   sortOrder: 100,
   layoutWidth: "HALF",
+  sectionId: "",
   conditionLogic: "ANY",
   conditionRules: []
 };
+const blankSectionDraft: SectionDraft = { title: "", icon: "settings", sortOrder: 100, isActive: true };
 
 function label(value: string) {
   return value.toLowerCase().replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
@@ -123,7 +148,7 @@ function conditionToRules(condition: VisibilityCondition): { logic: VisibilityLo
   return { logic: "ANY", rules: [] };
 }
 
-function fieldToDraft(field: SupportPortalField): FieldDraft {
+function fieldToDraft(field: SupportPortalField, fallbackSectionId: string): FieldDraft {
   const condition = conditionToRules(field.visibilityCondition);
   return {
     label: field.label,
@@ -136,8 +161,18 @@ function fieldToDraft(field: SupportPortalField): FieldDraft {
     isActive: field.isActive,
     sortOrder: field.sortOrder,
     layoutWidth: field.layoutWidth ?? defaultLayoutWidth(field.type),
+    sectionId: field.sectionId ?? fallbackSectionId,
     conditionLogic: condition.logic,
     conditionRules: condition.rules
+  };
+}
+
+function sectionToDraft(section: SupportPortalSection): SectionDraft {
+  return {
+    title: section.title,
+    icon: section.icon ?? "settings",
+    sortOrder: section.sortOrder,
+    isActive: section.isActive
   };
 }
 
@@ -153,6 +188,7 @@ function fieldPayload(draft: FieldDraft) {
     isActive: draft.isActive,
     sortOrder: draft.sortOrder,
     layoutWidth: draft.layoutWidth,
+    sectionId: draft.sectionId || null,
     visibilityCondition: draft.conditionRules.length > 0
       ? {
           logic: draft.conditionLogic,
@@ -166,27 +202,59 @@ function fieldPayload(draft: FieldDraft) {
   };
 }
 
+function sectionPayload(draft: SectionDraft) {
+  return {
+    title: draft.title.trim(),
+    icon: draft.icon || null,
+    sortOrder: draft.sortOrder,
+    isActive: draft.isActive
+  };
+}
+
+function sortSections(sections: SupportPortalSection[]) {
+  return [...sections].sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title));
+}
+
+function sortFields(fields: SupportPortalField[]) {
+  return [...fields].sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
+}
+
 export function SupportPortalConfigPanel() {
   const [activeTab, setActiveTab] = useState<"form" | "preview" | "security">("form");
   const [config, setConfig] = useState<SupportPortalConfig | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<SettingsDraft | null>(null);
   const [fieldDraft, setFieldDraft] = useState<FieldDraft>(blankFieldDraft);
+  const [sectionDraft, setSectionDraft] = useState<SectionDraft>(blankSectionDraft);
   const [fieldEdits, setFieldEdits] = useState<Record<string, FieldDraft>>({});
+  const [sectionEdits, setSectionEdits] = useState<Record<string, SectionDraft>>({});
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+  const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const sortedFields = useMemo(() => [...(config?.form.fields ?? [])].sort((a, b) => a.sortOrder - b.sortOrder), [config]);
+  const sortedSections = useMemo(() => sortSections(config?.form.sections ?? []), [config]);
+  const fallbackSectionId = sortedSections[0]?.id ?? "";
+  const sortedFields = useMemo(() => sortFields(config?.form.fields ?? []), [config]);
   const editableConditionFields = useMemo(() => sortedFields.filter((field) => field.isActive), [sortedFields]);
 
   async function loadConfig() {
     setError(null);
     try {
       const data = await apiFetch<SupportPortalConfig>("/support-portal/config");
+      const defaultSectionId = sortSections(data.form.sections)[0]?.id ?? "";
       setConfig(data);
       setSettingsDraft(data.settings);
-      setFieldDraft((current) => ({ ...current, sortOrder: Math.max(10, Math.max(0, ...data.form.fields.map((field) => field.sortOrder)) + 10) }));
+      setFieldDraft((current) => ({
+        ...current,
+        sectionId: current.sectionId || defaultSectionId,
+        sortOrder: Math.max(10, Math.max(0, ...data.form.fields.map((field) => field.sortOrder)) + 10)
+      }));
+      setSectionDraft((current) => ({
+        ...current,
+        sortOrder: Math.max(10, Math.max(0, ...data.form.sections.map((section) => section.sortOrder)) + 10)
+      }));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to load support portal settings.");
     }
@@ -214,6 +282,86 @@ export function SupportPortalConfigPanel() {
     }
   }
 
+  async function createSection() {
+    if (!sectionDraft.title.trim()) return;
+    setBusy("create-section");
+    setError(null);
+    try {
+      await apiFetch("/support-portal/form/sections", {
+        method: "POST",
+        body: JSON.stringify(sectionPayload(sectionDraft))
+      });
+      setSectionDraft({ ...blankSectionDraft, sortOrder: Math.max(10, Math.max(0, ...sortedSections.map((section) => section.sortOrder)) + 10) });
+      setNotice("Support portal section added.");
+      await loadConfig();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to add section.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function updateSection(sectionId: string) {
+    const draft = sectionEdits[sectionId];
+    if (!draft) return;
+    setBusy(sectionId);
+    setError(null);
+    try {
+      await apiFetch(`/support-portal/form/sections/${sectionId}`, {
+        method: "PATCH",
+        body: JSON.stringify(sectionPayload(draft))
+      });
+      setEditingSectionId(null);
+      setNotice("Support portal section updated.");
+      await loadConfig();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to update section.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deleteSection(section: SupportPortalSection) {
+    if (!window.confirm(`Delete "${section.title}" from the support portal form? Empty custom sections only can be deleted.`)) {
+      return;
+    }
+    setBusy(section.id);
+    setError(null);
+    try {
+      await apiFetch(`/support-portal/form/sections/${section.id}`, { method: "DELETE" });
+      setNotice("Support portal section deleted.");
+      await loadConfig();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to delete section.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function moveSection(sectionId: string, direction: -1 | 1) {
+    const sections = sortSections(sortedSections);
+    const index = sections.findIndex((section) => section.id === sectionId);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= sections.length) return;
+    const reordered = [...sections];
+    [reordered[index], reordered[nextIndex]] = [reordered[nextIndex], reordered[index]];
+    setBusy("reorder-sections");
+    setError(null);
+    try {
+      const updated = await apiFetch<SupportPortalConfig>("/support-portal/form/sections/reorder", {
+        method: "PATCH",
+        body: JSON.stringify({ sections: reordered.map((section, sectionIndex) => ({ id: section.id, sortOrder: (sectionIndex + 1) * 10 })) })
+      });
+      setConfig(updated);
+      setSettingsDraft(updated.settings);
+      setNotice("Support portal sections reordered.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to reorder sections.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function createField() {
     if (!fieldDraft.label.trim()) return;
     setBusy("create-field");
@@ -221,9 +369,9 @@ export function SupportPortalConfigPanel() {
     try {
       await apiFetch("/support-portal/form/fields", {
         method: "POST",
-        body: JSON.stringify(fieldPayload({ ...fieldDraft, fieldKey: fieldDraft.fieldKey || makeFieldKey(fieldDraft.label) }))
+        body: JSON.stringify(fieldPayload({ ...fieldDraft, fieldKey: fieldDraft.fieldKey || makeFieldKey(fieldDraft.label), sectionId: fieldDraft.sectionId || fallbackSectionId }))
       });
-      setFieldDraft({ ...blankFieldDraft, sortOrder: Math.max(10, Math.max(0, ...sortedFields.map((field) => field.sortOrder)) + 10) });
+      setFieldDraft({ ...blankFieldDraft, sectionId: fallbackSectionId, sortOrder: Math.max(10, Math.max(0, ...sortedFields.map((field) => field.sortOrder)) + 10) });
       setNotice("Support portal field added.");
       await loadConfig();
     } catch (caught) {
@@ -270,6 +418,55 @@ export function SupportPortalConfigPanel() {
     }
   }
 
+  async function moveField(draggedId: string, targetSectionId: string, targetIndex: number) {
+    if (!config || busy === "reorder-fields") return;
+    const sections = sortedSections.map((section) => ({ ...section, fields: sortFields(section.fields) }));
+    const sourceSection = sections.find((section) => section.fields.some((field) => field.id === draggedId));
+    if (!sourceSection) return;
+    const sourceIndex = sourceSection.fields.findIndex((field) => field.id === draggedId);
+    const draggedField = sourceSection.fields[sourceIndex];
+    const sourceSectionId = sourceSection.id;
+    if (!draggedField) return;
+    const sectionsWithoutField = sections.map((section) => {
+      if (section.id !== sourceSectionId) return section;
+      return { ...section, fields: section.fields.filter((field) => field.id !== draggedId) };
+    });
+    const normalizedIndex = sourceSectionId === targetSectionId && sourceIndex >= 0 && sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+    const nextSections = sectionsWithoutField.map((section) => {
+      if (section.id !== targetSectionId) return section;
+      const nextFields = [...section.fields];
+      nextFields.splice(Math.max(0, Math.min(normalizedIndex, nextFields.length)), 0, { ...draggedField, sectionId: targetSectionId });
+      return { ...section, fields: nextFields };
+    });
+    setBusy("reorder-fields");
+    setError(null);
+    try {
+      const updated = await apiFetch<SupportPortalConfig>("/support-portal/form/fields/reorder", {
+        method: "PATCH",
+        body: JSON.stringify({
+          movedFieldId: draggedId,
+          fields: nextSections.flatMap((section) =>
+            section.fields.map((field, index) => ({ id: field.id, sectionId: section.id, sortOrder: (index + 1) * 10 }))
+          )
+        })
+      });
+      setConfig(updated);
+      setSettingsDraft(updated.settings);
+      setNotice("Support portal fields reordered.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to reorder fields.");
+    } finally {
+      setBusy(null);
+      setDraggedFieldId(null);
+    }
+  }
+
+  function handleFieldDrop(event: DragEvent<HTMLElement>, sectionId: string, index: number) {
+    event.preventDefault();
+    if (!draggedFieldId) return;
+    void moveField(draggedFieldId, sectionId, index);
+  }
+
   function renderFieldDraftControls(draft: FieldDraft, onChange: (next: FieldDraft) => void, lockedKey = false) {
     const updateRule = (index: number, patch: Partial<VisibilityRule>) => {
       onChange({
@@ -299,6 +496,9 @@ export function SupportPortalConfigPanel() {
           <option value="HALF">1/2 width</option>
           <option value="THIRD">1/3 width</option>
           <option value="QUARTER">1/4 width</option>
+        </select>
+        <select value={draft.sectionId} onChange={(event) => onChange({ ...draft, sectionId: event.target.value })}>
+          {sortedSections.map((section) => <option key={section.id} value={section.id}>{section.title}</option>)}
         </select>
         <input value={draft.placeholder} placeholder="Placeholder" onChange={(event) => onChange({ ...draft, placeholder: event.target.value })} />
         <input value={draft.helpText} placeholder="Help text" onChange={(event) => onChange({ ...draft, helpText: event.target.value })} />
@@ -340,6 +540,100 @@ export function SupportPortalConfigPanel() {
     );
   }
 
+  function renderSectionEditor(section: SupportPortalSection, index: number) {
+    const editing = editingSectionId === section.id;
+    const draft = sectionEdits[section.id] ?? sectionToDraft(section);
+    return (
+      <div
+        className="support-section-editor"
+        key={section.id}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => handleFieldDrop(event, section.id, sortFields(section.fields).length)}
+      >
+        <div className="support-section-header">
+          <div>
+            <strong>{section.title}</strong>
+            <span>{section.sectionKey} - {section.fields.length} field{section.fields.length === 1 ? "" : "s"} {section.isCore ? "- Core" : ""}</span>
+          </div>
+          <div className="support-field-actions">
+            <button type="button" disabled={index === 0 || busy === "reorder-sections"} onClick={() => moveSection(section.id, -1)}>Up</button>
+            <button type="button" disabled={index === sortedSections.length - 1 || busy === "reorder-sections"} onClick={() => moveSection(section.id, 1)}>Down</button>
+            {editing ? (
+              <>
+                <button type="button" onClick={() => updateSection(section.id)} disabled={busy === section.id}>Save</button>
+                <button type="button" onClick={() => setEditingSectionId(null)}>Cancel</button>
+              </>
+            ) : (
+              <button type="button" onClick={() => { setSectionEdits((current) => ({ ...current, [section.id]: draft })); setEditingSectionId(section.id); }}>Edit Section</button>
+            )}
+            {!section.isCore ? <button className="danger-button" type="button" onClick={() => deleteSection(section)} disabled={busy === section.id}><Trash2 size={14} /> Delete</button> : null}
+          </div>
+        </div>
+        {editing ? (
+          <div className="support-section-edit-grid">
+            <input value={draft.title} placeholder="Section title" onChange={(event) => setSectionEdits((current) => ({ ...current, [section.id]: { ...draft, title: event.target.value } }))} />
+            <select value={draft.icon} onChange={(event) => setSectionEdits((current) => ({ ...current, [section.id]: { ...draft, icon: event.target.value } }))}>
+              {sectionIcons.map((icon) => <option key={icon} value={icon}>{label(icon)}</option>)}
+            </select>
+            <input type="number" min="0" value={draft.sortOrder} onChange={(event) => setSectionEdits((current) => ({ ...current, [section.id]: { ...draft, sortOrder: Number(event.target.value) } }))} />
+            <label><input type="checkbox" checked={draft.isActive} onChange={(event) => setSectionEdits((current) => ({ ...current, [section.id]: { ...draft, isActive: event.target.checked } }))} /> Active</label>
+          </div>
+        ) : null}
+        <div className="support-section-field-list">
+          {sortFields(section.fields).map((field, fieldIndex) => renderFieldRow(field, section.id, fieldIndex))}
+          {section.fields.length === 0 ? <p className="muted">Drop fields here or add a new field to this section.</p> : null}
+        </div>
+      </div>
+    );
+  }
+
+  function renderFieldRow(field: SupportPortalField, sectionId: string, fieldIndex: number) {
+    const draft = fieldEdits[field.id] ?? fieldToDraft(field, fallbackSectionId);
+    const editing = editingFieldId === field.id;
+    return (
+      <div
+        className={`support-field-row ${draggedFieldId === field.id ? "dragging" : ""}`}
+        key={field.id}
+        draggable={!editing}
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = "move";
+          setDraggedFieldId(field.id);
+        }}
+        onDragEnd={() => setDraggedFieldId(null)}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => handleFieldDrop(event, sectionId, fieldIndex)}
+      >
+        <div className="support-field-summary">
+          <span className="drag-handle" aria-hidden="true"><GripVertical size={16} /></span>
+          <div>
+            <strong>{field.label}</strong>
+            <span>{field.fieldKey} - {label(field.type)} {field.isCore ? "- Core" : ""}</span>
+          </div>
+        </div>
+        {editing ? renderFieldDraftControls(draft, (next) => setFieldEdits((current) => ({ ...current, [field.id]: next })), field.isCore) : null}
+        <div className="support-field-actions">
+          {editing ? (
+            <>
+              <button type="button" onClick={() => updateField(field.id)} disabled={busy === field.id}>Save</button>
+              <button type="button" onClick={() => setEditingFieldId(null)}>Cancel</button>
+            </>
+          ) : (
+            <button type="button" onClick={() => { setFieldEdits((current) => ({ ...current, [field.id]: draft })); setEditingFieldId(field.id); }}>Edit</button>
+          )}
+          {!field.isCore ? <button className="danger-button" type="button" onClick={() => deleteField(field)} disabled={busy === field.id}><Trash2 size={14} /> Delete</button> : null}
+        </div>
+      </div>
+    );
+  }
+
+  function renderPreviewIcon(section: SupportPortalSection): ReactNode {
+    if (section.icon === "building") return "Building";
+    if (section.icon === "mail") return "Mail";
+    if (section.icon === "clipboard") return "Clipboard";
+    if (section.icon === "user") return "User";
+    return "Section";
+  }
+
   if (!config || !settingsDraft) {
     return <section className="panel support-portal-config-panel">{error ? <p className="form-error">{error}</p> : "Loading support portal settings..."}</section>;
   }
@@ -349,14 +643,14 @@ export function SupportPortalConfigPanel() {
       <div className="panel-header-row">
         <div>
           <h2>Support Portal</h2>
-          <p>Configure the public ticket request portal, form fields, conditional logic, and verification.</p>
+          <p>Configure the public ticket request portal, sections, form fields, conditional logic, and verification.</p>
         </div>
         <span className={`status-pill ${settingsDraft.supportPortalEnabled ? "active" : "inactive"}`}>{settingsDraft.supportPortalEnabled ? "Enabled" : "Disabled"}</span>
       </div>
       {error ? <p className="form-error">{error}</p> : null}
       {notice ? <p className="form-success">{notice}</p> : null}
       <div className="settings-tabs">
-        <button className={activeTab === "form" ? "active" : ""} onClick={() => setActiveTab("form")} type="button">Form Fields</button>
+        <button className={activeTab === "form" ? "active" : ""} onClick={() => setActiveTab("form")} type="button">Form Builder</button>
         <button className={activeTab === "preview" ? "active" : ""} onClick={() => setActiveTab("preview")} type="button"><Eye size={15} /> Preview</button>
         <button className={activeTab === "security" ? "active" : ""} onClick={() => setActiveTab("security")} type="button"><ShieldCheck size={15} /> Security</button>
       </div>
@@ -372,36 +666,26 @@ export function SupportPortalConfigPanel() {
           </div>
 
           <div className="support-field-create">
+            <h3>Add Section</h3>
+            <div className="support-section-edit-grid">
+              <input value={sectionDraft.title} placeholder="Section title" onChange={(event) => setSectionDraft((current) => ({ ...current, title: event.target.value }))} />
+              <select value={sectionDraft.icon} onChange={(event) => setSectionDraft((current) => ({ ...current, icon: event.target.value }))}>
+                {sectionIcons.map((icon) => <option key={icon} value={icon}>{label(icon)}</option>)}
+              </select>
+              <input type="number" min="0" value={sectionDraft.sortOrder} onChange={(event) => setSectionDraft((current) => ({ ...current, sortOrder: Number(event.target.value) }))} />
+              <label><input type="checkbox" checked={sectionDraft.isActive} onChange={(event) => setSectionDraft((current) => ({ ...current, isActive: event.target.checked }))} /> Active</label>
+            </div>
+            <button className="button" type="button" disabled={busy === "create-section"} onClick={createSection}><Plus size={15} /> Add Section</button>
+          </div>
+
+          <div className="support-field-create">
             <h3>Add Field</h3>
             {renderFieldDraftControls(fieldDraft, setFieldDraft)}
             <button className="button" type="button" disabled={busy === "create-field"} onClick={createField}><Plus size={15} /> Add Field</button>
           </div>
 
-          <div className="support-field-list">
-            {sortedFields.map((field) => {
-              const draft = fieldEdits[field.id] ?? fieldToDraft(field);
-              const editing = editingFieldId === field.id;
-              return (
-                <div className="support-field-row" key={field.id}>
-                  <div className="support-field-summary">
-                    <strong>{field.label}</strong>
-                    <span>{field.fieldKey} - {label(field.type)} {field.isCore ? "- Core" : ""}</span>
-                  </div>
-                  {editing ? renderFieldDraftControls(draft, (next) => setFieldEdits((current) => ({ ...current, [field.id]: next })), field.isCore) : null}
-                  <div className="support-field-actions">
-                    {editing ? (
-                      <>
-                        <button type="button" onClick={() => updateField(field.id)} disabled={busy === field.id}>Save</button>
-                        <button type="button" onClick={() => setEditingFieldId(null)}>Cancel</button>
-                      </>
-                    ) : (
-                      <button type="button" onClick={() => { setFieldEdits((current) => ({ ...current, [field.id]: draft })); setEditingFieldId(field.id); }}>Edit</button>
-                    )}
-                    {!field.isCore ? <button className="danger-button" type="button" onClick={() => deleteField(field)} disabled={busy === field.id}><Trash2 size={14} /> Delete</button> : null}
-                  </div>
-                </div>
-              );
-            })}
+          <div className="support-section-list">
+            {sortedSections.map((section, index) => renderSectionEditor(section, index))}
           </div>
         </div>
       ) : null}
@@ -410,11 +694,16 @@ export function SupportPortalConfigPanel() {
         <div className="support-preview-card">
           <h3>{settingsDraft.supportPortalTitle}</h3>
           <p>{settingsDraft.supportPortalIntroText || config.form.introText}</p>
-          <div className="support-preview-grid">
-            {sortedFields.filter((field) => field.isActive).slice(0, 12).map((field) => (
-              <label className={`support-layout-${field.layoutWidth?.toLowerCase() ?? "half"}`} key={field.id}>{field.label}{field.isRequired ? " *" : ""}<input disabled placeholder={field.placeholder ?? ""} /></label>
-            ))}
-          </div>
+          {sortedSections.filter((section) => section.isActive).map((section) => (
+            <div className="support-preview-section" key={section.id}>
+              <h4>{renderPreviewIcon(section)} - {section.title}</h4>
+              <div className="support-preview-grid">
+                {sortFields(section.fields).filter((field) => field.isActive).slice(0, 12).map((field) => (
+                  <label className={`support-layout-${field.layoutWidth?.toLowerCase() ?? "half"}`} key={field.id}>{field.label}{field.isRequired ? " *" : ""}<input disabled placeholder={field.placeholder ?? ""} /></label>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       ) : null}
 

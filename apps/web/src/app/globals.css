@@ -2259,6 +2259,7 @@ select.compact-select {
 .support-portal-config-panel,
 .support-config-stack,
 .support-field-list,
+.support-section-list,
 .support-field-create {
   display: grid;
   gap: 14px;
@@ -2316,6 +2317,7 @@ select.compact-select {
 
 .support-field-create,
 .support-field-row,
+.support-section-editor,
 .support-preview-card {
   padding: 14px;
   border: 1px solid var(--line);
@@ -2328,14 +2330,85 @@ select.compact-select {
   gap: 12px;
 }
 
+.support-section-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.support-section-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.support-section-header > div:first-child,
 .support-field-summary {
   display: grid;
   gap: 4px;
 }
 
+.support-section-header span,
 .support-field-summary span {
   color: var(--text-muted);
   font-size: 13px;
+}
+
+.support-section-edit-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.35fr) minmax(100px, 0.25fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.support-section-field-list {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.support-field-summary {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+}
+
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: grab;
+}
+
+.support-field-row[draggable="true"] {
+  cursor: grab;
+}
+
+.support-field-row.dragging {
+  opacity: 0.55;
+  outline: 2px dashed var(--brand-primary);
+  outline-offset: 2px;
+}
+
+.support-preview-section {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.support-preview-section h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 850;
 }
 
 .support-condition-builder {
@@ -6940,6 +7013,7 @@ a.dashboard-list-row:hover {
   .event-config-edit-grid,
   .support-settings-grid,
   .support-field-editor,
+  .support-section-edit-grid,
   .support-condition-row,
   .support-condition-toolbar,
   .support-preview-grid,
@@ -6952,6 +7026,14 @@ a.dashboard-list-row:hover {
 
   .notification-user-card {
     padding: 12px;
+  }
+
+  .support-section-header {
+    display: grid;
+  }
+
+  .support-section-header .support-field-actions {
+    justify-content: flex-start;
   }
 
   .notification-channel-strip {
