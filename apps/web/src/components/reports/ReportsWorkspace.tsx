@@ -214,6 +214,14 @@ function currency(value: number | null) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(value);
 }
 
+function isTicketReportSummary(value: ReportSummary | null): value is TicketReportSummary {
+  return Boolean(value && "totalTickets" in value.summary);
+}
+
+function isEventReportSummary(value: ReportSummary | null): value is EventReportSummary {
+  return Boolean(value && "totalRequests" in value.summary);
+}
+
 function SummaryCard({ title, value, note }: { title: string; value: string | number; note: string }) {
   return (
     <div className="dashboard-kpi-card report-kpi-card">
@@ -394,8 +402,8 @@ export function ReportsWorkspace() {
     try {
       const [templateResult, scheduleResult, exportResult] = await Promise.all([
         apiFetch<ReportTemplate[]>(`/reports/templates?reportType=${reportType}`),
-        apiFetch<ReportSchedule[]>("/reports/schedules"),
-        apiFetch<ReportExportHistory[]>("/reports/exports")
+        apiFetch<ReportSchedule[]>(`/reports/schedules?reportType=${reportType}`),
+        apiFetch<ReportExportHistory[]>(`/reports/exports?reportType=${reportType}`)
       ]);
       setTemplates(templateResult);
       setSchedules(scheduleResult);
@@ -417,6 +425,8 @@ export function ReportsWorkspace() {
     setSaveName("");
     setSaveDescription("");
     setStatuses([]);
+    setData(null);
+    setLoading(true);
   }, [reportType]);
 
   function currentFilters(): SavedReport["filters"] {
@@ -639,13 +649,14 @@ export function ReportsWorkspace() {
     setTimeout(() => void loadReportMeta(), 1000);
   }
 
-  const options = data?.options;
   const isTicketReport = reportType === "ticket-report";
-  const ticketData = isTicketReport ? data as TicketReportSummary | null : null;
-  const eventData = !isTicketReport ? data as EventReportSummary | null : null;
-  const totalPages = data?.totalPages ?? 1;
-  const firstDetailRow = data && data.totalMatched > 0 ? ((data.page - 1) * data.pageSize) + 1 : 0;
-  const lastDetailRow = data ? Math.min(data.totalMatched, data.page * data.pageSize) : 0;
+  const ticketData = isTicketReport && isTicketReportSummary(data) ? data : null;
+  const eventData = !isTicketReport && isEventReportSummary(data) ? data : null;
+  const activeData = ticketData ?? eventData;
+  const options = activeData?.options;
+  const totalPages = activeData?.totalPages ?? 1;
+  const firstDetailRow = activeData && activeData.totalMatched > 0 ? ((activeData.page - 1) * activeData.pageSize) + 1 : 0;
+  const lastDetailRow = activeData ? Math.min(activeData.totalMatched, activeData.page * activeData.pageSize) : 0;
 
   return (
     <div className="reports-workspace">
@@ -665,15 +676,15 @@ export function ReportsWorkspace() {
               <RefreshCw size={16} aria-hidden="true" />
               <span>Refresh</span>
             </button>
-            <button className="button" type="button" onClick={() => exportReport("csv")} disabled={!data}>
+            <button className="button" type="button" onClick={() => exportReport("csv")} disabled={!activeData}>
               <Download size={16} aria-hidden="true" />
               <span>Export CSV</span>
             </button>
-            <button className="button secondary" type="button" onClick={() => exportReport("xlsx")} disabled={!data}>
+            <button className="button secondary" type="button" onClick={() => exportReport("xlsx")} disabled={!activeData}>
               <FileSpreadsheet size={16} aria-hidden="true" />
               <span>Excel</span>
             </button>
-            <button className="button secondary" type="button" onClick={() => exportReport("pdf")} disabled={!data}>
+            <button className="button secondary" type="button" onClick={() => exportReport("pdf")} disabled={!activeData}>
               <FileText size={16} aria-hidden="true" />
               <span>PDF</span>
             </button>
@@ -718,7 +729,7 @@ export function ReportsWorkspace() {
                     <option value="xlsx">Excel</option>
                     <option value="csv">CSV</option>
                   </select>
-                  <button className="button" type="button" onClick={sendReport} disabled={deliveryBusy || !data}>
+                  <button className="button" type="button" onClick={sendReport} disabled={deliveryBusy || !activeData}>
                     Send
                   </button>
                 </div>
@@ -823,7 +834,7 @@ export function ReportsWorkspace() {
 
       {loading ? <div className="panel dashboard-loading">Loading report...</div> : null}
 
-      {data && !loading ? (
+      {activeData && !loading ? (
         <>
           <section className="dashboard-kpi-grid reports-kpi-grid">
             {ticketData ? (
@@ -881,7 +892,7 @@ export function ReportsWorkspace() {
             <div className="section-heading compact-heading">
               <div>
                 <h2>Report Detail</h2>
-                <p className="muted">Showing {firstDetailRow}-{lastDetailRow} of {data.totalMatched} {isTicketReport ? "tickets" : "event requests"}. Exports include the full filtered result.</p>
+                <p className="muted">Showing {firstDetailRow}-{lastDetailRow} of {activeData.totalMatched} {isTicketReport ? "tickets" : "event requests"}. Exports include the full filtered result.</p>
               </div>
             </div>
             <div className="table-scroll">
@@ -986,7 +997,7 @@ export function ReportsWorkspace() {
                 <button className="button secondary" type="button" onClick={() => setDetailPage((current) => Math.max(1, current - 1))} disabled={detailPage <= 1}>
                   Previous
                 </button>
-                <span className="muted">Page {data.page} of {totalPages}</span>
+                <span className="muted">Page {activeData.page} of {totalPages}</span>
                 <button className="button secondary" type="button" onClick={() => setDetailPage((current) => Math.min(totalPages, current + 1))} disabled={detailPage >= totalPages}>
                   Next
                 </button>

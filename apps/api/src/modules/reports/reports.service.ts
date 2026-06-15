@@ -152,9 +152,10 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     ];
   }
 
-  async listExportHistory(user: AuthenticatedUser) {
+  async listExportHistory(user: AuthenticatedUser, reportType = "ticket-report") {
     const exports = await this.prisma.reportExport.findMany({
       where: {
+        reportType,
         OR: [
           { organizationId: user.organizationId },
           { requestedBy: { organizationId: user.organizationId } }
@@ -230,9 +231,12 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     return { deleted: true };
   }
 
-  async listSchedules(user: AuthenticatedUser) {
+  async listSchedules(user: AuthenticatedUser, reportType = "ticket-report") {
     return this.prisma.reportSchedule.findMany({
-      where: { organizationId: user.organizationId },
+      where: {
+        organizationId: user.organizationId,
+        definition: { reportType }
+      },
       include: {
         definition: { select: { name: true } },
         createdBy: { select: { firstName: true, lastName: true } }

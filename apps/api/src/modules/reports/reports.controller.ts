@@ -40,8 +40,8 @@ export class ReportsController {
 
   @Get("exports")
   @RequirePermissions("reports.view")
-  listExportHistory(@CurrentUser() user: AuthenticatedUser) {
-    return this.reportsService.listExportHistory(user);
+  listExportHistory(@Query("reportType") reportType: string | undefined, @CurrentUser() user: AuthenticatedUser) {
+    return this.reportsService.listExportHistory(user, reportType);
   }
 
   @Post("definitions")
@@ -64,8 +64,8 @@ export class ReportsController {
 
   @Get("schedules")
   @RequirePermissions("reports.view")
-  listSchedules(@CurrentUser() user: AuthenticatedUser) {
-    return this.reportsService.listSchedules(user);
+  listSchedules(@Query("reportType") reportType: string | undefined, @CurrentUser() user: AuthenticatedUser) {
+    return this.reportsService.listSchedules(user, reportType);
   }
 
   @Post("schedules")
