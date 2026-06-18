@@ -663,6 +663,24 @@ select.compact-select {
   font-weight: 750;
 }
 
+.topbar-rmm-button {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  color: var(--text);
+  background: var(--surface-raised);
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.topbar-rmm-button:hover {
+  background: var(--surface-hover);
+}
+
 .theme-toggle:hover {
   background: var(--surface-hover);
 }
@@ -6541,15 +6559,18 @@ a.dashboard-list-row:hover {
   }
 
   .topbar-actions .button.secondary span,
+  .topbar-rmm-button span,
   .theme-toggle span {
     display: none;
   }
 
   .topbar-actions .button.secondary,
+  .topbar-rmm-button,
   .theme-toggle {
     width: 40px;
     min-width: 40px;
     padding: 0;
+    justify-content: center;
   }
 
   .topbar-brand {

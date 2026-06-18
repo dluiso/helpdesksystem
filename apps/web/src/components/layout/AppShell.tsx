@@ -10,6 +10,7 @@ import {
   HardDrive,
   LifeBuoy,
   Menu,
+  Monitor,
   Settings,
   UserRound,
   Ticket
@@ -161,6 +162,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               <LifeBuoy size={16} aria-hidden="true" />
               <span>{branding.supportButtonLabel ?? "Support"}</span>
             </button> : null}
+            <a className="topbar-rmm-button" href="https://rmm.aviditytechnologies.com/" target="_blank" rel="noopener noreferrer" title="Open RMM">
+              <Monitor size={16} aria-hidden="true" />
+              <span>RMM</span>
+            </a>
             <ThemeToggle />
             <NotificationBell />
             <UserMenu user={user} />
