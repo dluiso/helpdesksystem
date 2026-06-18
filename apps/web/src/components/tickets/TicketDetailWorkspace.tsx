@@ -388,7 +388,9 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   }
   const realAttachments = ticket.attachments.filter((attachment) => !isInlineEmailAsset(attachment));
   const inlineAttachments = ticket.attachments.filter((attachment) => isInlineEmailAsset(attachment));
+  const downloadableAttachmentCount = ticket.attachments.filter((attachment) => attachment.scanStatus !== "BLOCKED" && attachment.scanStatus !== "SUSPICIOUS").length;
   const ticketRef = ticket.ticketNumber;
+  const downloadAllUrl = `${apiBaseUrl}/tickets/${ticketRef}/attachments/download-all`;
 
   return (
     <>
@@ -588,6 +590,12 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
                 <h3>Ticket Files</h3>
                 <p className="muted">Files attached to messages. Inline email images are listed separately.</p>
               </div>
+              {downloadableAttachmentCount > 1 ? (
+                <a className="button secondary compact-button" href={downloadAllUrl} title="Download all ticket files as a ZIP">
+                  <Download size={16} aria-hidden="true" />
+                  <span>Download All</span>
+                </a>
+              ) : null}
             </div>
             <MessageAttachments ticketId={ticketRef} attachments={realAttachments} variant="sidebar" />
             {inlineAttachments.length > 0 ? (

@@ -1,10 +1,21 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AttachmentScanResult, AttachmentScanStatus, AttachmentSource, Prisma } from "@prisma/client";
+import { PassThrough } from "node:stream";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { FileStorageService } from "../file-storage/file-storage.service";
 import { FileValidationService } from "../file-storage/file-validation.service";
 import { PrismaService } from "../prisma/prisma.service";
+
+const archiver = require("archiver") as (
+  format: "zip",
+  options?: { zlib?: { level?: number } }
+) => {
+  append: (source: NodeJS.ReadableStream | Buffer | string, data: { name: string }) => void;
+  finalize: () => Promise<void>;
+  on: (event: "error", listener: (error: Error) => void) => void;
+  pipe: (destination: NodeJS.WritableStream) => void;
+};
 
 @Injectable()
 export class TicketAttachmentsService {
@@ -135,6 +146,51 @@ export class TicketAttachmentsService {
     };
   }
 
+  async getBulkDownload(ticketId: string, user: AuthenticatedUser) {
+    const ticket = await this.resolveTicket(ticketId, user);
+    const attachments = await this.prisma.ticketAttachment.findMany({
+      where: {
+        ticketId: ticket.id,
+        deletedAt: null,
+        scanStatus: { notIn: [AttachmentScanStatus.SUSPICIOUS, AttachmentScanStatus.BLOCKED] }
+      },
+      orderBy: [{ isInline: "asc" }, { createdAt: "asc" }]
+    });
+
+    if (attachments.length === 0) {
+      throw new NotFoundException("No downloadable attachments were found.");
+    }
+
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    const output = new PassThrough();
+    archive.on("error", (error) => output.destroy(error));
+    archive.pipe(output);
+
+    const usedNames = new Map<string, number>();
+    for (const attachment of attachments) {
+      const entryName = this.uniqueZipEntryName(attachment.originalFilename, attachment.isInline ? "inline" : "files", usedNames);
+      archive.append(await this.fileStorage.getFileStream(attachment.storageKey), { name: entryName });
+    }
+
+    void archive.finalize();
+
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "Ticket",
+      entityId: ticket.id,
+      action: "attachments.bulk_downloaded",
+      metadata: {
+        ticketId,
+        attachmentCount: attachments.length
+      }
+    });
+
+    return {
+      filename: `${this.safeArchiveFilename(ticket.ticketNumber)}-attachments.zip`,
+      stream: output
+    };
+  }
+
   async softDelete(ticketId: string, attachmentId: string, user: AuthenticatedUser) {
     const ticket = await this.resolveTicket(ticketId, user);
     const attachment = await this.prisma.ticketAttachment.findFirst({
@@ -226,7 +282,7 @@ export class TicketAttachmentsService {
   private async resolveTicket(ticketRef: string, user: AuthenticatedUser) {
     const ticket = await this.prisma.ticket.findFirst({
       where: this.ticketReferenceWhere(ticketRef, user.organizationId),
-      select: { id: true }
+      select: { id: true, ticketNumber: true }
     });
 
     if (!ticket) {
@@ -234,6 +290,32 @@ export class TicketAttachmentsService {
     }
 
     return ticket;
+  }
+
+  private uniqueZipEntryName(filename: string, folder: "files" | "inline", usedNames: Map<string, number>) {
+    const safeName = this.safeArchiveFilename(filename) || "attachment";
+    const slashIndex = safeName.lastIndexOf(".");
+    const baseName = slashIndex > 0 ? safeName.slice(0, slashIndex) : safeName;
+    const extension = slashIndex > 0 ? safeName.slice(slashIndex) : "";
+    let candidate = safeName;
+    let suffix = 2;
+
+    while (usedNames.has(`${folder}/${candidate}`.toLowerCase())) {
+      candidate = `${baseName}-${suffix}${extension}`;
+      suffix += 1;
+    }
+
+    usedNames.set(`${folder}/${candidate}`.toLowerCase(), 1);
+    return `${folder}/${candidate}`;
+  }
+
+  private safeArchiveFilename(value: string) {
+    return value
+      .trim()
+      .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
+      .replace(/\s+/g, " ")
+      .replace(/^\.+|\.+$/g, "")
+      .slice(0, 160);
   }
 
   private ticketReferenceWhere(ticketRef: string, organizationId: string): Prisma.TicketWhereInput {

@@ -44,6 +44,24 @@ export class TicketAttachmentsController {
     return this.ticketAttachmentsService.uploadForTicket(ticketId, user, file);
   }
 
+  @Get("download-all")
+  @RequirePermissions("ticket_attachments.download")
+  async downloadAll(
+    @Param("ticketId") ticketId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    const result = await this.ticketAttachmentsService.getBulkDownload(ticketId, user);
+    response.set({
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="${encodeURIComponent(result.filename)}"`,
+      "Cross-Origin-Resource-Policy": "cross-origin",
+      "Cache-Control": "private, no-store"
+    });
+
+    return new StreamableFile(result.stream);
+  }
+
   @Get(":attachmentId/download")
   @RequirePermissions("ticket_attachments.download")
   async download(
