@@ -590,13 +590,13 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
                 <h3>Ticket Files</h3>
                 <p className="muted">Files attached to messages. Inline email images are listed separately.</p>
               </div>
-              {downloadableAttachmentCount > 1 ? (
-                <a className="button secondary compact-button" href={downloadAllUrl} title="Download all ticket files as a ZIP">
-                  <Download size={16} aria-hidden="true" />
-                  <span>Download All</span>
-                </a>
-              ) : null}
             </div>
+            {downloadableAttachmentCount > 1 ? (
+              <a className="button secondary compact-button ticket-download-all-button" href={downloadAllUrl} title="Download all ticket files as a ZIP">
+                <Download size={16} aria-hidden="true" />
+                <span>Download All</span>
+              </a>
+            ) : null}
             <MessageAttachments ticketId={ticketRef} attachments={realAttachments} variant="sidebar" />
             {inlineAttachments.length > 0 ? (
               <div className="inline-attachments-summary">

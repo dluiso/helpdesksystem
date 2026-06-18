@@ -5260,6 +5260,12 @@ a.dashboard-list-row:hover {
   align-content: start;
 }
 
+.ticket-download-all-button {
+  width: 100%;
+  justify-content: center;
+  margin: 2px 0 10px;
+}
+
 .ticket-tools-panel {
   display: grid;
   gap: 10px;
