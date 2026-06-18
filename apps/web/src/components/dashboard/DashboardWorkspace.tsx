@@ -1,7 +1,24 @@
 "use client";
 
-import { AlertTriangle, CalendarDays, CheckCircle2, Clock3, ClipboardList, Inbox, Ticket, UsersRound, UserX, Zap } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  ClipboardList,
+  EyeOff,
+  GripVertical,
+  Inbox,
+  RotateCcw,
+  Save,
+  Settings2,
+  Ticket,
+  UsersRound,
+  UserX,
+  Zap
+} from "lucide-react";
 import Link from "next/link";
+import type { DragEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
@@ -33,6 +50,22 @@ interface DashboardStats {
   bySource: Array<{ source: string; count: number; filter: { source: string } }>;
   byClient: Array<{ clientId: string | null; name: string; count: number; filter: { clientId?: string } }>;
   workload: Array<{ userId: string; name: string; count: number; filter: { assignedUserId: string } }>;
+  specialistPerformance?: Array<{
+    userId: string;
+    name: string;
+    assignedActive: number;
+    awaitingTechnician: number;
+    closedLast30Days: number;
+    totalAssigned: number;
+    averageDailyClosed: number;
+    teamAverageActive: number;
+    filter: { assignedUserId: string };
+  }>;
+  specialistTrend?: Array<{
+    userId: string;
+    name: string;
+    points: Array<{ date: string; label: string; assigned: number; closed: number }>;
+  }>;
   activityByDay: Array<{ date: string; label: string; created: number; closed: number }>;
   createdByHour: Array<{ hour: number; label: string; count: number }>;
   insightTickets: {
@@ -49,9 +82,55 @@ interface DashboardEventRequest {
   status: EventStatus;
 }
 
+type DashboardWidgetId =
+  | "ticketKpis"
+  | "eventKpis"
+  | "ticketActivity"
+  | "ticketsByStatus"
+  | "ticketsByPriority"
+  | "specialistTrend"
+  | "createdByHour"
+  | "technicianWorkload"
+  | "specialistPerformance"
+  | "ticketsByClient"
+  | "ticketsBySource"
+  | "criticalTickets"
+  | "unassignedTickets"
+  | "staleTickets";
+
+interface DashboardPreference {
+  layout: string[];
+  hiddenWidgets: string[];
+}
+
+interface DashboardWidgetDefinition {
+  id: DashboardWidgetId;
+  label: string;
+  group: "summary" | "main" | "insight";
+  wide?: boolean;
+}
+
 const activeStatuses = ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_TECHNICIAN", "WAITING_ON_THIRD_PARTY", "REOPENED"];
 const activeEventStatuses: EventStatus[] = ["ASSIGNED", "IN_PROGRESS", "WAITING_ON_CLIENT", "WAITING_ON_INTERNAL_TEAM"];
 const chartColors = ["#155eef", "#16a34a", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#64748b", "#ec4899"];
+const defaultDashboardWidgets: DashboardWidgetDefinition[] = [
+  { id: "ticketKpis", label: "Ticket summary cards", group: "summary" },
+  { id: "eventKpis", label: "Event service summary cards", group: "summary" },
+  { id: "ticketActivity", label: "Ticket Activity", group: "main", wide: true },
+  { id: "ticketsByStatus", label: "Tickets by Status", group: "main" },
+  { id: "ticketsByPriority", label: "Tickets by Priority", group: "main" },
+  { id: "specialistTrend", label: "Specialist Trend", group: "main", wide: true },
+  { id: "createdByHour", label: "Created by Hour", group: "main" },
+  { id: "technicianWorkload", label: "Technician Workload", group: "main" },
+  { id: "specialistPerformance", label: "Specialist Performance", group: "main", wide: true },
+  { id: "ticketsByClient", label: "Tickets by Client", group: "main" },
+  { id: "ticketsBySource", label: "Tickets by Source", group: "main" },
+  { id: "criticalTickets", label: "Critical and High Priority", group: "insight" },
+  { id: "unassignedTickets", label: "Unassigned Tickets", group: "insight" },
+  { id: "staleTickets", label: "No Recent Update", group: "insight" }
+];
+const defaultDashboardLayout = defaultDashboardWidgets.map((widget) => widget.id);
+const widgetDefinitionById = new Map(defaultDashboardWidgets.map((widget) => [widget.id, widget]));
 
 function label(value: string) {
   return value
@@ -85,6 +164,13 @@ function eventHref(filter: Record<string, string | undefined>) {
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString(undefined, { month: "short", day: "2-digit", hour: "numeric", minute: "2-digit" });
+}
+
+function normalizeDashboardPreference(preference?: Partial<DashboardPreference> | null): DashboardPreference {
+  const knownIds = new Set(defaultDashboardLayout);
+  const layout = [...(preference?.layout ?? []).filter((id): id is DashboardWidgetId => knownIds.has(id as DashboardWidgetId)), ...defaultDashboardLayout.filter((id) => !(preference?.layout ?? []).includes(id))];
+  const hiddenWidgets = (preference?.hiddenWidgets ?? []).filter((id): id is DashboardWidgetId => knownIds.has(id as DashboardWidgetId));
+  return { layout, hiddenWidgets };
 }
 
 function KpiCard({ title, value, href, tone, icon: Icon, note }: { title: string; value: number; href: string; tone: string; icon: typeof Ticket; note: string }) {
@@ -194,6 +280,68 @@ function ActivityChart({ items }: { items: DashboardStats["activityByDay"] }) {
   );
 }
 
+function SpecialistTrendChart({ items }: { items: NonNullable<DashboardStats["specialistTrend"]> }) {
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const selected = items.find((item) => item.userId === selectedUserId) ?? items[0];
+  const points = selected?.points ?? [];
+  const maxValue = Math.max(1, ...points.flatMap((point) => [point.assigned, point.closed]));
+
+  useEffect(() => {
+    if (!items.length) {
+      setSelectedUserId("");
+      return;
+    }
+    if (!items.some((item) => item.userId === selectedUserId)) {
+      setSelectedUserId(items[0].userId);
+    }
+  }, [items, selectedUserId]);
+
+  return (
+    <div className="panel dashboard-chart-card dashboard-wide-card">
+      <div className="section-heading compact-heading">
+        <div>
+          <h2>Specialist Trend</h2>
+          <p className="muted">Assigned and closed ticket movement over the last 30 days.</p>
+        </div>
+        {items.length ? (
+          <select className="input compact-select" value={selected?.userId ?? ""} onChange={(event) => setSelectedUserId(event.target.value)}>
+            {items.map((item) => (
+              <option value={item.userId} key={item.userId}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
+      </div>
+      {points.length ? (
+        <>
+          <div className="dashboard-activity-chart" role="img" aria-label="Assigned and closed tickets by specialist">
+            {points.map((point, index) => (
+              <div className="dashboard-activity-day" key={point.date} title={`${point.label}: ${point.assigned} assigned, ${point.closed} closed`}>
+                <div className="dashboard-activity-bars">
+                  <span className="assigned" style={{ height: `${Math.max(4, (point.assigned / maxValue) * 100)}%` }} />
+                  <span className="closed" style={{ height: `${Math.max(4, (point.closed / maxValue) * 100)}%` }} />
+                </div>
+                {index % 5 === 0 || index === points.length - 1 ? <small>{point.label}</small> : <small aria-hidden="true" />}
+              </div>
+            ))}
+          </div>
+          <div className="dashboard-chart-legend">
+            <span>
+              <i className="assigned" /> Assigned
+            </span>
+            <span>
+              <i className="closed" /> Closed
+            </span>
+          </div>
+        </>
+      ) : (
+        <p className="muted">No specialist activity yet.</p>
+      )}
+    </div>
+  );
+}
+
 function HourChart({ items }: { items: DashboardStats["createdByHour"] }) {
   const maxValue = Math.max(1, ...items.map((item) => item.count));
 
@@ -260,6 +408,51 @@ function HorizontalBarList({ title, subtitle, items }: { title: string; subtitle
   );
 }
 
+function SpecialistPerformanceCard({ items }: { items: NonNullable<DashboardStats["specialistPerformance"]> }) {
+  const maxValue = Math.max(1, ...items.flatMap((item) => [item.assignedActive, item.closedLast30Days, item.awaitingTechnician]));
+  const teamAverage = items[0]?.teamAverageActive ?? 0;
+
+  return (
+    <div className="panel dashboard-chart-card dashboard-wide-card">
+      <div className="section-heading compact-heading">
+        <div>
+          <h2>Specialist Performance</h2>
+          <p className="muted">Active workload, closed tickets, and internal wait by specialist.</p>
+        </div>
+        <span className="count-pill">Team avg {teamAverage}</span>
+      </div>
+      <div className="dashboard-performance-list">
+        {items.length ? (
+          items.map((item) => (
+            <Link className="dashboard-performance-row" href={ticketHref({ assignedUserId: item.filter.assignedUserId, statuses: activeStatuses })} key={item.userId}>
+              <span>
+                <strong>{item.name}</strong>
+                <small>{item.totalAssigned} total assigned - {item.averageDailyClosed} closed/day</small>
+              </span>
+              <div className="dashboard-performance-metrics">
+                <span title={`${item.assignedActive} active`}>
+                  <i className="assigned" style={{ width: `${Math.max(8, (item.assignedActive / maxValue) * 100)}%` }} />
+                  Active <strong>{item.assignedActive}</strong>
+                </span>
+                <span title={`${item.closedLast30Days} closed in the last 30 days`}>
+                  <i className="closed" style={{ width: `${Math.max(8, (item.closedLast30Days / maxValue) * 100)}%` }} />
+                  Closed <strong>{item.closedLast30Days}</strong>
+                </span>
+                <span title={`${item.awaitingTechnician} awaiting technician`}>
+                  <i className="awaiting" style={{ width: `${Math.max(8, (item.awaitingTechnician / maxValue) * 100)}%` }} />
+                  Awaiting <strong>{item.awaitingTechnician}</strong>
+                </span>
+              </div>
+            </Link>
+          ))
+        ) : (
+          <p className="muted">No specialist workload yet.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function InsightTable({ title, subtitle, tickets }: { title: string; subtitle: string; tickets: DashboardTicket[] }) {
   return (
     <div className="panel dashboard-insight-card">
@@ -292,9 +485,145 @@ function InsightTable({ title, subtitle, tickets }: { title: string; subtitle: s
   );
 }
 
+function DashboardWidgetShell({
+  children,
+  customizing,
+  hidden,
+  id,
+  label: widgetLabel,
+  wide,
+  onDragStart,
+  onDrop,
+  onHide
+}: {
+  children: ReactNode;
+  customizing: boolean;
+  hidden: boolean;
+  id: DashboardWidgetId;
+  label: string;
+  wide?: boolean;
+  onDragStart: (id: DashboardWidgetId) => void;
+  onDrop: (id: DashboardWidgetId) => void;
+  onHide: (id: DashboardWidgetId) => void;
+}) {
+  if (hidden) {
+    return null;
+  }
+
+  return (
+    <div
+      className={`dashboard-widget-shell ${wide ? "dashboard-widget-wide" : ""} ${customizing ? "customizing" : ""}`}
+      draggable={customizing}
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = "move";
+        onDragStart(id);
+      }}
+      onDragOver={(event) => {
+        if (customizing) {
+          event.preventDefault();
+        }
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        onDrop(id);
+      }}
+    >
+      {customizing ? (
+        <div className="dashboard-widget-overlay">
+          <span>
+            <GripVertical size={14} /> {widgetLabel}
+          </span>
+          <button className="icon-button subtle" type="button" onClick={() => onHide(id)} title={`Hide ${widgetLabel}`}>
+            <EyeOff size={14} />
+          </button>
+        </div>
+      ) : null}
+      {children}
+    </div>
+  );
+}
+
+function DashboardCustomizer({
+  preference,
+  saving,
+  onMove,
+  onToggle,
+  onSave,
+  onReset
+}: {
+  preference: DashboardPreference;
+  saving: boolean;
+  onMove: (sourceId: DashboardWidgetId, targetId: DashboardWidgetId) => void;
+  onToggle: (id: DashboardWidgetId) => void;
+  onSave: () => void;
+  onReset: () => void;
+}) {
+  const [draggedId, setDraggedId] = useState<DashboardWidgetId | null>(null);
+  const hidden = new Set(preference.hiddenWidgets);
+
+  function handleDrop(event: DragEvent<HTMLDivElement>, targetId: DashboardWidgetId) {
+    event.preventDefault();
+    if (draggedId && draggedId !== targetId) {
+      onMove(draggedId, targetId);
+    }
+    setDraggedId(null);
+  }
+
+  return (
+    <div className="panel dashboard-customizer-panel">
+      <div className="section-heading compact-heading">
+        <div>
+          <h2>Customize Dashboard</h2>
+          <p className="muted">Drag widgets to change order, hide unused sections, and save this layout for your user.</p>
+        </div>
+        <div className="dashboard-customizer-actions">
+          <button className="button secondary" type="button" onClick={onReset}>
+            <RotateCcw size={16} /> Reset
+          </button>
+          <button className="button primary" type="button" onClick={onSave} disabled={saving}>
+            <Save size={16} /> {saving ? "Saving..." : "Save layout"}
+          </button>
+        </div>
+      </div>
+      <div className="dashboard-customizer-list">
+        {preference.layout.map((id) => {
+          const definition = widgetDefinitionById.get(id as DashboardWidgetId);
+          if (!definition) {
+            return null;
+          }
+          return (
+            <div
+              className="dashboard-customizer-row"
+              draggable
+              key={definition.id}
+              onDragStart={() => setDraggedId(definition.id)}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => handleDrop(event, definition.id)}
+            >
+              <span>
+                <GripVertical size={14} />
+                {definition.label}
+              </span>
+              <label className="dashboard-visibility-toggle">
+                <input type="checkbox" checked={!hidden.has(definition.id)} onChange={() => onToggle(definition.id)} />
+                Visible
+              </label>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function DashboardWorkspace() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [eventRequests, setEventRequests] = useState<DashboardEventRequest[]>([]);
+  const [preference, setPreference] = useState<DashboardPreference>(() => normalizeDashboardPreference());
+  const [customizing, setCustomizing] = useState(false);
+  const [draggedWidgetId, setDraggedWidgetId] = useState<DashboardWidgetId | null>(null);
+  const [savingPreference, setSavingPreference] = useState(false);
+  const [preferenceNotice, setPreferenceNotice] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -303,12 +632,14 @@ export function DashboardWorkspace() {
     setLoading(true);
     Promise.all([
       apiFetch<DashboardStats>("/tickets/statistics"),
-      apiFetch<DashboardEventRequest[]>("/event-services").catch(() => [])
+      apiFetch<DashboardEventRequest[]>("/event-services").catch(() => []),
+      apiFetch<DashboardPreference>("/dashboard/preferences").catch(() => normalizeDashboardPreference())
     ])
-      .then(([data, events]) => {
+      .then(([data, events, dashboardPreference]) => {
         if (mounted) {
           setStats(data);
           setEventRequests(events);
+          setPreference(normalizeDashboardPreference(dashboardPreference));
           setError("");
         }
       })
@@ -359,6 +690,61 @@ export function DashboardWorkspace() {
     ];
   }, [stats]);
 
+  function moveWidget(sourceId: DashboardWidgetId, targetId: DashboardWidgetId) {
+    setPreference((current) => {
+      const layout = [...current.layout];
+      const sourceIndex = layout.indexOf(sourceId);
+      const targetIndex = layout.indexOf(targetId);
+      if (sourceIndex === -1 || targetIndex === -1) {
+        return current;
+      }
+      layout.splice(sourceIndex, 1);
+      layout.splice(targetIndex, 0, sourceId);
+      return { ...current, layout };
+    });
+  }
+
+  function toggleWidget(id: DashboardWidgetId) {
+    setPreference((current) => {
+      const hidden = new Set(current.hiddenWidgets);
+      if (hidden.has(id)) {
+        hidden.delete(id);
+      } else {
+        hidden.add(id);
+      }
+      return { ...current, hiddenWidgets: [...hidden] };
+    });
+  }
+
+  async function saveDashboardPreference() {
+    setSavingPreference(true);
+    setPreferenceNotice("");
+    try {
+      const saved = await apiFetch<DashboardPreference>("/dashboard/preferences", {
+        method: "PUT",
+        body: JSON.stringify(preference)
+      });
+      setPreference(normalizeDashboardPreference(saved));
+      setPreferenceNotice("Dashboard layout saved.");
+    } catch (caught) {
+      setPreferenceNotice(caught instanceof Error ? caught.message : "Unable to save dashboard layout.");
+    } finally {
+      setSavingPreference(false);
+    }
+  }
+
+  function resetDashboardPreference() {
+    setPreference(normalizeDashboardPreference());
+    setPreferenceNotice("Default layout restored. Save to keep this layout.");
+  }
+
+  function handleWidgetDrop(targetId: DashboardWidgetId) {
+    if (draggedWidgetId && draggedWidgetId !== targetId) {
+      moveWidget(draggedWidgetId, targetId);
+    }
+    setDraggedWidgetId(null);
+  }
+
   if (loading) {
     return <div className="panel dashboard-loading">Loading dashboard statistics...</div>;
   }
@@ -376,42 +762,117 @@ export function DashboardWorkspace() {
   const sourceItems = stats.bySource.map((item) => ({ label: label(item.source), count: item.count, href: ticketHref({ source: item.filter.source }) }));
   const clientItems = stats.byClient.map((item) => ({ label: item.name, count: item.count, href: item.clientId ? ticketHref({ clientId: item.clientId }) : undefined }));
   const workloadItems = stats.workload.map((item) => ({ label: item.name, count: item.count, href: ticketHref({ assignedUserId: item.filter.assignedUserId, statuses: activeStatuses }) }));
+  const specialistPerformance = stats.specialistPerformance ?? [];
+  const specialistTrend = stats.specialistTrend ?? [];
+  const hiddenWidgets = new Set(preference.hiddenWidgets);
+
+  const renderWidget = (id: DashboardWidgetId) => {
+    switch (id) {
+      case "ticketKpis":
+        return (
+          <>
+            <div className="dashboard-section-heading">
+              <h2>Tickets</h2>
+            </div>
+            <section className="dashboard-kpi-grid">
+              {summaryCards.map((card) => (
+                <KpiCard key={card.title} {...card} />
+              ))}
+            </section>
+          </>
+        );
+      case "eventKpis":
+        return (
+          <>
+            <div className="dashboard-section-heading">
+              <h2>Event & Services</h2>
+            </div>
+            <section className="dashboard-kpi-grid dashboard-event-kpi-grid">
+              {eventSummaryCards.map((card) => (
+                <KpiCard key={card.title} {...card} />
+              ))}
+            </section>
+          </>
+        );
+      case "ticketActivity":
+        return <ActivityChart items={stats.activityByDay} />;
+      case "ticketsByStatus":
+        return <DonutChart title="Tickets by Status" subtitle="Click a segment label to filter tickets." items={statusItems} />;
+      case "ticketsByPriority":
+        return <DonutChart title="Tickets by Priority" subtitle="Workload distribution by urgency." items={priorityItems} />;
+      case "specialistTrend":
+        return <SpecialistTrendChart items={specialistTrend} />;
+      case "createdByHour":
+        return <HourChart items={stats.createdByHour} />;
+      case "technicianWorkload":
+        return <HorizontalBarList title="Technician Workload" subtitle="Active tickets by assigned technician." items={workloadItems} />;
+      case "specialistPerformance":
+        return <SpecialistPerformanceCard items={specialistPerformance} />;
+      case "ticketsByClient":
+        return <HorizontalBarList title="Tickets by Client" subtitle="Top client workload across all active tickets." items={clientItems} />;
+      case "ticketsBySource":
+        return <DonutChart title="Tickets by Source" subtitle="Where tickets are entering the helpdesk." items={sourceItems} />;
+      case "criticalTickets":
+        return <InsightTable title="Critical and High Priority" subtitle="Open tickets that need fast attention." tickets={stats.insightTickets.critical} />;
+      case "unassignedTickets":
+        return <InsightTable title="Unassigned Tickets" subtitle="Tickets waiting for ownership." tickets={stats.insightTickets.unassigned} />;
+      case "staleTickets":
+        return <InsightTable title="No Recent Update" subtitle="Active tickets idle for more than 7 days." tickets={stats.insightTickets.stale} />;
+      default:
+        return null;
+    }
+  };
+
+  const renderShell = (id: DashboardWidgetId) => {
+    const definition = widgetDefinitionById.get(id);
+    if (!definition) {
+      return null;
+    }
+
+    return (
+      <DashboardWidgetShell
+        customizing={customizing}
+        hidden={hiddenWidgets.has(id)}
+        id={id}
+        key={id}
+        label={definition.label}
+        onDragStart={setDraggedWidgetId}
+        onDrop={handleWidgetDrop}
+        onHide={toggleWidget}
+        wide={definition.wide}
+      >
+        {renderWidget(id)}
+      </DashboardWidgetShell>
+    );
+  };
+  const summaryWidgets = preference.layout.filter((id): id is DashboardWidgetId => widgetDefinitionById.get(id as DashboardWidgetId)?.group === "summary");
+  const mainWidgets = preference.layout.filter((id): id is DashboardWidgetId => widgetDefinitionById.get(id as DashboardWidgetId)?.group === "main");
+  const insightWidgets = preference.layout.filter((id): id is DashboardWidgetId => widgetDefinitionById.get(id as DashboardWidgetId)?.group === "insight");
 
   return (
     <div className="dashboard-page">
-      <div className="dashboard-section-heading">
-        <h2>Tickets</h2>
+      <div className="dashboard-toolbar">
+        <button className={`button ${customizing ? "primary" : "secondary"}`} type="button" onClick={() => setCustomizing((current) => !current)}>
+          <Settings2 size={16} /> {customizing ? "Done" : "Customize"}
+        </button>
       </div>
-      <section className="dashboard-kpi-grid">
-        {summaryCards.map((card) => (
-          <KpiCard key={card.title} {...card} />
-        ))}
-      </section>
+      {preferenceNotice ? <div className={preferenceNotice.includes("Unable") ? "error-banner" : "success-banner"}>{preferenceNotice}</div> : null}
+      {customizing ? (
+        <DashboardCustomizer
+          preference={preference}
+          saving={savingPreference}
+          onMove={moveWidget}
+          onToggle={toggleWidget}
+          onSave={() => void saveDashboardPreference()}
+          onReset={resetDashboardPreference}
+        />
+      ) : null}
 
-      <div className="dashboard-section-heading">
-        <h2>Event & Services</h2>
-      </div>
-      <section className="dashboard-kpi-grid dashboard-event-kpi-grid">
-        {eventSummaryCards.map((card) => (
-          <KpiCard key={card.title} {...card} />
-        ))}
-      </section>
+      {summaryWidgets.map(renderShell)}
 
-      <section className="dashboard-main-grid">
-        <ActivityChart items={stats.activityByDay} />
-        <DonutChart title="Tickets by Status" subtitle="Click a segment label to filter tickets." items={statusItems} />
-        <DonutChart title="Tickets by Priority" subtitle="Workload distribution by urgency." items={priorityItems} />
-        <HourChart items={stats.createdByHour} />
-        <HorizontalBarList title="Technician Workload" subtitle="Active tickets by assigned technician." items={workloadItems} />
-        <HorizontalBarList title="Tickets by Client" subtitle="Top client workload across all active tickets." items={clientItems} />
-        <DonutChart title="Tickets by Source" subtitle="Where tickets are entering the helpdesk." items={sourceItems} />
-      </section>
+      <section className="dashboard-main-grid">{mainWidgets.map(renderShell)}</section>
 
-      <section className="dashboard-insight-grid">
-        <InsightTable title="Critical and High Priority" subtitle="Open tickets that need fast attention." tickets={stats.insightTickets.critical} />
-        <InsightTable title="Unassigned Tickets" subtitle="Tickets waiting for ownership." tickets={stats.insightTickets.unassigned} />
-        <InsightTable title="No Recent Update" subtitle="Active tickets idle for more than 7 days." tickets={stats.insightTickets.stale} />
-      </section>
+      <section className="dashboard-insight-grid">{insightWidgets.map(renderShell)}</section>
     </div>
   );
 }

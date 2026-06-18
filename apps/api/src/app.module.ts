@@ -9,6 +9,7 @@ import { AutoRepliesModule } from "./modules/auto-replies/auto-replies.module";
 import { ClientDomainsModule } from "./modules/client-domains/client-domains.module";
 import { ClientsModule } from "./modules/clients/clients.module";
 import { ContactsModule } from "./modules/contacts/contacts.module";
+import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { DevicesModule } from "./modules/devices/devices.module";
 import { EventServicesModule } from "./modules/event-services/event-services.module";
 import { FileStorageModule } from "./modules/file-storage/file-storage.module";
@@ -69,6 +70,7 @@ import { UsersModule } from "./modules/users/users.module";
     ClientsModule,
     ClientDomainsModule,
     ContactsModule,
+    DashboardModule,
     TicketsModule,
     TicketMessagesModule,
     TicketTeamsModule,

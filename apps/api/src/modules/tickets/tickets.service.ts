@@ -155,6 +155,7 @@ export class TicketsService {
       deletedAt: null,
       status: { in: activeStatuses }
     };
+    const recentSince = this.daysAgo(29);
     const staleCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     const [
@@ -224,7 +225,7 @@ export class TicketsService {
         orderBy: [{ firstName: "asc" }, { lastName: "asc" }]
       }),
       this.prisma.ticket.findMany({
-        where: { ...baseWhere, createdAt: { gte: this.daysAgo(29) } },
+        where: { ...baseWhere, createdAt: { gte: recentSince } },
         select: { createdAt: true },
         orderBy: { createdAt: "asc" }
       }),
@@ -232,7 +233,7 @@ export class TicketsService {
         where: {
           ...baseWhere,
           status: TicketStatus.CLOSED,
-          OR: [{ closedAt: { gte: this.daysAgo(29) } }, { closedAt: null, updatedAt: { gte: this.daysAgo(29) } }]
+          OR: [{ closedAt: { gte: recentSince } }, { closedAt: null, updatedAt: { gte: recentSince } }]
         },
         select: { closedAt: true, updatedAt: true },
         orderBy: { updatedAt: "asc" }
@@ -285,6 +286,8 @@ export class TicketsService {
         filter: { assignedUserId: technician.id }
       }))
     );
+    const specialistPerformance = await this.buildSpecialistPerformance(activeUsers, activeWhere, baseWhere, recentSince);
+    const specialistTrend = await this.buildSpecialistTrend(specialistPerformance.slice(0, 5), baseWhere, recentSince);
 
     return {
       summary: {
@@ -309,6 +312,8 @@ export class TicketsService {
         filter: item.clientId ? { clientId: item.clientId } : {}
       })),
       workload: workload.filter((item) => item.count > 0).sort((a, b) => b.count - a.count).slice(0, 8),
+      specialistPerformance,
+      specialistTrend,
       activityByDay: this.buildActivityByDay(recentCreatedTickets, recentClosedTickets),
       createdByHour: this.buildCreatedByHour(recentCreatedTickets),
       insightTickets: {
@@ -373,6 +378,150 @@ export class TicketsService {
       buckets[ticket.createdAt.getHours()].count += 1;
     });
     return buckets;
+  }
+
+  private async buildSpecialistPerformance(
+    technicians: Array<{ id: string; firstName: string; lastName: string }>,
+    activeWhere: Prisma.TicketWhereInput,
+    baseWhere: Prisma.TicketWhereInput,
+    recentSince: Date
+  ) {
+    const rows = await Promise.all(
+      technicians.map(async (technician) => {
+        const assignedWhere = this.assignedToUserWhere(technician.id);
+        const [assignedActive, awaitingTechnician, closedLast30Days, totalAssigned] = await Promise.all([
+          this.prisma.ticket.count({
+            where: {
+              ...activeWhere,
+              ...assignedWhere
+            }
+          }),
+          this.prisma.ticket.count({
+            where: {
+              ...baseWhere,
+              status: TicketStatus.WAITING_ON_TECHNICIAN,
+              ...assignedWhere
+            }
+          }),
+          this.prisma.ticket.count({
+            where: {
+              ...baseWhere,
+              status: TicketStatus.CLOSED,
+              AND: [
+                assignedWhere,
+                {
+                  OR: [{ closedAt: { gte: recentSince } }, { closedAt: null, updatedAt: { gte: recentSince } }]
+                }
+              ]
+            }
+          }),
+          this.prisma.ticket.count({
+            where: {
+              ...baseWhere,
+              ...assignedWhere
+            }
+          })
+        ]);
+
+        return {
+          userId: technician.id,
+          name: `${technician.firstName} ${technician.lastName}`,
+          assignedActive,
+          awaitingTechnician,
+          closedLast30Days,
+          totalAssigned,
+          averageDailyClosed: Number((closedLast30Days / 30).toFixed(2)),
+          filter: { assignedUserId: technician.id }
+        };
+      })
+    );
+    const teamAverageActive = rows.length ? Number((rows.reduce((sum, row) => sum + row.assignedActive, 0) / rows.length).toFixed(1)) : 0;
+
+    return rows
+      .filter((row) => row.assignedActive > 0 || row.closedLast30Days > 0 || row.awaitingTechnician > 0)
+      .sort((a, b) => b.assignedActive - a.assignedActive || b.awaitingTechnician - a.awaitingTechnician || b.closedLast30Days - a.closedLast30Days)
+      .slice(0, 8)
+      .map((row) => ({ ...row, teamAverageActive }));
+  }
+
+  private async buildSpecialistTrend(
+    specialists: Array<{ userId: string; name: string }>,
+    baseWhere: Prisma.TicketWhereInput,
+    recentSince: Date
+  ) {
+    return Promise.all(
+      specialists.map(async (specialist) => {
+        const assignedWhere = this.assignedToUserWhere(specialist.userId);
+        const [assignedTickets, closedTickets] = await Promise.all([
+          this.prisma.ticket.findMany({
+            where: {
+              ...baseWhere,
+              createdAt: { gte: recentSince },
+              ...assignedWhere
+            },
+            select: { createdAt: true },
+            orderBy: { createdAt: "asc" }
+          }),
+          this.prisma.ticket.findMany({
+            where: {
+              ...baseWhere,
+              status: TicketStatus.CLOSED,
+              AND: [
+                assignedWhere,
+                {
+                  OR: [{ closedAt: { gte: recentSince } }, { closedAt: null, updatedAt: { gte: recentSince } }]
+                }
+              ]
+            },
+            select: { closedAt: true, updatedAt: true },
+            orderBy: { updatedAt: "asc" }
+          })
+        ]);
+        const points = this.buildSpecialistTrendPoints(assignedTickets, closedTickets);
+
+        return {
+          userId: specialist.userId,
+          name: specialist.name,
+          points
+        };
+      })
+    );
+  }
+
+  private buildSpecialistTrendPoints(createdTickets: Array<{ createdAt: Date }>, closedTickets: Array<{ closedAt: Date | null; updatedAt: Date }>) {
+    const buckets = Array.from({ length: 30 }, (_, index) => {
+      const date = this.daysAgo(29 - index);
+      const key = this.dateBucketKey(date);
+      return {
+        date: key,
+        label: date.toLocaleDateString("en-US", { month: "short", day: "2-digit" }),
+        assigned: 0,
+        closed: 0
+      };
+    });
+    const bucketMap = new Map(buckets.map((bucket) => [bucket.date, bucket]));
+
+    createdTickets.forEach((ticket) => {
+      const bucket = bucketMap.get(this.dateBucketKey(ticket.createdAt));
+      if (bucket) {
+        bucket.assigned += 1;
+      }
+    });
+
+    closedTickets.forEach((ticket) => {
+      const bucket = bucketMap.get(this.dateBucketKey(ticket.closedAt ?? ticket.updatedAt));
+      if (bucket) {
+        bucket.closed += 1;
+      }
+    });
+
+    return buckets;
+  }
+
+  private assignedToUserWhere(userId: string): Prisma.TicketWhereInput {
+    return {
+      OR: [{ assignedUserId: userId }, { assignees: { some: { userId } } }]
+    };
   }
 
   private dateBucketKey(date: Date) {

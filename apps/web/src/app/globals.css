@@ -3959,6 +3959,71 @@ a.dashboard-list-row:hover {
   gap: 16px;
 }
 
+.dashboard-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.dashboard-toolbar h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.dashboard-customizer-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.dashboard-customizer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.dashboard-customizer-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.dashboard-customizer-row {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-subtle);
+}
+
+.dashboard-customizer-row span,
+.dashboard-widget-overlay span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 800;
+}
+
+.dashboard-customizer-row[draggable="true"],
+.dashboard-widget-shell.customizing {
+  cursor: grab;
+}
+
+.dashboard-visibility-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .dashboard-section-heading {
   display: grid;
   gap: 4px;
@@ -4061,6 +4126,43 @@ a.dashboard-list-row:hover {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
   align-items: stretch;
+}
+
+.dashboard-widget-shell {
+  min-width: 0;
+  position: relative;
+  display: contents;
+}
+
+.dashboard-widget-shell.customizing {
+  display: block;
+  border: 1px dashed var(--brand-primary);
+  border-radius: var(--radius);
+}
+
+.dashboard-widget-shell.customizing > .panel,
+.dashboard-widget-shell.customizing > .dashboard-kpi-grid {
+  opacity: 0.82;
+}
+
+.dashboard-widget-overlay {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+}
+
+.dashboard-widget-wide {
+  grid-column: span 2;
 }
 
 .dashboard-chart-card {
@@ -4207,6 +4309,11 @@ a.dashboard-list-row:hover {
   background: var(--success);
 }
 
+.dashboard-activity-bars .assigned,
+.dashboard-chart-legend .assigned {
+  background: var(--warning);
+}
+
 .dashboard-chart-legend {
   display: flex;
   gap: 14px;
@@ -4276,6 +4383,77 @@ a.dashboard-list-row:hover {
   bottom: 6px;
   height: 4px;
   border-radius: 999px;
+}
+
+.dashboard-performance-list {
+  display: grid;
+  gap: 10px;
+}
+
+.dashboard-performance-row {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.35fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--text);
+  background: var(--surface-subtle);
+  text-decoration: none;
+}
+
+.dashboard-performance-row:hover {
+  background: var(--surface-hover);
+}
+
+.dashboard-performance-row > span {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.dashboard-performance-row small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.dashboard-performance-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dashboard-performance-metrics span {
+  position: relative;
+  min-height: 46px;
+  display: grid;
+  gap: 6px;
+  align-content: center;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.dashboard-performance-metrics i {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  height: 4px;
+  border-radius: 999px;
+}
+
+.dashboard-performance-metrics .assigned {
+  background: var(--brand-primary);
+}
+
+.dashboard-performance-metrics .closed {
+  background: var(--success);
+}
+
+.dashboard-performance-metrics .awaiting {
+  background: var(--warning);
 }
 
 .dashboard-insight-grid {
@@ -6229,6 +6407,10 @@ a.dashboard-list-row:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .dashboard-customizer-list {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
   .dashboard-insight-grid {
     grid-template-columns: 1fr;
   }
@@ -6261,6 +6443,9 @@ a.dashboard-list-row:hover {
   .dashboard-kpi-grid,
   .dashboard-main-grid,
   .dashboard-insight-grid,
+  .dashboard-customizer-list,
+  .dashboard-performance-row,
+  .dashboard-performance-metrics,
   .dashboard-donut-layout,
   .dashboard-insight-row,
   .reports-filter-grid,
