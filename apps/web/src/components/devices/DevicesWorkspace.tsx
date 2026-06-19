@@ -20,11 +20,12 @@ import {
   TerminalSquare
 } from "lucide-react";
 import Link from "next/link";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
 type DeviceView = "table" | "cards" | "tree";
+type DeviceTab = "all" | "servers" | "workstations";
 
 interface RemoteAccessDetails {
   network?: {
@@ -65,6 +66,7 @@ interface DeviceRecord {
 
 interface DevicesResponse {
   devices: DeviceRecord[];
+  totalDevices: number;
   clients: Array<{ id: string; name: string }>;
   remoteAccess: {
     enabled: boolean;
@@ -81,6 +83,7 @@ interface DeviceSavedViewState {
   status?: string;
   type?: string;
   view?: DeviceView;
+  deviceTab?: DeviceTab;
   pageSize?: number;
   cardColumns?: number;
 }
@@ -103,6 +106,7 @@ export function DevicesWorkspace() {
   const [status, setStatus] = useState("");
   const [type, setType] = useState("");
   const [view, setView] = useState<DeviceView>("table");
+  const [deviceTab, setDeviceTab] = useState<DeviceTab>("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [cardColumns, setCardColumns] = useState(3);
@@ -129,9 +133,13 @@ export function DevicesWorkspace() {
   }, [clientId, search, status, type]);
 
   const devices = data?.devices ?? [];
-  const totalPages = Math.max(1, Math.ceil(devices.length / pageSize));
-  const pageDevices = useMemo(() => devices.slice((page - 1) * pageSize, page * pageSize), [devices, page, pageSize]);
-  const deviceGroups = useMemo(() => groupDevices(devices), [devices]);
+  const activeDevices = useMemo(() => filterDevicesByTab(devices, deviceTab), [deviceTab, devices]);
+  const deviceTabCounts = useMemo(() => getDeviceTabCounts(devices), [devices]);
+  const totalPages = Math.max(1, Math.ceil(activeDevices.length / pageSize));
+  const pageDevices = useMemo(() => activeDevices.slice((page - 1) * pageSize, page * pageSize), [activeDevices, page, pageSize]);
+  const deviceGroups = useMemo(() => groupDevices(activeDevices), [activeDevices]);
+  const totalDeviceCount = data?.totalDevices ?? devices.length;
+  const lastSyncMessage = data?.remoteAccess.lastSyncMessage ?? "Never";
 
   async function loadDevices() {
     setLoading(true);
@@ -165,8 +173,8 @@ export function DevicesWorkspace() {
     setError(null);
     setNotice(null);
     try {
-      const response = await apiFetch<{ total: number; created: number; updated: number }>("/devices/rmm-sync", { method: "POST" });
-      setNotice(`Synced ${response.total} device${response.total === 1 ? "" : "s"} (${response.created} created, ${response.updated} updated).`);
+      const response = await apiFetch<{ total: number; created: number; updated: number; settings?: DevicesResponse["remoteAccess"] }>("/devices/rmm-sync", { method: "POST" });
+      setNotice(response.settings?.lastSyncMessage ?? `Synced ${response.total} device${response.total === 1 ? "" : "s"} (${response.created} created, ${response.updated} updated).`);
       await loadDevices();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sync RMM devices.");
@@ -186,7 +194,7 @@ export function DevicesWorkspace() {
     setNotice(null);
     const body = {
       name,
-      state: { search, clientId, status, type, view, pageSize, cardColumns },
+      state: { search, clientId, status, type, view, deviceTab, pageSize, cardColumns },
       scope: viewScope,
       isDefault: viewIsDefault
     };
@@ -297,7 +305,9 @@ export function DevicesWorkspace() {
     setSearch(state.search ?? "");
     setClientId(state.clientId ?? "");
     setStatus(state.status ?? "");
-    setType(state.type ?? "");
+    const nextDeviceTab = state.deviceTab === "servers" || state.deviceTab === "workstations" ? state.deviceTab : "all";
+    setType(nextDeviceTab === "all" ? (state.type ?? "") : "");
+    setDeviceTab(nextDeviceTab);
     if (state.view === "table" || state.view === "cards" || state.view === "tree") {
       setView(state.view);
     }
@@ -314,6 +324,12 @@ export function DevicesWorkspace() {
     setPage(1);
   }
 
+  function selectDeviceTab(nextTab: DeviceTab) {
+    setDeviceTab(nextTab);
+    if (nextTab !== "all") setType("");
+    setPage(1);
+  }
+
   useEffect(() => {
     void loadDevices();
   }, [query]);
@@ -324,11 +340,19 @@ export function DevicesWorkspace() {
 
   return (
     <>
-      <div className="compact-page-header">
-        <div>
+      <div className="compact-page-header device-page-header">
+        <div className="device-page-heading">
           <h1>Devices</h1>
+          <div className="device-header-summary" aria-label="Device inventory summary">
+            <span><strong>Devices:</strong> {totalDeviceCount}</span>
+            <span><strong>Devices in this view:</strong> {loading ? "Loading..." : activeDevices.length}</span>
+            <span><strong>Last sync:</strong> {lastSyncMessage}</span>
+          </div>
         </div>
         <div className="button-row">
+          <span className={`status-pill ${data?.remoteAccess.enabled ? "success" : "muted"}`}>
+            {data?.remoteAccess.enabled ? data.remoteAccess.providerName : "RMM disabled"}
+          </span>
           <button className="button secondary" type="button" onClick={loadDevices} disabled={loading}>
             <RefreshCcw size={16} aria-hidden="true" />
             <span>Refresh</span>
@@ -360,7 +384,7 @@ export function DevicesWorkspace() {
           <option value="INACTIVE">Inactive</option>
           <option value="RETIRED">Retired</option>
         </select>
-        <select className="input" value={type} onChange={(event) => setType(event.target.value)}>
+        <select className="input" value={type} onChange={(event) => { setType(event.target.value); setDeviceTab("all"); setPage(1); }}>
           <option value="">All types</option>
           <option value="SERVER">Servers</option>
           <option value="DESKTOP">Desktops</option>
@@ -444,30 +468,31 @@ export function DevicesWorkspace() {
       ) : null}
 
       <section className="panel">
-        <div className="section-heading device-list-summary">
-          <p className="muted">
-            {loading ? "Loading devices..." : `${devices.length} device${devices.length === 1 ? "" : "s"} in this view.`}
-          </p>
-          <span className={`status-pill ${data?.remoteAccess.enabled ? "success" : "muted"}`}>
-            {data?.remoteAccess.enabled ? data.remoteAccess.providerName : "RMM disabled"}
-          </span>
-        </div>
-
-        {data?.remoteAccess.lastSyncMessage ? (
-          <div className="device-sync-note">
-            <strong>Last sync:</strong> {data.remoteAccess.lastSyncMessage}
-          </div>
-        ) : null}
-
-        {!loading && devices.length === 0 ? (
+        {!loading && activeDevices.length === 0 ? (
           <div className="empty-state">
             <h3>No devices found</h3>
-            <p className="muted">Configure RMM Integration in Settings, then run a manual sync to populate the inventory.</p>
+            <p className="muted">
+              {devices.length === 0
+                ? "Configure RMM Integration in Settings, then run a manual sync to populate the inventory."
+                : "No devices match this category. Try another tab or adjust the filters."}
+            </p>
           </div>
         ) : null}
 
-        {devices.length > 0 && view !== "tree" ? (
-          <DevicePagination page={page} totalPages={totalPages} pageSize={pageSize} total={devices.length} onPageChange={setPage} onPageSizeChange={(nextSize) => { setPageSize(nextSize); setPage(1); }} />
+        {activeDevices.length > 0 && view !== "tree" ? (
+          <DevicePagination
+            page={page}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            total={activeDevices.length}
+            tabs={<DeviceCategoryTabs activeTab={deviceTab} counts={deviceTabCounts} onChange={selectDeviceTab} />}
+            onPageChange={setPage}
+            onPageSizeChange={(nextSize) => { setPageSize(nextSize); setPage(1); }}
+          />
+        ) : activeDevices.length > 0 ? (
+          <div className="device-tree-tab-row">
+            <DeviceCategoryTabs activeTab={deviceTab} counts={deviceTabCounts} onChange={selectDeviceTab} />
+          </div>
         ) : null}
 
         {view === "table" && pageDevices.length > 0 ? (
@@ -500,7 +525,7 @@ export function DevicesWorkspace() {
           </div>
         ) : null}
 
-        {view === "tree" && devices.length > 0 ? (
+        {view === "tree" && activeDevices.length > 0 ? (
           <div className="device-tree-list">
             {deviceGroups.map((clientGroup) => (
               <div className="device-tree-client" key={clientGroup.key}>
@@ -696,10 +721,29 @@ function DeviceActions({ device, busy, onOpenRemote }: { device: DeviceRecord; b
   );
 }
 
-function DevicePagination({ page, totalPages, pageSize, total, onPageChange, onPageSizeChange }: { page: number; totalPages: number; pageSize: number; total: number; onPageChange: (page: number) => void; onPageSizeChange: (pageSize: number) => void }) {
+function DevicePagination({
+  page,
+  totalPages,
+  pageSize,
+  total,
+  tabs,
+  onPageChange,
+  onPageSizeChange
+}: {
+  page: number;
+  totalPages: number;
+  pageSize: number;
+  total: number;
+  tabs?: ReactNode;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+}) {
   return (
     <div className="device-pagination">
-      <span className="muted">Showing {Math.min(total, (page - 1) * pageSize + 1)}-{Math.min(total, page * pageSize)} of {total}</span>
+      <div className="device-pagination-leading">
+        <span className="muted">Showing {Math.min(total, (page - 1) * pageSize + 1)}-{Math.min(total, page * pageSize)} of {total}</span>
+        {tabs}
+      </div>
       <div className="button-row">
         <select className="input compact-select" value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}>
           {PAGE_SIZE_OPTIONS.map((size) => (
@@ -710,6 +754,32 @@ function DevicePagination({ page, totalPages, pageSize, total, onPageChange, onP
         <span className="muted">Page {page} of {totalPages}</span>
         <button className="button secondary compact" type="button" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>Next</button>
       </div>
+    </div>
+  );
+}
+
+function DeviceCategoryTabs({
+  activeTab,
+  counts,
+  onChange
+}: {
+  activeTab: DeviceTab;
+  counts: Record<DeviceTab, number>;
+  onChange: (tab: DeviceTab) => void;
+}) {
+  const tabs: Array<{ value: DeviceTab; label: string }> = [
+    { value: "all", label: "All" },
+    { value: "servers", label: "Servers" },
+    { value: "workstations", label: "Workstations" }
+  ];
+  return (
+    <div className="segmented-control device-category-tabs" aria-label="Device category">
+      {tabs.map((tab) => (
+        <button key={tab.value} type="button" className={activeTab === tab.value ? "active" : ""} onClick={() => onChange(tab.value)} aria-pressed={activeTab === tab.value}>
+          <span>{tab.label}</span>
+          <small>{counts[tab.value]}</small>
+        </button>
+      ))}
     </div>
   );
 }
@@ -736,6 +806,28 @@ function groupDevices(devices: DeviceRecord[]) {
     count: client.count,
     sites: Array.from(client.sites.values())
   }));
+}
+
+function filterDevicesByTab(devices: DeviceRecord[], tab: DeviceTab) {
+  if (tab === "servers") return devices.filter((device) => isServerDevice(device));
+  if (tab === "workstations") return devices.filter((device) => isWorkstationDevice(device));
+  return devices;
+}
+
+function getDeviceTabCounts(devices: DeviceRecord[]): Record<DeviceTab, number> {
+  return {
+    all: devices.length,
+    servers: devices.filter((device) => isServerDevice(device)).length,
+    workstations: devices.filter((device) => isWorkstationDevice(device)).length
+  };
+}
+
+function isServerDevice(device: DeviceRecord) {
+  return device.type === "SERVER" || getDeviceIcon(device) === Server;
+}
+
+function isWorkstationDevice(device: DeviceRecord) {
+  return device.type === "DESKTOP" || device.type === "LAPTOP";
 }
 
 function getDeviceStatusClass(device: DeviceRecord) {

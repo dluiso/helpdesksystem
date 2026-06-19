@@ -812,6 +812,48 @@ select.compact-select {
   grid-template-columns: minmax(260px, 1fr) minmax(170px, 210px) minmax(150px, 180px) minmax(140px, 170px) auto minmax(118px, 142px) auto;
 }
 
+.device-page-header {
+  align-items: flex-start;
+}
+
+.device-page-heading {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.device-header-summary {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex-wrap: wrap;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.device-header-summary span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.device-header-summary span + span::before {
+  content: "|";
+  margin: 0 9px;
+  color: color-mix(in srgb, var(--text-muted) 55%, transparent);
+}
+
+.device-header-summary strong {
+  color: var(--text);
+}
+
+.device-page-header .status-pill {
+  white-space: nowrap;
+}
+
 .device-saved-view-panel {
   display: grid;
   grid-template-columns: minmax(180px, 240px) auto minmax(180px, 1fr) minmax(150px, 190px) auto auto auto;
@@ -923,6 +965,43 @@ select.compact-select {
   justify-content: space-between;
   gap: 12px;
   margin: 14px 0;
+}
+
+.device-pagination-leading,
+.device-tree-tab-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.device-tree-tab-row {
+  margin: 14px 0;
+}
+
+.device-category-tabs {
+  width: fit-content;
+}
+
+.device-category-tabs button {
+  gap: 6px;
+}
+
+.device-category-tabs small {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.device-category-tabs button.active small {
+  background: color-mix(in srgb, var(--brand-primary) 18%, var(--surface));
+  color: var(--brand-primary);
 }
 
 .device-list-summary {
@@ -7790,6 +7869,32 @@ a.dashboard-list-row:hover {
   .device-view-toggle {
     width: 100%;
     justify-self: stretch;
+  }
+
+  .device-page-heading,
+  .device-header-summary,
+  .device-pagination-leading,
+  .device-tree-tab-row {
+    width: 100%;
+  }
+
+  .device-header-summary {
+    display: grid;
+    gap: 4px;
+  }
+
+  .device-header-summary span + span::before {
+    content: none;
+    margin: 0;
+  }
+
+  .device-category-tabs {
+    width: 100%;
+  }
+
+  .device-category-tabs button {
+    flex: 1 1 0;
+    justify-content: center;
   }
 
   .device-saved-view-panel .button,

@@ -132,7 +132,12 @@ export class DevicesService {
       where.type = query.type;
     }
 
-    const [devices, clients, settings] = await Promise.all([
+    const totalDevicesWhere: Prisma.DeviceWhereInput = {
+      deletedAt: null,
+      client: { organizationId: user.organizationId }
+    };
+
+    const [devices, totalDevices, clients, settings] = await Promise.all([
       this.prisma.device.findMany({
         where,
         include: {
@@ -143,6 +148,7 @@ export class DevicesService {
         orderBy: [{ client: { name: "asc" } }, { name: "asc" }],
         take: 500
       }),
+      this.prisma.device.count({ where: totalDevicesWhere }),
       this.prisma.client.findMany({
         where: { organizationId: user.organizationId, deletedAt: null },
         select: { id: true, name: true },
@@ -157,6 +163,7 @@ export class DevicesService {
 
     return {
       devices: mappedDevices,
+      totalDevices,
       clients,
       remoteAccess: this.toRmmSettingsResponse(settings)
     };
