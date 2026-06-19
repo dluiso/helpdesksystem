@@ -12,6 +12,7 @@ type RmmAgentRecord = Record<string, unknown>;
 
 interface NormalizedRmmAgent {
   remoteIdentifier: string;
+  remoteIdentifiers: string[];
   name: string;
   hostname: string | null;
   clientName: string;
@@ -385,12 +386,23 @@ export class DevicesService {
 
       for (const agent of agents) {
         const client = await this.findOrCreateClient(user, agent.clientName);
+        const identifierMatches: Prisma.DeviceWhereInput[] = [
+          { remoteAccessId: { in: agent.remoteIdentifiers } },
+          { remoteAccessProfile: { is: { provider: RemoteAccessProvider.TACTICAL_RMM, remoteIdentifier: { in: agent.remoteIdentifiers } } } }
+        ];
+        if (agent.hostname) {
+          identifierMatches.push({
+            clientId: client.id,
+            hostname: { equals: agent.hostname, mode: "insensitive" }
+          });
+        }
+
         const existingDevice = await this.prisma.device.findFirst({
           where: {
             client: { organizationId: user.organizationId },
             remoteAccessProvider: RemoteAccessProvider.TACTICAL_RMM,
-            remoteAccessId: agent.remoteIdentifier,
-            deletedAt: null
+            deletedAt: null,
+            OR: identifierMatches
           },
           include: { remoteAccessProfile: true }
         });
@@ -513,7 +525,13 @@ export class DevicesService {
       throw new BadRequestException("RMM API settings and remote identifier are required before refreshing device details.");
     }
 
-    const record = await this.fetchAgentDetail(apiBaseUrl, settings.remoteAccessAgentsPath, remoteIdentifier, apiKey);
+    let record: RmmAgentRecord;
+    try {
+      record = await this.fetchAgentDetail(apiBaseUrl, settings.remoteAccessAgentsPath, remoteIdentifier, apiKey);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown Tactical RMM detail refresh failure.";
+      throw new BadRequestException(`RMM detail refresh failed: ${message}`);
+    }
     const normalized = this.normalizeAgent(record, settings);
     const snapshot = this.buildRemoteAccessDetailSnapshot(record, normalized);
 
@@ -658,7 +676,18 @@ export class DevicesService {
   }
 
   private normalizeAgent(record: RmmAgentRecord, settings: RmmSettingsRecord): NormalizedRmmAgent | null {
-    const remoteIdentifier = this.pickString(record, ["id", "agent_id", "agentId", "pk", "guid", "mesh_node_id", "meshNodeId"]);
+    const remoteIdentifier =
+      this.pickString(record, ["agent_id", "agentId", "guid"]) ??
+      this.pickString(record, ["id", "pk", "mesh_node_id", "meshNodeId"]);
+    const remoteIdentifiers = this.uniqueStrings(
+      [
+        remoteIdentifier,
+        this.pickString(record, ["agent_id", "agentId"]),
+        this.pickString(record, ["id", "pk"]),
+        this.pickString(record, ["guid"]),
+        this.pickString(record, ["mesh_node_id", "meshNodeId"])
+      ].filter((value): value is string => Boolean(value))
+    );
     const hostname = this.pickString(record, ["hostname", "computer_name", "computerName", "host", "description"]);
     const name = this.pickString(record, ["name", "hostname", "computer_name", "computerName", "description"]) ?? remoteIdentifier;
     if (!remoteIdentifier || !name) return null;
@@ -695,6 +724,7 @@ export class DevicesService {
 
     return {
       remoteIdentifier,
+      remoteIdentifiers,
       name,
       hostname,
       clientName,
@@ -837,10 +867,21 @@ export class DevicesService {
     const cpuRecord = this.pickRecord(record, ["cpu", "processor"]);
     const memoryRecord = this.pickRecord(record, ["memory", "ram"]);
     const networkRecord = this.pickRecord(record, ["network", "networking", "net"]);
-    const wmiCpuRecord = this.pickRecordList(wmiRecord ?? {}, ["cpu"])[0] ?? null;
-    const wmiMemoryRecord = this.pickRecordList(wmiRecord ?? {}, ["mem", "memory"])[0] ?? null;
-    const wmiComputerRecord = this.pickRecordList(wmiRecord ?? {}, ["comp_sys", "computerSystem", "computer_system"])[0] ?? null;
-    const wmiGraphicsRecord = this.pickRecordList(wmiRecord ?? {}, ["graphics", "video"])[0] ?? null;
+    const wmiCpuRecord = this.findRecordWithAnyKey(this.pickRecordList(wmiRecord ?? {}, ["cpu"]), ["Name", "name", "Caption", "caption"]);
+    const wmiMemoryRecord = this.findRecordWithAnyKey(this.pickRecordList(wmiRecord ?? {}, ["mem", "memory"]), ["Capacity", "capacity"]);
+    const wmiComputerRecord = this.findRecordWithAnyKey(this.pickRecordList(wmiRecord ?? {}, ["comp_sys", "computerSystem", "computer_system"]), [
+      "TotalPhysicalMemory",
+      "Model",
+      "model"
+    ]);
+    const wmiGraphicsRecord = this.findRecordWithAnyKey(this.pickRecordList(wmiRecord ?? {}, ["graphics", "video"]), [
+      "Name",
+      "name",
+      "Caption",
+      "caption",
+      "VideoProcessor",
+      "videoProcessor"
+    ]);
     const networkRecords = this.extractNetworkRecords(record, networkRecord, wmiRecord);
     const checksRecord = this.pickRecord(record, ["checks", "checks_status", "checksStatus"]);
     const cpu = this.pickString(record, ["cpu", "processor", "cpu_model", "cpuModel"]) ?? this.pickString(cpuRecord ?? {}, ["name", "model", "description"]) ?? this.pickString(wmiCpuRecord ?? {}, ["Name", "name", "Caption", "caption"]);
@@ -971,7 +1012,7 @@ export class DevicesService {
   }
 
   private buildAgentDetailPath(agentsPath: string, remoteIdentifier: string) {
-    const basePath = this.normalizePath(agentsPath) ?? "/agents/";
+    const basePath = this.normalizePath(agentsPath.split(/[?#]/)[0]) ?? "/agents/";
     return `${basePath.replace(/\/+$/, "")}/${encodeURIComponent(remoteIdentifier)}/`;
   }
 
@@ -1082,22 +1123,27 @@ export class DevicesService {
   private pickRecordList(record: RmmAgentRecord, keys: string[]) {
     for (const key of keys) {
       const value = record[key];
-      if (Array.isArray(value)) return this.flattenRecordList(value);
-      if (this.isRecord(value)) return this.flattenRecordList(Object.values(value));
+      if (Array.isArray(value)) return this.toRecordList(value);
+      if (this.isRecord(value)) return this.toRecordList(Object.values(value));
     }
     return [];
   }
 
-  private flattenRecordList(values: unknown[]): RmmAgentRecord[] {
+  private toRecordList(values: unknown[]): RmmAgentRecord[] {
     const records: RmmAgentRecord[] = [];
     for (const value of values) {
       if (this.isRecord(value)) {
         records.push(value);
       } else if (Array.isArray(value)) {
-        records.push(...this.flattenRecordList(value));
+        const nestedRecords = this.toRecordList(value);
+        if (nestedRecords.length > 0) records.push(Object.assign({}, ...nestedRecords));
       }
     }
     return records;
+  }
+
+  private findRecordWithAnyKey(records: RmmAgentRecord[], keys: string[]) {
+    return records.find((record) => keys.some((key) => record[key] !== undefined && record[key] !== null)) ?? null;
   }
 
   private formatBytesValue(value: unknown) {
@@ -1122,12 +1168,21 @@ export class DevicesService {
     if (typeof value === "number" && Number.isFinite(value)) return value;
     if (typeof value !== "string") return null;
     const trimmed = value.trim();
-    const match = trimmed.match(/^([\d.]+)\s*(b|kb|mb|gb|tb)?$/i);
+    const match = trimmed.match(/^([\d.]+)\s*(b|k|kb|kib|m|mb|mib|g|gb|gib|t|tb|tib)?$/i);
     if (!match) return this.coerceNumber(value);
     const amount = Number(match[1]);
     if (!Number.isFinite(amount)) return null;
     const unit = (match[2] ?? "b").toLowerCase();
-    const multiplier = unit === "tb" ? 1024 ** 4 : unit === "gb" ? 1024 ** 3 : unit === "mb" ? 1024 ** 2 : unit === "kb" ? 1024 : 1;
+    const multiplier =
+      unit === "t" || unit === "tb" || unit === "tib"
+        ? 1024 ** 4
+        : unit === "g" || unit === "gb" || unit === "gib"
+          ? 1024 ** 3
+          : unit === "m" || unit === "mb" || unit === "mib"
+            ? 1024 ** 2
+            : unit === "k" || unit === "kb" || unit === "kib"
+              ? 1024
+              : 1;
     return Math.round(amount * multiplier);
   }
 
