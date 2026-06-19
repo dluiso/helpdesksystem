@@ -1413,30 +1413,37 @@ select.compact-select {
 .device-storage-row {
   min-width: 0;
   display: grid;
-  gap: 8px;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.device-storage-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
 .device-storage-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  min-width: 0;
 }
 
-.device-storage-header strong,
-.device-storage-header span {
+.device-storage-header strong {
   min-width: 0;
+  display: block;
   overflow-wrap: anywhere;
 }
 
-.device-storage-header span {
+.device-storage-capacity {
   color: var(--text-muted);
   font-size: 13px;
+  font-weight: 700;
 }
 
 .device-storage-bar {
-  height: 8px;
+  width: min(100%, 420px);
+  height: 14px;
   border-radius: 999px;
-  background: var(--surface);
+  background: color-mix(in srgb, var(--text-muted) 30%, var(--surface));
   overflow: hidden;
 }
 
@@ -1444,7 +1451,7 @@ select.compact-select {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--brand-primary);
+  background: #35c759;
 }
 
 .device-detail-empty {

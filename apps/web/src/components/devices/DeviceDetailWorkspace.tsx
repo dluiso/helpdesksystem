@@ -317,18 +317,18 @@ function StorageList({ disks }: { disks: RemoteAccessDetails["storage"]["disks"]
             : disk.totalBytes !== null
               ? `${formatBytes(disk.totalBytes)} total`
               : null;
-        const labelParts = [disk.fileSystem, capacityLabel].filter(Boolean);
+        const diskLabel = disk.fileSystem ? `${disk.name} (${disk.fileSystem})` : disk.name;
         return (
           <div className="device-storage-row" key={`${disk.name}-${disk.fileSystem ?? ""}`}>
             <div className="device-storage-header">
-              <strong>{disk.name}</strong>
-              <span>{labelParts.join(" - ") || "No capacity reported"}</span>
+              <strong>{diskLabel}</strong>
             </div>
             {disk.usedPercent !== null ? (
               <div className="device-storage-bar" aria-label={`${disk.name} used ${disk.usedPercent}%`}>
                 <span style={{ width: `${disk.usedPercent}%` }} />
               </div>
             ) : null}
+            <span className="device-storage-capacity">{capacityLabel ?? "No capacity reported"}</span>
           </div>
         );
       })}
