@@ -700,11 +700,13 @@ export class DevicesService {
     if (!remoteIdentifier || !name) return null;
 
     const siteRecord = this.pickRecord(record, ["site"]);
-    const clientRecord = this.pickRecord(record, ["client"]);
+    const clientRecord = this.pickRecord(record, ["client", "customer", "organization", "company", "tenant"]);
+    const siteClientRecord = this.pickRecord(siteRecord ?? {}, ["client", "customer", "organization", "company", "tenant"]);
     const clientName =
-      this.pickString(record, ["client_name", "clientName", "customer_name", "customerName"]) ??
-      this.pickString(clientRecord ?? {}, ["name", "client_name"]) ??
-      this.pickString(siteRecord ?? {}, ["client_name", "customer_name"]) ??
+      this.pickDisplayName(record, ["client_name", "clientName", "customer_name", "customerName", "client", "customer", "organization", "company", "tenant"]) ??
+      this.pickDisplayName(clientRecord ?? {}, ["name", "client_name", "clientName", "customer_name", "customerName", "company_name", "companyName"]) ??
+      this.pickDisplayName(siteRecord ?? {}, ["client_name", "clientName", "customer_name", "customerName", "client", "customer", "organization", "company", "tenant"]) ??
+      this.pickDisplayName(siteClientRecord ?? {}, ["name", "client_name", "clientName", "customer_name", "customerName", "company_name", "companyName"]) ??
       "Unmapped RMM Devices";
     const siteName =
       this.pickString(record, ["site_name", "siteName", "location"]) ??
@@ -1070,6 +1072,30 @@ export class DevicesService {
       }
     }
     return null;
+  }
+
+  private pickDisplayName(record: RmmAgentRecord, keys: string[]): string | null {
+    for (const key of keys) {
+      const value = record[key];
+      const directName = this.normalizeDisplayName(value);
+      if (directName) return directName;
+      if (this.isRecord(value)) {
+        const nestedName: string | null = this.pickDisplayName(value, ["name", "display_name", "displayName", "client_name", "clientName", "customer_name", "customerName"]);
+        if (nestedName) return nestedName;
+      }
+    }
+    return null;
+  }
+
+  private normalizeDisplayName(value: unknown): string | null {
+    if (typeof value !== "string") return null;
+    const trimmed = value.trim();
+    if (!trimmed || /^(none|null|undefined|unknown|n\/a|-+)$/i.test(trimmed)) return null;
+    if (/^https?:\/\//i.test(trimmed)) return null;
+    if (/^\d+$/.test(trimmed)) return null;
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) return null;
+    if (/^[0-9a-f]{24,}$/i.test(trimmed)) return null;
+    return trimmed;
   }
 
   private pickNumber(record: RmmAgentRecord, keys: string[]) {
