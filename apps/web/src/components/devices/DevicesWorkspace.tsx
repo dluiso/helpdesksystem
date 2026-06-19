@@ -718,7 +718,14 @@ function getDeviceIcon(device: DeviceRecord) {
   if (source.includes("server")) return Server;
   if (source.includes("laptop") || source.includes("notebook")) return Laptop;
   if (source.includes("tablet") || source.includes("ios") || source.includes("android")) return Smartphone;
+  if (looksLikeLinuxServer(source)) return Server;
   return Monitor;
+}
+
+function looksLikeLinuxServer(source: string) {
+  const linuxServerSignals = ["linux", "ubuntu", "debian", "centos", "red hat", "rhel", "rocky", "alma", "fedora", "suse", "pve", "proxmox", "esxi"];
+  const workstationSignals = ["desktop", "workstation", "laptop", "notebook", "tablet", "phone"];
+  return linuxServerSignals.some((signal) => source.includes(signal)) && !workstationSignals.some((signal) => source.includes(signal));
 }
 
 function getOsIcon(os?: string | null) {

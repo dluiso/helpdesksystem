@@ -972,6 +972,27 @@ select.compact-select {
   flex: 0 0 auto;
 }
 
+.device-table td span.device-type-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0;
+  color: var(--brand-primary);
+  font-size: inherit;
+}
+
+.device-table td span.device-type-icon.active {
+  color: #047857;
+}
+
+.device-table td span.device-type-icon.inactive {
+  color: #b91c1c;
+}
+
+.device-table td span.device-type-icon.retired {
+  color: #64748b;
+}
+
 .device-type-icon.active {
   color: #047857;
   background: color-mix(in srgb, #10b981 14%, var(--surface));

@@ -659,8 +659,17 @@ export class DevicesService {
     const source = `${name} ${operatingSystem ?? ""}`.toLowerCase();
     if (source.includes("server")) return DeviceType.SERVER;
     if (source.includes("laptop") || source.includes("notebook")) return DeviceType.LAPTOP;
+    if (source.includes("tablet") || source.includes("ipad")) return DeviceType.TABLET;
+    if (source.includes("phone") || source.includes("ios") || source.includes("android")) return DeviceType.PHONE;
+    if (this.looksLikeLinuxServer(source)) return DeviceType.SERVER;
     if (source.includes("windows") || source.includes("mac") || source.includes("linux")) return DeviceType.DESKTOP;
     return DeviceType.OTHER;
+  }
+
+  private looksLikeLinuxServer(source: string) {
+    const linuxServerSignals = ["linux", "ubuntu", "debian", "centos", "red hat", "rhel", "rocky", "alma", "fedora", "suse", "pve", "proxmox", "esxi"];
+    const workstationSignals = ["desktop", "workstation", "laptop", "notebook", "tablet", "phone"];
+    return linuxServerSignals.some((signal) => source.includes(signal)) && !workstationSignals.some((signal) => source.includes(signal));
   }
 
   private isDeviceStatus(value?: string): value is DeviceStatus {
