@@ -4,7 +4,7 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
 import { RequirePermissions } from "../permissions/decorators/require-permissions.decorator";
 import { PermissionsGuard } from "../permissions/guards/permissions.guard";
-import { SystemHealthService } from "./system-health.service";
+import { SystemHealthRange, SystemHealthService } from "./system-health.service";
 
 @Controller("system-health")
 export class SystemHealthController {
@@ -26,7 +26,14 @@ export class SystemHealthController {
   @Get("history")
   @UseGuards(SessionAuthGuard, PermissionsGuard)
   @RequirePermissions("system_settings.view")
-  history(@Query("range") range?: "daily" | "weekly" | "monthly" | "yearly") {
+  history(@Query("range") range?: SystemHealthRange) {
     return this.systemHealth.getHistory(range);
+  }
+
+  @Get("timeline")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("system_settings.view")
+  timeline(@Query("range") range?: SystemHealthRange) {
+    return this.systemHealth.getTimeline(range);
   }
 }

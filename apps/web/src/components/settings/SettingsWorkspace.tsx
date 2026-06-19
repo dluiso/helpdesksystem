@@ -372,6 +372,30 @@ interface SystemHealthHistory {
   }>;
 }
 
+interface SystemHealthTimeline {
+  range: "daily" | "weekly" | "monthly" | "yearly";
+  from: string;
+  to: string;
+  bucketHours: number;
+  components: Array<{
+    key: string;
+    name: string;
+    healthyPercent: number;
+    warningCount: number;
+    errorCount: number;
+    unknownCount: number;
+    buckets: Array<{
+      id: string;
+      start: string;
+      end: string;
+      status: "ok" | "warning" | "error" | "unknown";
+      severity: "green" | "orange" | "red" | "gray";
+      message: string;
+      snapshotCount: number;
+    }>;
+  }>;
+}
+
 type ActiveSection =
   | "general"
   | "users"
@@ -666,6 +690,7 @@ export function SettingsWorkspace() {
   const [auditLogs, setAuditLogs] = useState<AuditLogResult | null>(null);
   const [systemHealth, setSystemHealth] = useState<SystemHealthSummary | null>(null);
   const [systemHealthHistory, setSystemHealthHistory] = useState<SystemHealthHistory | null>(null);
+  const [systemHealthTimeline, setSystemHealthTimeline] = useState<SystemHealthTimeline | null>(null);
   const [systemHealthRange, setSystemHealthRange] = useState<"daily" | "weekly" | "monthly" | "yearly">("daily");
   const [auditFilters, setAuditFilters] = useState({
     startDate: "",
@@ -897,12 +922,14 @@ export function SettingsWorkspace() {
   }
 
   async function loadSystemHealth(range = systemHealthRange) {
-    const [summary, history] = await Promise.all([
+    const [summary, history, timeline] = await Promise.all([
       apiFetch<SystemHealthSummary>("/system-health/summary"),
-      apiFetch<SystemHealthHistory>(`/system-health/history?range=${range}`)
+      apiFetch<SystemHealthHistory>(`/system-health/history?range=${range}`),
+      apiFetch<SystemHealthTimeline>(`/system-health/timeline?range=${range}`)
     ]);
     setSystemHealth(summary);
     setSystemHealthHistory(history);
+    setSystemHealthTimeline(timeline);
   }
 
   async function runSystemHealthCheck() {
@@ -910,9 +937,13 @@ export function SettingsWorkspace() {
     setError(null);
     try {
       const summary = await apiFetch<SystemHealthSummary>("/system-health/check", { method: "POST" });
-      const history = await apiFetch<SystemHealthHistory>(`/system-health/history?range=${systemHealthRange}`);
+      const [history, timeline] = await Promise.all([
+        apiFetch<SystemHealthHistory>(`/system-health/history?range=${systemHealthRange}`),
+        apiFetch<SystemHealthTimeline>(`/system-health/timeline?range=${systemHealthRange}`)
+      ]);
       setSystemHealth(summary);
       setSystemHealthHistory(history);
+      setSystemHealthTimeline(timeline);
       setNotice("System health check completed.");
     } catch (error) {
       setError(error instanceof Error ? error.message : "Unable to run system health check.");
@@ -3934,6 +3965,43 @@ export function SettingsWorkspace() {
                     <span className="muted">Errors</span>
                     <strong>{systemHealth?.components.filter((component) => component.status === "error").length ?? 0}</strong>
                     <span className="muted">Needs action</span>
+                  </div>
+                </div>
+
+                <div className="panel subtle-panel system-health-timeline-panel settings-section">
+                  <div className="section-heading compact-heading">
+                    <div>
+                      <h3>System Status Timeline</h3>
+                      <p className="muted">Component availability for the selected history range.</p>
+                    </div>
+                    <span className="muted">
+                      {systemHealthTimeline ? `${new Date(systemHealthTimeline.from).toLocaleDateString()} - ${new Date(systemHealthTimeline.to).toLocaleDateString()}` : "Loading"}
+                    </span>
+                  </div>
+                  <div className="system-health-timeline">
+                    {(systemHealthTimeline?.components ?? []).map((component) => (
+                      <div className="system-health-timeline-row" key={component.key}>
+                        <div className="system-health-timeline-meta">
+                          <span className="system-health-timeline-title">
+                            <span className={`system-health-led ${component.errorCount > 0 ? "error" : component.warningCount > 0 ? "warning" : component.unknownCount === component.buckets.length ? "unknown" : "ok"}`} aria-hidden="true" />
+                            <strong>{component.name}</strong>
+                          </span>
+                          <span className="muted">
+                            {component.unknownCount === component.buckets.length ? "No snapshots yet" : `${component.healthyPercent}% healthy`}
+                          </span>
+                        </div>
+                        <div className="system-health-timeline-bars" role="img" aria-label={`${component.name} health timeline`}>
+                          {component.buckets.map((bucket) => (
+                            <span
+                              className={`system-health-timeline-bar ${bucket.status}`}
+                              key={bucket.id}
+                              title={`${component.name}: ${bucket.status} from ${new Date(bucket.start).toLocaleString()} to ${new Date(bucket.end).toLocaleString()}. ${bucket.message}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                    {systemHealthTimeline?.components.length === 0 ? <p className="muted">Run a check to start building the status timeline.</p> : null}
                   </div>
                 </div>
 

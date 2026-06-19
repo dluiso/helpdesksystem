@@ -712,6 +712,7 @@ select.compact-select {
 }
 
 .system-status-clock.ok .system-status-dot,
+.system-health-led.ok,
 .system-health-card.ok .system-health-led,
 .system-health-inline-status.ok span,
 .system-health-badge.ok span {
@@ -720,6 +721,7 @@ select.compact-select {
 }
 
 .system-status-clock.warning .system-status-dot,
+.system-health-led.warning,
 .system-health-card.warning .system-health-led,
 .system-health-inline-status.warning span,
 .system-health-badge.warning span {
@@ -728,11 +730,18 @@ select.compact-select {
 }
 
 .system-status-clock.error .system-status-dot,
+.system-health-led.error,
 .system-health-card.error .system-health-led,
 .system-health-inline-status.error span,
 .system-health-badge.error span {
   background: var(--danger);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+.system-health-led.unknown {
+  background: var(--text-muted);
+  opacity: 0.55;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-muted) 12%, transparent);
 }
 
 .system-status-icon {
@@ -1529,6 +1538,83 @@ select.compact-select {
   color: var(--text-muted);
 }
 
+.system-health-timeline-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.system-health-timeline {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.system-health-timeline-row {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.system-health-timeline-row:last-child {
+  border-bottom: 0;
+}
+
+.system-health-timeline-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.system-health-timeline-title {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.system-health-timeline-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.system-health-timeline-bars {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(3px, 1fr);
+  gap: 3px;
+  align-items: center;
+  min-height: 30px;
+}
+
+.system-health-timeline-bar {
+  min-width: 3px;
+  height: 22px;
+  border-radius: 3px;
+  background: var(--line);
+}
+
+.system-health-timeline-bar.ok {
+  background: var(--success);
+}
+
+.system-health-timeline-bar.warning {
+  background: #f59e0b;
+}
+
+.system-health-timeline-bar.error {
+  background: var(--danger);
+}
+
+.system-health-timeline-bar.unknown {
+  background: color-mix(in srgb, var(--text-muted) 28%, transparent);
+}
+
 .system-health-badge {
   min-height: 40px;
   padding: 0 12px;
@@ -1577,6 +1663,11 @@ select.compact-select {
   .system-health-summary,
   .system-health-component-grid {
     grid-template-columns: 1fr;
+  }
+
+  .system-health-timeline-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   .system-health-time-metric strong {

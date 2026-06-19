@@ -7,6 +7,7 @@ import { PrismaService } from "../prisma/prisma.service";
 
 export type SystemHealthStatus = "ok" | "warning" | "error";
 export type SystemHealthRange = "daily" | "weekly" | "monthly" | "yearly";
+export type SystemHealthTimelineStatus = SystemHealthStatus | "unknown";
 
 export interface SystemHealthComponent {
   key: string;
@@ -25,10 +26,39 @@ const rangeHours: Record<SystemHealthRange, number> = {
   yearly: 24 * 365
 };
 
+const timelineRanges: Record<SystemHealthRange, { bucketCount: number; bucketHours: number }> = {
+  daily: { bucketCount: 24, bucketHours: 1 },
+  weekly: { bucketCount: 7, bucketHours: 24 },
+  monthly: { bucketCount: 30, bucketHours: 24 },
+  yearly: { bucketCount: 52, bucketHours: 24 * 7 }
+};
+
+const componentNames: Record<string, string> = {
+  database: "Database",
+  storage: "Local storage",
+  mail: "Mail flow",
+  support_portal: "Support portal",
+  event_services: "Event services",
+  ai: "AI providers",
+  audit_logs: "Audit logs"
+};
+
 function componentStatus(status: SystemHealthStatus) {
   if (status === "error") return "red" as const;
   if (status === "warning") return "orange" as const;
   return "green" as const;
+}
+
+function timelineSeverity(status: SystemHealthTimelineStatus) {
+  if (status === "error") return "red" as const;
+  if (status === "warning") return "orange" as const;
+  if (status === "unknown") return "gray" as const;
+  return "green" as const;
+}
+
+function normalizeStatus(status: string): SystemHealthStatus {
+  if (status === "error" || status === "warning") return status;
+  return "ok";
 }
 
 function buildComponent(
@@ -108,6 +138,77 @@ export class SystemHealthService {
         metadata: item.metadata,
         checkedAt: item.checkedAt.toISOString()
       }))
+    };
+  }
+
+  async getTimeline(range: SystemHealthRange = "daily") {
+    const selectedRange = range in timelineRanges ? range : "daily";
+    const { bucketCount, bucketHours } = timelineRanges[selectedRange];
+    const to = new Date();
+    const bucketMs = bucketHours * 60 * 60 * 1000;
+    const from = new Date(to.getTime() - bucketCount * bucketMs);
+    const snapshots = await this.prisma.systemHealthSnapshot.findMany({
+      where: { checkedAt: { gte: from } },
+      orderBy: { checkedAt: "asc" }
+    });
+
+    const componentKeys = Array.from(new Set([...Object.keys(componentNames), ...snapshots.map((snapshot) => snapshot.component)]));
+
+    return {
+      range: selectedRange,
+      from: from.toISOString(),
+      to: to.toISOString(),
+      bucketHours,
+      components: componentKeys.map((componentKey) => {
+        const componentSnapshots = snapshots.filter((snapshot) => snapshot.component === componentKey);
+        const buckets = Array.from({ length: bucketCount }, (_, index) => {
+          const start = new Date(from.getTime() + index * bucketMs);
+          const end = new Date(start.getTime() + bucketMs);
+          const bucketSnapshots = componentSnapshots.filter((snapshot) => snapshot.checkedAt >= start && snapshot.checkedAt < end);
+
+          if (bucketSnapshots.length === 0) {
+            return {
+              id: `${componentKey}-${index}`,
+              start: start.toISOString(),
+              end: end.toISOString(),
+              status: "unknown" as const,
+              severity: "gray" as const,
+              message: "No snapshot recorded.",
+              snapshotCount: 0
+            };
+          }
+
+          const status: SystemHealthTimelineStatus = bucketSnapshots.some((snapshot) => snapshot.status === "error")
+            ? "error"
+            : bucketSnapshots.some((snapshot) => snapshot.status === "warning")
+              ? "warning"
+              : "ok";
+          const message = [...bucketSnapshots].reverse().find((snapshot) => normalizeStatus(snapshot.status) === status)?.message ?? bucketSnapshots[bucketSnapshots.length - 1]?.message ?? "Snapshot recorded.";
+
+          return {
+            id: `${componentKey}-${index}`,
+            start: start.toISOString(),
+            end: end.toISOString(),
+            status,
+            severity: timelineSeverity(status),
+            message,
+            snapshotCount: bucketSnapshots.length
+          };
+        });
+
+        const knownBuckets = buckets.filter((bucket) => bucket.status !== "unknown").length;
+        const okBuckets = buckets.filter((bucket) => bucket.status === "ok").length;
+
+        return {
+          key: componentKey,
+          name: componentNames[componentKey] ?? componentKey,
+          healthyPercent: knownBuckets === 0 ? 0 : Math.round((okBuckets / knownBuckets) * 1000) / 10,
+          warningCount: buckets.filter((bucket) => bucket.status === "warning").length,
+          errorCount: buckets.filter((bucket) => bucket.status === "error").length,
+          unknownCount: buckets.filter((bucket) => bucket.status === "unknown").length,
+          buckets
+        };
+      })
     };
   }
 
