@@ -750,11 +750,17 @@ export class DevicesService {
 
   private buildRemoteAccessDetailSnapshot(record: RmmAgentRecord, normalized?: NormalizedRmmAgent | null): RemoteAccessDetailSnapshot {
     const hardwareRecord = this.pickRecord(record, ["hardware", "hardware_details", "hardwareDetails", "system"]);
+    const wmiRecord = this.pickRecord(record, ["wmi_detail", "wmiDetail", "wmi"]);
     const cpuRecord = this.pickRecord(record, ["cpu", "processor"]);
     const memoryRecord = this.pickRecord(record, ["memory", "ram"]);
     const networkRecord = this.pickRecord(record, ["network", "networking", "net"]);
-    const networkRecords = this.extractNetworkRecords(record, networkRecord);
+    const wmiCpuRecord = this.pickRecordList(wmiRecord ?? {}, ["cpu"])[0] ?? null;
+    const wmiMemoryRecord = this.pickRecordList(wmiRecord ?? {}, ["mem", "memory"])[0] ?? null;
+    const wmiComputerRecord = this.pickRecordList(wmiRecord ?? {}, ["comp_sys", "computerSystem", "computer_system"])[0] ?? null;
+    const wmiGraphicsRecord = this.pickRecordList(wmiRecord ?? {}, ["graphics", "video"])[0] ?? null;
+    const networkRecords = this.extractNetworkRecords(record, networkRecord, wmiRecord);
     const checksRecord = this.pickRecord(record, ["checks", "checks_status", "checksStatus"]);
+    const cpu = this.pickString(record, ["cpu", "processor", "cpu_model", "cpuModel"]) ?? this.pickString(cpuRecord ?? {}, ["name", "model", "description"]) ?? this.pickString(wmiCpuRecord ?? {}, ["Name", "name", "Caption", "caption"]);
 
     return {
       syncedAt: new Date().toISOString(),
@@ -765,18 +771,20 @@ export class DevicesService {
         model:
           this.pickString(record, ["model", "make_model", "makeModel", "product_name", "productName"]) ??
           this.pickString(hardwareRecord ?? {}, ["model", "make_model", "makeModel", "product_name", "productName"]),
-        cpu:
-          this.pickString(record, ["cpu", "processor", "cpu_model", "cpuModel"]) ??
-          this.pickString(cpuRecord ?? {}, ["name", "model", "description"]),
+        cpu,
         cpuCores:
           this.pickString(record, ["total_cores", "totalCores", "cores", "cpu_cores", "cpuCores"]) ??
-          this.pickString(cpuRecord ?? {}, ["total_cores", "totalCores", "cores", "threads"]),
+          this.pickString(cpuRecord ?? {}, ["total_cores", "totalCores", "cores", "threads"]) ??
+          this.formatCpuCores(cpu, wmiCpuRecord, wmiComputerRecord),
         memory:
           this.formatBytesValue(this.pickUnknown(record, ["total_ram", "totalRam", "ram", "memory", "memory_total", "memoryTotal"])) ??
-          this.formatBytesValue(this.pickUnknown(memoryRecord ?? {}, ["total", "total_bytes", "totalBytes", "size"])),
+          this.formatBytesValue(this.pickUnknown(memoryRecord ?? {}, ["total", "total_bytes", "totalBytes", "size"])) ??
+          this.formatBytesValue(this.pickUnknown(wmiComputerRecord ?? {}, ["TotalPhysicalMemory"])) ??
+          this.formatBytesValue(this.pickUnknown(wmiMemoryRecord ?? {}, ["Capacity", "capacity"])),
         video:
-          this.pickString(record, ["video", "gpu", "display_adapter", "displayAdapter"]) ??
-          this.pickString(hardwareRecord ?? {}, ["video", "gpu", "display_adapter", "displayAdapter"]),
+          this.pickString(record, ["video", "gpu", "graphics", "display_adapter", "displayAdapter"]) ??
+          this.pickString(hardwareRecord ?? {}, ["video", "gpu", "graphics", "display_adapter", "displayAdapter"]) ??
+          this.pickString(wmiGraphicsRecord ?? {}, ["Name", "name", "Caption", "caption", "VideoProcessor", "videoProcessor"]),
         serialNumber: normalized?.serialNumber ?? this.pickString(record, ["serial_number", "serialNumber", "serial"])
       },
       network: {
@@ -819,28 +827,43 @@ export class DevicesService {
   }
 
   private normalizeDisks(record: RmmAgentRecord): RemoteAccessDiskSummary[] {
-    const diskRecords = this.pickRecordList(record, ["disks", "drives", "volumes", "logical_disks", "logicalDisks", "physical_disks", "physicalDisks", "storage"]);
-    return diskRecords
+    const wmiRecord = this.pickRecord(record, ["wmi_detail", "wmiDetail", "wmi"]);
+    const diskRecords = this.pickRecordList(record, ["disks", "drives", "volumes", "logical_disks", "logicalDisks", "storage"]);
+    const wmiDiskRecords = this.pickRecordList(wmiRecord ?? {}, ["disk", "logical_disk", "logicalDisk"]);
+    const parsedDisks = diskRecords
+      .concat(wmiDiskRecords)
       .map((disk, index) => {
-        const totalBytes = this.coerceBytes(this.pickUnknown(disk, ["total_bytes", "totalBytes", "total", "size", "capacity"]));
-        const freeBytes = this.coerceBytes(this.pickUnknown(disk, ["free_bytes", "freeBytes", "free", "available", "free_space", "freeSpace"]));
+        const totalBytes = this.coerceBytes(this.pickUnknown(disk, ["total_bytes", "totalBytes", "total", "size", "capacity", "Size"]));
+        const freeBytes = this.coerceBytes(this.pickUnknown(disk, ["free_bytes", "freeBytes", "free", "available", "free_space", "freeSpace", "FreeSpace"]));
+        const usedBytes = this.coerceBytes(this.pickUnknown(disk, ["used_bytes", "usedBytes", "used", "UsedSpace"]));
         const usedPercent =
-          this.pickNumber(disk, ["used_percent", "usedPercent", "percent_used", "percentUsed"]) ??
-          (totalBytes && freeBytes !== null ? Math.max(0, Math.min(100, Math.round(((totalBytes - freeBytes) / totalBytes) * 100))) : null);
+          this.pickNumber(disk, ["used_percent", "usedPercent", "percent_used", "percentUsed", "percent", "PercentUsed"]) ??
+          (totalBytes && freeBytes !== null ? Math.max(0, Math.min(100, Math.round(((totalBytes - freeBytes) / totalBytes) * 100))) : null) ??
+          (totalBytes && usedBytes !== null ? Math.max(0, Math.min(100, Math.round((usedBytes / totalBytes) * 100))) : null);
         return {
-          name: this.pickString(disk, ["name", "device", "drive", "letter", "mount", "label"]) ?? `Disk ${index + 1}`,
-          fileSystem: this.pickString(disk, ["file_system", "fileSystem", "filesystem", "fs", "type"]),
+          name: this.pickString(disk, ["name", "device", "drive", "letter", "mount", "label", "DeviceID", "Caption", "Name"]) ?? `Disk ${index + 1}`,
+          fileSystem: this.pickString(disk, ["file_system", "fileSystem", "filesystem", "fstype", "fs", "type", "FileSystem"]),
           totalBytes,
           freeBytes,
           usedPercent
         };
       })
-      .slice(0, 12);
+      .filter((disk) => disk.totalBytes !== null || disk.freeBytes !== null || disk.usedPercent !== null);
+    const physicalDisks = this.pickStringList(record, ["physical_disks", "physicalDisks"]).map((name) => ({
+      name,
+      fileSystem: null,
+      totalBytes: null,
+      freeBytes: null,
+      usedPercent: null
+    }));
+    return parsedDisks.concat(physicalDisks).slice(0, 12);
   }
 
-  private extractNetworkRecords(record: RmmAgentRecord, networkRecord: RmmAgentRecord | null) {
+  private extractNetworkRecords(record: RmmAgentRecord, networkRecord: RmmAgentRecord | null, wmiRecord?: RmmAgentRecord | null) {
     const keys = ["network_adapters", "networkAdapters", "adapters", "interfaces", "nics", "network_interfaces", "networkInterfaces"];
-    return this.pickRecordList(record, keys).concat(this.pickRecordList(networkRecord ?? {}, keys));
+    return this.pickRecordList(record, keys)
+      .concat(this.pickRecordList(networkRecord ?? {}, keys))
+      .concat(this.pickRecordList(wmiRecord ?? {}, ["network_config", "networkConfig", "network_adapter", "networkAdapter"]));
   }
 
   private extractLocalIps(records: RmmAgentRecord[]) {
@@ -852,7 +875,7 @@ export class DevicesService {
   }
 
   private extractMacAddresses(records: RmmAgentRecord[]) {
-    const keys = ["mac", "mac_address", "macAddress", "physical_address", "physicalAddress", "hwaddr", "hardware_address", "hardwareAddress"];
+    const keys = ["mac", "mac_address", "macAddress", "MACAddress", "physical_address", "physicalAddress", "hwaddr", "hardware_address", "hardwareAddress"];
     return records.flatMap((record) => this.pickStringList(record, keys)).filter((value) => this.isLikelyMac(value));
   }
 
@@ -905,6 +928,11 @@ export class DevicesService {
       const value = record[key];
       if (typeof value === "string" && value.trim()) return value.trim();
       if (typeof value === "number" && Number.isFinite(value)) return String(value);
+      if (Array.isArray(value)) {
+        const first = value.find((item) => (typeof item === "string" && Boolean(item.trim())) || (typeof item === "number" && Number.isFinite(item)));
+        if (typeof first === "string") return first.trim();
+        if (typeof first === "number") return String(first);
+      }
     }
     return null;
   }
@@ -922,9 +950,16 @@ export class DevicesService {
     for (const key of keys) {
       const value = record[key];
       if (Array.isArray(value)) {
-        values.push(...value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim()));
+        values.push(
+          ...value
+            .flat(Number.POSITIVE_INFINITY)
+            .filter((item): item is string | number => (typeof item === "string" && Boolean(item.trim())) || (typeof item === "number" && Number.isFinite(item)))
+            .map((item) => String(item).trim())
+        );
       } else if (typeof value === "string" && value.trim()) {
         values.push(...value.split(/[,\s]+/).map((item) => item.trim()).filter(Boolean));
+      } else if (typeof value === "number" && Number.isFinite(value)) {
+        values.push(String(value));
       }
     }
     return [...new Set(values)];
@@ -960,10 +995,22 @@ export class DevicesService {
   private pickRecordList(record: RmmAgentRecord, keys: string[]) {
     for (const key of keys) {
       const value = record[key];
-      if (Array.isArray(value)) return value.filter(this.isRecord);
-      if (this.isRecord(value)) return Object.values(value).filter(this.isRecord);
+      if (Array.isArray(value)) return this.flattenRecordList(value);
+      if (this.isRecord(value)) return this.flattenRecordList(Object.values(value));
     }
     return [];
+  }
+
+  private flattenRecordList(values: unknown[]): RmmAgentRecord[] {
+    const records: RmmAgentRecord[] = [];
+    for (const value of values) {
+      if (this.isRecord(value)) {
+        records.push(value);
+      } else if (Array.isArray(value)) {
+        records.push(...this.flattenRecordList(value));
+      }
+    }
+    return records;
   }
 
   private formatBytesValue(value: unknown) {
@@ -993,12 +1040,24 @@ export class DevicesService {
     return Number.isFinite(number) ? number : null;
   }
 
+  private formatCpuCores(cpu: string | null, cpuRecord: RmmAgentRecord | null, computerRecord: RmmAgentRecord | null) {
+    const cpuCoreMatch = cpu?.match(/(\d+)\s*C\s*\/\s*(\d+)\s*T/i);
+    if (cpuCoreMatch) return `${cpuCoreMatch[1]} cores / ${cpuCoreMatch[2]} threads`;
+    const cores = this.pickNumber(cpuRecord ?? {}, ["NumberOfCores", "numberOfCores", "cores"]);
+    const logicalProcessors =
+      this.pickNumber(cpuRecord ?? {}, ["NumberOfLogicalProcessors", "numberOfLogicalProcessors", "threads"]) ??
+      this.pickNumber(computerRecord ?? {}, ["NumberOfLogicalProcessors", "numberOfLogicalProcessors"]);
+    if (cores !== null && logicalProcessors !== null) return `${cores} cores / ${logicalProcessors} threads`;
+    if (logicalProcessors !== null) return `${logicalProcessors} logical processors`;
+    return null;
+  }
+
   private isLikelyIp(value: string) {
     return /^(\d{1,3}\.){3}\d{1,3}$/.test(value) || /^[0-9a-f:]{3,}$/i.test(value);
   }
 
   private isLikelyMac(value: string) {
-    return /^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i.test(value);
+    return /^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i.test(value) || /^[0-9a-f]{12}$/i.test(value);
   }
 
   private formatBytes(bytes: number) {
