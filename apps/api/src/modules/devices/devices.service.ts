@@ -366,9 +366,19 @@ export class DevicesService {
 
     try {
       const records = await this.fetchAgents(apiBaseUrl, settings.remoteAccessAgentsPath, apiKey);
-      const agents = records
-        .map((record) => this.normalizeAgent(record, settings))
-        .filter((agent): agent is NormalizedRmmAgent => Boolean(agent));
+      const agents: NormalizedRmmAgent[] = [];
+      let detailsRefreshed = 0;
+      let detailFailures = 0;
+
+      for (const record of records) {
+        const normalized = this.normalizeAgent(record, settings);
+        if (!normalized) continue;
+
+        const enriched = await this.enrichRemoteAccessAgentDetails(normalized, record, settings, apiBaseUrl, apiKey);
+        agents.push(enriched.agent);
+        if (enriched.refreshed) detailsRefreshed += 1;
+        if (enriched.failed) detailFailures += 1;
+      }
 
       let created = 0;
       let updated = 0;
@@ -381,7 +391,8 @@ export class DevicesService {
             remoteAccessProvider: RemoteAccessProvider.TACTICAL_RMM,
             remoteAccessId: agent.remoteIdentifier,
             deletedAt: null
-          }
+          },
+          include: { remoteAccessProfile: true }
         });
 
         const data = {
@@ -405,6 +416,15 @@ export class DevicesService {
           ? await this.prisma.device.update({ where: { id: existingDevice.id }, data })
           : await this.prisma.device.create({ data });
 
+        const detailSnapshot = this.pickBestRemoteAccessDetailSnapshot(
+          agent.detailSnapshot,
+          existingDevice?.remoteAccessProfile?.detailSnapshot
+        );
+        const detailSyncedAt =
+          detailSnapshot === agent.detailSnapshot
+            ? new Date(agent.detailSnapshot.syncedAt)
+            : (existingDevice?.remoteAccessProfile?.detailSyncedAt ?? new Date(agent.detailSnapshot.syncedAt));
+
         await this.prisma.remoteAccessProfile.upsert({
           where: { deviceId: device.id },
           update: {
@@ -412,8 +432,8 @@ export class DevicesService {
             remoteIdentifier: agent.remoteIdentifier,
             connectionUrl: agent.controlUrl ?? agent.systemInfoUrl,
             notes: agent.siteName ? `Site: ${agent.siteName}` : null,
-            detailSnapshot: agent.detailSnapshot as unknown as Prisma.InputJsonValue,
-            detailSyncedAt: new Date(agent.detailSnapshot.syncedAt)
+            detailSnapshot: detailSnapshot as unknown as Prisma.InputJsonValue,
+            detailSyncedAt
           },
           create: {
             deviceId: device.id,
@@ -421,8 +441,8 @@ export class DevicesService {
             remoteIdentifier: agent.remoteIdentifier,
             connectionUrl: agent.controlUrl ?? agent.systemInfoUrl,
             notes: agent.siteName ? `Site: ${agent.siteName}` : null,
-            detailSnapshot: agent.detailSnapshot as unknown as Prisma.InputJsonValue,
-            detailSyncedAt: new Date(agent.detailSnapshot.syncedAt)
+            detailSnapshot: detailSnapshot as unknown as Prisma.InputJsonValue,
+            detailSyncedAt
           }
         });
 
@@ -430,7 +450,11 @@ export class DevicesService {
         else created += 1;
       }
 
-      const message = `Synced ${agents.length} RMM device${agents.length === 1 ? "" : "s"} (${created} created, ${updated} updated).`;
+      const detailMessage =
+        detailsRefreshed > 0 || detailFailures > 0
+          ? ` Refreshed details for ${detailsRefreshed} device${detailsRefreshed === 1 ? "" : "s"}${detailFailures > 0 ? `; ${detailFailures} detail refresh failed` : ""}.`
+          : "";
+      const message = `Synced ${agents.length} RMM device${agents.length === 1 ? "" : "s"} (${created} created, ${updated} updated).${detailMessage}`;
       const updatedSettings = await this.prisma.systemSetting.update({
         where: { organizationId: user.organizationId },
         data: {
@@ -444,7 +468,7 @@ export class DevicesService {
         userId: user.id,
         entityType: "Device",
         action: "remote_access.devices_synced",
-        metadata: { provider: "TACTICAL_RMM", total: agents.length, created, updated }
+        metadata: { provider: "TACTICAL_RMM", total: agents.length, created, updated, detailsRefreshed, detailFailures }
       });
 
       return { created, updated, total: agents.length, settings: this.toRmmSettingsResponse(updatedSettings) };
@@ -576,6 +600,40 @@ export class DevicesService {
 
     const payload = (await response.json()) as unknown;
     return this.extractAgentRecord(payload);
+  }
+
+  private async enrichRemoteAccessAgentDetails(
+    agent: NormalizedRmmAgent,
+    listRecord: RmmAgentRecord,
+    settings: RmmSettingsRecord,
+    apiBaseUrl: string,
+    apiKey: string
+  ) {
+    try {
+      const detailRecord = await this.fetchAgentDetail(apiBaseUrl, settings.remoteAccessAgentsPath, agent.remoteIdentifier, apiKey);
+      const normalizedDetail = this.normalizeAgent(detailRecord, settings);
+      const mergedAgent = normalizedDetail
+        ? {
+            ...agent,
+            ...normalizedDetail,
+            clientName: normalizedDetail.clientName || agent.clientName,
+            siteName: normalizedDetail.siteName ?? agent.siteName,
+            systemInfoUrl: normalizedDetail.systemInfoUrl ?? agent.systemInfoUrl,
+            controlUrl: normalizedDetail.controlUrl ?? agent.controlUrl
+          }
+        : agent;
+
+      return {
+        agent: {
+          ...mergedAgent,
+          detailSnapshot: this.buildRemoteAccessDetailSnapshot({ ...listRecord, ...detailRecord }, mergedAgent)
+        },
+        refreshed: true,
+        failed: false
+      };
+    } catch {
+      return { agent, refreshed: false, failed: true };
+    }
   }
 
   private extractAgentRecords(payload: unknown): RmmAgentRecord[] {
@@ -746,6 +804,31 @@ export class DevicesService {
         device.remoteAccessProfile?.connectionUrl ??
         null
     };
+  }
+
+  private pickBestRemoteAccessDetailSnapshot(
+    incoming: RemoteAccessDetailSnapshot,
+    existing?: Prisma.JsonValue | null
+  ): RemoteAccessDetailSnapshot | Prisma.JsonValue {
+    if (this.hasRichRemoteAccessDetails(incoming)) return incoming;
+    return existing !== undefined && existing !== null && this.hasRichRemoteAccessDetails(existing) ? existing : incoming;
+  }
+
+  private hasRichRemoteAccessDetails(snapshot: unknown) {
+    if (!this.isRecord(snapshot)) return false;
+
+    const hardware = this.pickRecord(snapshot, ["hardware"]);
+    const storage = this.pickRecord(snapshot, ["storage"]);
+    const disks = this.pickRecordList(storage ?? {}, ["disks"]);
+    const hasMemory = Boolean(this.pickString(hardware ?? {}, ["memory"]));
+    const hasDiskUsage = disks.some((disk) => {
+      const totalBytes = this.pickUnknown(disk, ["totalBytes", "total_bytes"]);
+      const freeBytes = this.pickUnknown(disk, ["freeBytes", "free_bytes"]);
+      const usedPercent = this.pickUnknown(disk, ["usedPercent", "used_percent"]);
+      return totalBytes !== null && totalBytes !== undefined && (freeBytes !== null || usedPercent !== null) && (freeBytes !== undefined || usedPercent !== undefined);
+    });
+
+    return hasMemory || hasDiskUsage;
   }
 
   private buildRemoteAccessDetailSnapshot(record: RmmAgentRecord, normalized?: NormalizedRmmAgent | null): RemoteAccessDetailSnapshot {
