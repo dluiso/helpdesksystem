@@ -592,7 +592,7 @@ export class DevicesService {
     if (this.isRecord(payload)) {
       for (const key of ["data", "agent", "device", "result"]) {
         const value = payload[key];
-        if (this.isRecord(value)) return value;
+        if (this.isRecord(value)) return { ...payload, ...value };
       }
       return payload;
     }
@@ -777,7 +777,8 @@ export class DevicesService {
           this.pickString(cpuRecord ?? {}, ["total_cores", "totalCores", "cores", "threads"]) ??
           this.formatCpuCores(cpu, wmiCpuRecord, wmiComputerRecord),
         memory:
-          this.formatBytesValue(this.pickUnknown(record, ["total_ram", "totalRam", "ram", "memory", "memory_total", "memoryTotal"])) ??
+          this.formatMemoryValue(this.pickUnknown(record, ["total_ram", "totalRam"])) ??
+          this.formatBytesValue(this.pickUnknown(record, ["ram", "memory", "memory_total", "memoryTotal"])) ??
           this.formatBytesValue(this.pickUnknown(memoryRecord ?? {}, ["total", "total_bytes", "totalBytes", "size"])) ??
           this.formatBytesValue(this.pickUnknown(wmiComputerRecord ?? {}, ["TotalPhysicalMemory"])) ??
           this.formatBytesValue(this.pickUnknown(wmiMemoryRecord ?? {}, ["Capacity", "capacity"])),
@@ -1021,6 +1022,17 @@ export class DevicesService {
     const bytes = this.coerceBytes(value);
     if (bytes === null) return null;
     return this.formatBytes(bytes);
+  }
+
+  private formatMemoryValue(value: unknown) {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0 && value < 1024) {
+      return `${value} GB`;
+    }
+    if (typeof value === "string" && /^\d+(\.\d+)?$/.test(value.trim())) {
+      const amount = Number(value);
+      if (Number.isFinite(amount) && amount > 0 && amount < 1024) return `${amount} GB`;
+    }
+    return this.formatBytesValue(value);
   }
 
   private coerceBytes(value: unknown) {
