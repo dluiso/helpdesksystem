@@ -163,11 +163,11 @@ export function AppShell({ children }: { children: ReactNode }) {
               <LifeBuoy size={16} aria-hidden="true" />
               <span>{branding.supportButtonLabel ?? "Support"}</span>
             </button> : null}
+            <SystemStatusClock />
             <a className="topbar-rmm-button" href="https://rmm.aviditytechnologies.com/" target="_blank" rel="noopener noreferrer" title="Open RMM">
               <Monitor size={16} aria-hidden="true" />
               <span>RMM</span>
             </a>
-            <SystemStatusClock />
             <ThemeToggle />
             <NotificationBell />
             <UserMenu user={user} />

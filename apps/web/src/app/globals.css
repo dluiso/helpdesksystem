@@ -1488,6 +1488,12 @@ select.compact-select {
   gap: 12px;
 }
 
+.system-health-time-metric strong {
+  font-size: 1.35rem;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
 .system-health-component-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1577,6 +1583,10 @@ select.compact-select {
   .system-health-summary,
   .system-health-component-grid {
     grid-template-columns: 1fr;
+  }
+
+  .system-health-time-metric strong {
+    font-size: 1.2rem;
   }
 
   .system-health-badge {

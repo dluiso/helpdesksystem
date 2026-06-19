@@ -3915,12 +3915,12 @@ export function SettingsWorkspace() {
                 </div>
 
                 <div className="system-health-summary settings-section">
-                  <div className="panel subtle-panel metric">
+                  <div className="panel subtle-panel metric system-health-time-metric">
                     <span className="muted">Server time</span>
                     <strong>{systemHealth?.serverTime ? new Date(systemHealth.serverTime).toLocaleString() : "Loading"}</strong>
                     <span className="muted">{systemHealth?.timezone ?? "Timezone unavailable"}</span>
                   </div>
-                  <div className="panel subtle-panel metric">
+                  <div className="panel subtle-panel metric system-health-time-metric">
                     <span className="muted">Last check</span>
                     <strong>{systemHealth?.checkedAt ? new Date(systemHealth.checkedAt).toLocaleString() : "Never"}</strong>
                     <span className="muted">{systemHealth?.recorded ? "Recorded snapshot" : "Live summary"}</span>
