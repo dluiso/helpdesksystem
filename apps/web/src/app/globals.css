@@ -803,7 +803,7 @@ select.compact-select {
 
 .device-toolbar-panel {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(170px, 210px) minmax(150px, 180px) minmax(140px, 170px) auto;
+  grid-template-columns: minmax(260px, 1fr) minmax(170px, 210px) minmax(150px, 180px) minmax(140px, 170px) auto auto;
   gap: 12px;
   align-items: center;
 }
@@ -829,6 +829,16 @@ select.compact-select {
   font-weight: 800;
 }
 
+.device-view-menu-button {
+  justify-self: end;
+}
+
+.device-view-menu-button.active {
+  border-color: color-mix(in srgb, var(--brand-primary) 36%, var(--line));
+  color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 10%, var(--surface));
+}
+
 .device-search-field {
   position: relative;
   min-width: 0;
@@ -848,7 +858,8 @@ select.compact-select {
 }
 
 .device-sync-note {
-  padding: 12px 14px;
+  margin-top: 10px;
+  padding: 10px 14px;
   color: var(--text-muted);
 }
 
@@ -858,7 +869,7 @@ select.compact-select {
 
 .device-table {
   width: 100%;
-  min-width: 920px;
+  min-width: 840px;
   border-collapse: collapse;
 }
 
@@ -906,10 +917,18 @@ select.compact-select {
   margin: 14px 0;
 }
 
+.device-list-summary {
+  margin-bottom: 8px;
+}
+
+.device-list-summary .muted {
+  margin: 0;
+}
+
 .device-name-cell,
 .device-os-cell {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
 }
 
@@ -946,6 +965,11 @@ select.compact-select {
   color: var(--brand-primary);
   background: color-mix(in srgb, var(--brand-primary) 10%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--brand-primary) 24%, var(--line));
+}
+
+.device-type-icon svg {
+  display: block;
+  flex: 0 0 auto;
 }
 
 .device-type-icon.active {
@@ -986,6 +1010,13 @@ select.compact-select {
   font-weight: 900;
 }
 
+.device-table .device-action-row .button span {
+  display: inline;
+  margin-top: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
 .device-action-row .button.primary {
   border-color: var(--brand-primary);
   color: #ffffff;
@@ -1000,6 +1031,11 @@ select.compact-select {
 .device-action-row .button.secondary {
   color: var(--text);
   background: var(--surface-muted);
+}
+
+.device-action-row .button.primary:disabled,
+.device-action-row .button.secondary:disabled {
+  opacity: 0.7;
 }
 
 .device-favorite-button {

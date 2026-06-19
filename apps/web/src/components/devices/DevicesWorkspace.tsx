@@ -8,6 +8,7 @@ import {
   Laptop,
   LayoutList,
   Monitor,
+  MoreVertical,
   RefreshCcw,
   Save,
   Search,
@@ -97,6 +98,7 @@ export function DevicesWorkspace() {
   const [viewName, setViewName] = useState("");
   const [viewScope, setViewScope] = useState<"PRIVATE" | "ADMINISTRATORS">("PRIVATE");
   const [viewIsDefault, setViewIsDefault] = useState(false);
+  const [savedViewPanelOpen, setSavedViewPanelOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -365,55 +367,64 @@ export function DevicesWorkspace() {
             <span>Tree</span>
           </button>
         </div>
+        <button
+          className={`button icon-button device-view-menu-button ${savedViewPanelOpen ? "active" : ""}`}
+          type="button"
+          onClick={() => setSavedViewPanelOpen((current) => !current)}
+          title="Saved views"
+          aria-label="Saved views"
+          aria-expanded={savedViewPanelOpen}
+        >
+          <MoreVertical size={18} aria-hidden="true" />
+        </button>
       </section>
 
-      <section className="panel device-saved-view-panel">
-        <select className="input" value={selectedViewId} onChange={(event) => selectSavedView(event.target.value)}>
-          <option value="">Saved views</option>
-          {savedViews.map((savedView) => (
-            <option key={savedView.id} value={savedView.id}>
-              {savedView.name}{savedView.scope === "ADMINISTRATORS" ? " (Admins)" : ""}{savedView.isDefault ? " - Default" : ""}
-            </option>
-          ))}
-        </select>
-        <button
-          className="button secondary"
-          type="button"
-          onClick={() => {
-            const savedView = savedViews.find((item) => item.id === selectedViewId);
-            if (savedView) applySavedView(savedView);
-          }}
-          disabled={!selectedViewId}
-        >
-          Apply View
-        </button>
-        <input className="input" placeholder="View name" value={viewName} onChange={(event) => setViewName(event.target.value)} />
-        <select className="input" value={viewScope} onChange={(event) => setViewScope(event.target.value as "PRIVATE" | "ADMINISTRATORS")}>
-          <option value="PRIVATE">Private</option>
-          <option value="ADMINISTRATORS">Administrators</option>
-        </select>
-        <label className="device-default-view-toggle">
-          <input type="checkbox" checked={viewIsDefault} onChange={(event) => setViewIsDefault(event.target.checked)} />
-          <span>Default</span>
-        </label>
-        <button className="button primary" type="button" onClick={saveCurrentView} disabled={busy === "view"}>
-          <Save size={16} aria-hidden="true" />
-          <span>{selectedViewId ? "Update View" : "Save View"}</span>
-        </button>
-        <button className="button secondary danger-soft" type="button" onClick={deleteCurrentView} disabled={!selectedViewId || busy === "view"}>
-          <Trash2 size={16} aria-hidden="true" />
-          <span>Delete</span>
-        </button>
-      </section>
+      {savedViewPanelOpen ? (
+        <section className="panel device-saved-view-panel">
+          <select className="input" value={selectedViewId} onChange={(event) => selectSavedView(event.target.value)}>
+            <option value="">Saved views</option>
+            {savedViews.map((savedView) => (
+              <option key={savedView.id} value={savedView.id}>
+                {savedView.name}{savedView.scope === "ADMINISTRATORS" ? " (Admins)" : ""}{savedView.isDefault ? " - Default" : ""}
+              </option>
+            ))}
+          </select>
+          <button
+            className="button secondary"
+            type="button"
+            onClick={() => {
+              const savedView = savedViews.find((item) => item.id === selectedViewId);
+              if (savedView) applySavedView(savedView);
+            }}
+            disabled={!selectedViewId}
+          >
+            Apply View
+          </button>
+          <input className="input" placeholder="View name" value={viewName} onChange={(event) => setViewName(event.target.value)} />
+          <select className="input" value={viewScope} onChange={(event) => setViewScope(event.target.value as "PRIVATE" | "ADMINISTRATORS")}>
+            <option value="PRIVATE">Private</option>
+            <option value="ADMINISTRATORS">Administrators</option>
+          </select>
+          <label className="device-default-view-toggle">
+            <input type="checkbox" checked={viewIsDefault} onChange={(event) => setViewIsDefault(event.target.checked)} />
+            <span>Default</span>
+          </label>
+          <button className="button primary" type="button" onClick={saveCurrentView} disabled={busy === "view"}>
+            <Save size={16} aria-hidden="true" />
+            <span>{selectedViewId ? "Update View" : "Save View"}</span>
+          </button>
+          <button className="button secondary danger-soft" type="button" onClick={deleteCurrentView} disabled={!selectedViewId || busy === "view"}>
+            <Trash2 size={16} aria-hidden="true" />
+            <span>Delete</span>
+          </button>
+        </section>
+      ) : null}
 
       <section className="panel">
-        <div className="section-heading">
-          <div>
-            <h2>Device Inventory</h2>
-            <p className="muted">
-              {loading ? "Loading devices..." : `${devices.length} device${devices.length === 1 ? "" : "s"} in this view.`}
-            </p>
-          </div>
+        <div className="section-heading device-list-summary">
+          <p className="muted">
+            {loading ? "Loading devices..." : `${devices.length} device${devices.length === 1 ? "" : "s"} in this view.`}
+          </p>
           <span className={`status-pill ${data?.remoteAccess.enabled ? "success" : "muted"}`}>
             {data?.remoteAccess.enabled ? data.remoteAccess.providerName : "RMM disabled"}
           </span>
@@ -446,7 +457,6 @@ export function DevicesWorkspace() {
                   <th>OS</th>
                   <th>Status</th>
                   <th>Last seen</th>
-                  <th>Remote</th>
                   <th>Action</th>
                 </tr>
               </thead>
@@ -545,7 +555,6 @@ function DeviceTableRow({
       </td>
       <td><span className={`status-pill ${device.status === "ACTIVE" ? "success" : "muted"}`}>{device.status}</span></td>
       <td>{formatDate(device.lastSeenAt)}</td>
-      <td>{device.remoteAccessProvider ?? "-"}</td>
       <td>
         <DeviceActions device={device} busy={busy} onOpenRemote={onOpenRemote} />
       </td>
