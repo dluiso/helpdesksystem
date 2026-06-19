@@ -1,8 +1,25 @@
 "use client";
 
-import { ExternalLink, Monitor, RefreshCcw, Search } from "lucide-react";
+import {
+  ChevronDown,
+  ExternalLink,
+  Grid3X3,
+  HardDrive,
+  Laptop,
+  LayoutList,
+  Monitor,
+  RefreshCcw,
+  Search,
+  Server,
+  Smartphone,
+  Table2,
+  TerminalSquare
+} from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
+
+type DeviceView = "table" | "cards" | "tree";
 
 interface DeviceRecord {
   id: string;
@@ -18,6 +35,10 @@ interface DeviceRecord {
   remoteAccessId: string | null;
   lastSeenAt: string | null;
   client: { id: string; name: string; shortName: string | null };
+  actionUrls: {
+    systemInfoUrl: string | null;
+    controlUrl: string | null;
+  };
   remoteAccessProfile: {
     id: string;
     provider: string;
@@ -39,15 +60,21 @@ interface DevicesResponse {
   };
 }
 
+const PAGE_SIZE_OPTIONS = [25, 50, 100];
+
 export function DevicesWorkspace() {
   const [data, setData] = useState<DevicesResponse | null>(null);
   const [search, setSearch] = useState("");
   const [clientId, setClientId] = useState("");
   const [status, setStatus] = useState("");
+  const [view, setView] = useState<DeviceView>("table");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
@@ -58,12 +85,18 @@ export function DevicesWorkspace() {
     return value ? `?${value}` : "";
   }, [clientId, search, status]);
 
+  const devices = data?.devices ?? [];
+  const totalPages = Math.max(1, Math.ceil(devices.length / pageSize));
+  const pageDevices = useMemo(() => devices.slice((page - 1) * pageSize, page * pageSize), [devices, page, pageSize]);
+  const deviceGroups = useMemo(() => groupDevices(devices), [devices]);
+
   async function loadDevices() {
     setLoading(true);
     setError(null);
     try {
       const response = await apiFetch<DevicesResponse>(`/devices${query}`);
       setData(response);
+      setPage(1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load devices.");
     } finally {
@@ -86,22 +119,31 @@ export function DevicesWorkspace() {
     }
   }
 
-  async function connectToDevice(device: DeviceRecord) {
-    const connectionUrl = device.remoteAccessProfile?.connectionUrl;
-    if (!connectionUrl) {
-      setError("This device does not have a remote access URL configured.");
+  async function openRemote(device: DeviceRecord, mode: "control" | "system") {
+    const url = mode === "control" ? device.actionUrls.controlUrl : device.actionUrls.systemInfoUrl;
+    if (!url) {
+      setError(mode === "control" ? "This device does not have a remote control URL configured." : "This device does not have a system info URL configured.");
       return;
     }
-    setBusy(device.id);
+
+    setBusy(`${mode}:${device.id}`);
     setError(null);
     try {
-      await apiFetch(`/devices/${device.id}/remote-access/connection-attempts`, { method: "POST" });
-      window.open(connectionUrl, "_blank", "noopener,noreferrer");
+      if (mode === "control") {
+        const response = await apiFetch<{ connectionUrl: string | null }>(`/devices/${device.id}/remote-access/connection-attempts`, { method: "POST" });
+        window.open(response.connectionUrl ?? url, "_blank", "noopener,noreferrer");
+      } else {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to open remote access.");
     } finally {
       setBusy(null);
     }
+  }
+
+  function toggleGroup(key: string) {
+    setExpandedGroups((current) => ({ ...current, [key]: !(current[key] ?? true) }));
   }
 
   useEffect(() => {
@@ -146,6 +188,20 @@ export function DevicesWorkspace() {
           <option value="INACTIVE">Inactive</option>
           <option value="RETIRED">Retired</option>
         </select>
+        <div className="segmented-control device-view-toggle" aria-label="Device view">
+          <button type="button" className={view === "table" ? "active" : ""} onClick={() => setView("table")} title="Table view">
+            <Table2 size={16} aria-hidden="true" />
+            <span>Table</span>
+          </button>
+          <button type="button" className={view === "cards" ? "active" : ""} onClick={() => setView("cards")} title="Card view">
+            <Grid3X3 size={16} aria-hidden="true" />
+            <span>Cards</span>
+          </button>
+          <button type="button" className={view === "tree" ? "active" : ""} onClick={() => setView("tree")} title="Tree view">
+            <LayoutList size={16} aria-hidden="true" />
+            <span>Tree</span>
+          </button>
+        </div>
       </section>
 
       <section className="panel">
@@ -153,7 +209,7 @@ export function DevicesWorkspace() {
           <div>
             <h2>Device Inventory</h2>
             <p className="muted">
-              {loading ? "Loading devices..." : `${data?.devices.length ?? 0} device${data?.devices.length === 1 ? "" : "s"} in this view.`}
+              {loading ? "Loading devices..." : `${devices.length} device${devices.length === 1 ? "" : "s"} in this view.`}
             </p>
           </div>
           <span className={`status-pill ${data?.remoteAccess.enabled ? "success" : "muted"}`}>
@@ -167,14 +223,18 @@ export function DevicesWorkspace() {
           </div>
         ) : null}
 
-        {!loading && data?.devices.length === 0 ? (
+        {!loading && devices.length === 0 ? (
           <div className="empty-state">
             <h3>No devices found</h3>
             <p className="muted">Configure RMM Integration in Settings, then run a manual sync to populate the inventory.</p>
           </div>
         ) : null}
 
-        {data?.devices.length ? (
+        {devices.length > 0 && view !== "tree" ? (
+          <DevicePagination page={page} totalPages={totalPages} pageSize={pageSize} total={devices.length} onPageChange={setPage} onPageSizeChange={(nextSize) => { setPageSize(nextSize); setPage(1); }} />
+        ) : null}
+
+        {view === "table" && pageDevices.length > 0 ? (
           <div className="device-table-wrapper">
             <table className="device-table">
               <thead>
@@ -189,36 +249,211 @@ export function DevicesWorkspace() {
                 </tr>
               </thead>
               <tbody>
-                {data.devices.map((device) => (
-                  <tr key={device.id}>
-                    <td>
-                      <strong>{device.name}</strong>
-                      <span>{device.hostname ?? device.remoteAccessId ?? device.type}</span>
-                    </td>
-                    <td>
-                      <strong>{device.client.name}</strong>
-                      <span>{device.deviceGroupId ?? "No site"}</span>
-                    </td>
-                    <td>
-                      <strong>{device.operatingSystem ?? "Unknown"}</strong>
-                      <span>{device.osVersion ?? device.primaryUser ?? ""}</span>
-                    </td>
-                    <td><span className={`status-pill ${device.status === "ACTIVE" ? "success" : "muted"}`}>{device.status}</span></td>
-                    <td>{device.lastSeenAt ? new Date(device.lastSeenAt).toLocaleString() : "-"}</td>
-                    <td>{device.remoteAccessProvider ?? "-"}</td>
-                    <td>
-                      <button className="button secondary compact" type="button" onClick={() => connectToDevice(device)} disabled={busy === device.id || !device.remoteAccessProfile?.connectionUrl}>
-                        <ExternalLink size={14} aria-hidden="true" />
-                        <span>Connect</span>
-                      </button>
-                    </td>
-                  </tr>
+                {pageDevices.map((device) => (
+                  <DeviceTableRow key={device.id} device={device} busy={busy} onOpenRemote={openRemote} />
                 ))}
               </tbody>
             </table>
           </div>
         ) : null}
+
+        {view === "cards" && pageDevices.length > 0 ? (
+          <div className="device-card-grid">
+            {pageDevices.map((device) => (
+              <DeviceCard key={device.id} device={device} busy={busy} onOpenRemote={openRemote} />
+            ))}
+          </div>
+        ) : null}
+
+        {view === "tree" && devices.length > 0 ? (
+          <div className="device-tree-list">
+            {deviceGroups.map((clientGroup) => (
+              <div className="device-tree-client" key={clientGroup.key}>
+                <button type="button" className="device-tree-toggle" onClick={() => toggleGroup(clientGroup.key)}>
+                  <ChevronDown size={16} aria-hidden="true" className={expandedGroups[clientGroup.key] === false ? "collapsed" : ""} />
+                  <strong>{clientGroup.name}</strong>
+                  <span>{clientGroup.count} devices</span>
+                </button>
+                {expandedGroups[clientGroup.key] === false ? null : (
+                  <div className="device-tree-sites">
+                    {clientGroup.sites.map((site) => (
+                      <div className="device-tree-site" key={site.key}>
+                        <div className="device-tree-site-title">
+                          <span>{site.name}</span>
+                          <small>{site.devices.length} devices</small>
+                        </div>
+                        <div className="device-tree-devices">
+                          {site.devices.map((device) => (
+                            <DeviceTreeRow key={device.id} device={device} busy={busy} onOpenRemote={openRemote} />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : null}
       </section>
     </>
   );
+}
+
+function DeviceTableRow({ device, busy, onOpenRemote }: { device: DeviceRecord; busy: string | null; onOpenRemote: (device: DeviceRecord, mode: "control" | "system") => void }) {
+  const DeviceIcon = getDeviceIcon(device);
+  const OsIcon = getOsIcon(device.operatingSystem);
+  return (
+    <tr>
+      <td>
+        <div className="device-name-cell">
+          <span className="device-type-icon"><DeviceIcon size={18} aria-hidden="true" /></span>
+          <div>
+            <Link href={`/devices/${device.id}`}><strong>{device.name}</strong></Link>
+            <span>{device.hostname ?? device.remoteAccessId ?? device.type}</span>
+          </div>
+        </div>
+      </td>
+      <td>
+        <strong>{device.client.name}</strong>
+        <span>{device.deviceGroupId ?? "No site"}</span>
+      </td>
+      <td>
+        <div className="device-os-cell">
+          <OsIcon size={16} aria-hidden="true" />
+          <div>
+            <strong>{device.operatingSystem ?? "Unknown"}</strong>
+            <span>{device.osVersion ?? device.primaryUser ?? ""}</span>
+          </div>
+        </div>
+      </td>
+      <td><span className={`status-pill ${device.status === "ACTIVE" ? "success" : "muted"}`}>{device.status}</span></td>
+      <td>{formatDate(device.lastSeenAt)}</td>
+      <td>{device.remoteAccessProvider ?? "-"}</td>
+      <td>
+        <DeviceActions device={device} busy={busy} onOpenRemote={onOpenRemote} />
+      </td>
+    </tr>
+  );
+}
+
+function DeviceCard({ device, busy, onOpenRemote }: { device: DeviceRecord; busy: string | null; onOpenRemote: (device: DeviceRecord, mode: "control" | "system") => void }) {
+  const DeviceIcon = getDeviceIcon(device);
+  const OsIcon = getOsIcon(device.operatingSystem);
+  return (
+    <article className="device-card">
+      <div className="device-card-header">
+        <span className="device-type-icon large"><DeviceIcon size={22} aria-hidden="true" /></span>
+        <div>
+          <Link href={`/devices/${device.id}`}><h3>{device.name}</h3></Link>
+          <p>{device.client.name} - {device.deviceGroupId ?? "No site"}</p>
+        </div>
+        <span className={`status-pill ${device.status === "ACTIVE" ? "success" : "muted"}`}>{device.status}</span>
+      </div>
+      <div className="device-card-meta">
+        <div>
+          <span>OS</span>
+          <strong><OsIcon size={15} aria-hidden="true" /> {device.operatingSystem ?? "Unknown"}</strong>
+        </div>
+        <div>
+          <span>Last seen</span>
+          <strong>{formatDate(device.lastSeenAt)}</strong>
+        </div>
+        <div>
+          <span>User</span>
+          <strong>{device.primaryUser ?? "-"}</strong>
+        </div>
+      </div>
+      <DeviceActions device={device} busy={busy} onOpenRemote={onOpenRemote} />
+    </article>
+  );
+}
+
+function DeviceTreeRow({ device, busy, onOpenRemote }: { device: DeviceRecord; busy: string | null; onOpenRemote: (device: DeviceRecord, mode: "control" | "system") => void }) {
+  const DeviceIcon = getDeviceIcon(device);
+  return (
+    <div className="device-tree-row">
+      <span className="device-type-icon"><DeviceIcon size={17} aria-hidden="true" /></span>
+      <Link href={`/devices/${device.id}`}><strong>{device.name}</strong></Link>
+      <span>{device.operatingSystem ?? "Unknown OS"}</span>
+      <span className={`status-pill ${device.status === "ACTIVE" ? "success" : "muted"}`}>{device.status}</span>
+      <DeviceActions device={device} busy={busy} onOpenRemote={onOpenRemote} />
+    </div>
+  );
+}
+
+function DeviceActions({ device, busy, onOpenRemote }: { device: DeviceRecord; busy: string | null; onOpenRemote: (device: DeviceRecord, mode: "control" | "system") => void }) {
+  return (
+    <div className="device-action-row">
+      <button className="button primary compact" type="button" onClick={() => onOpenRemote(device, "control")} disabled={busy === `control:${device.id}` || !device.actionUrls.controlUrl}>
+        <ExternalLink size={14} aria-hidden="true" />
+        <span>Connect</span>
+      </button>
+      <button className="button secondary compact" type="button" onClick={() => onOpenRemote(device, "system")} disabled={busy === `system:${device.id}` || !device.actionUrls.systemInfoUrl}>
+        <HardDrive size={14} aria-hidden="true" />
+        <span>SysInfo</span>
+      </button>
+    </div>
+  );
+}
+
+function DevicePagination({ page, totalPages, pageSize, total, onPageChange, onPageSizeChange }: { page: number; totalPages: number; pageSize: number; total: number; onPageChange: (page: number) => void; onPageSizeChange: (pageSize: number) => void }) {
+  return (
+    <div className="device-pagination">
+      <span className="muted">Showing {Math.min(total, (page - 1) * pageSize + 1)}-{Math.min(total, page * pageSize)} of {total}</span>
+      <div className="button-row">
+        <select className="input compact-select" value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}>
+          {PAGE_SIZE_OPTIONS.map((size) => (
+            <option key={size} value={size}>{size} rows</option>
+          ))}
+        </select>
+        <button className="button secondary compact" type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>Previous</button>
+        <span className="muted">Page {page} of {totalPages}</span>
+        <button className="button secondary compact" type="button" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>Next</button>
+      </div>
+    </div>
+  );
+}
+
+function groupDevices(devices: DeviceRecord[]) {
+  const clients = new Map<string, { key: string; name: string; count: number; sites: Map<string, { key: string; name: string; devices: DeviceRecord[] }> }>();
+  for (const device of devices) {
+    const clientKey = device.client.id;
+    if (!clients.has(clientKey)) {
+      clients.set(clientKey, { key: clientKey, name: device.client.name, count: 0, sites: new Map() });
+    }
+    const client = clients.get(clientKey)!;
+    client.count += 1;
+    const siteName = device.deviceGroupId ?? "No site";
+    const siteKey = `${clientKey}:${siteName}`;
+    if (!client.sites.has(siteKey)) {
+      client.sites.set(siteKey, { key: siteKey, name: siteName, devices: [] });
+    }
+    client.sites.get(siteKey)!.devices.push(device);
+  }
+  return Array.from(clients.values()).map((client) => ({
+    key: client.key,
+    name: client.name,
+    count: client.count,
+    sites: Array.from(client.sites.values())
+  }));
+}
+
+function getDeviceIcon(device: DeviceRecord) {
+  const source = `${device.type} ${device.name} ${device.operatingSystem ?? ""}`.toLowerCase();
+  if (source.includes("server")) return Server;
+  if (source.includes("laptop") || source.includes("notebook")) return Laptop;
+  if (source.includes("tablet") || source.includes("ios") || source.includes("android")) return Smartphone;
+  return Monitor;
+}
+
+function getOsIcon(os?: string | null) {
+  const source = (os ?? "").toLowerCase();
+  if (source.includes("linux") || source.includes("ubuntu") || source.includes("debian")) return TerminalSquare;
+  if (source.includes("server")) return Server;
+  return Monitor;
+}
+
+function formatDate(value: string | null) {
+  return value ? new Date(value).toLocaleString() : "-";
 }

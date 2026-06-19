@@ -23,7 +23,34 @@ interface NormalizedRmmAgent {
   status: DeviceStatus;
   type: DeviceType;
   lastSeenAt: Date | null;
-  connectionUrl: string | null;
+  systemInfoUrl: string | null;
+  controlUrl: string | null;
+}
+
+type RmmSettingsRecord = {
+  remoteAccessProviderEnabled: boolean;
+  remoteAccessProviderName: string;
+  remoteAccessApiBaseUrl: string | null;
+  remoteAccessApiKeyReference: string | null;
+  remoteAccessAgentsPath: string;
+  remoteAccessDashboardUrl: string | null;
+  remoteAccessDeviceUrlTemplate: string | null;
+  remoteAccessControlUrlTemplate: string | null;
+  remoteAccessLastSyncAt: Date | null;
+  remoteAccessLastSyncStatus: string | null;
+  remoteAccessLastSyncMessage: string | null;
+};
+
+type DeviceWithRemoteProfile = Prisma.DeviceGetPayload<{
+  include: {
+    client: { select: { id: true; name: true; shortName: true } };
+    remoteAccessProfile: true;
+  };
+}>;
+
+export interface DeviceActionUrls {
+  systemInfoUrl: string | null;
+  controlUrl: string | null;
 }
 
 @Injectable()
@@ -76,8 +103,34 @@ export class DevicesService {
     ]);
 
     return {
-      devices,
+      devices: devices.map((device) => this.toDeviceResponse(device, settings)),
       clients,
+      remoteAccess: this.toRmmSettingsResponse(settings)
+    };
+  }
+
+  async getById(user: AuthenticatedUser, deviceId: string) {
+    const [device, settings] = await Promise.all([
+      this.prisma.device.findFirst({
+        where: {
+          id: deviceId,
+          deletedAt: null,
+          client: { organizationId: user.organizationId }
+        },
+        include: {
+          client: { select: { id: true, name: true, shortName: true } },
+          remoteAccessProfile: true
+        }
+      }),
+      this.getSettingsRecord(user.organizationId)
+    ]);
+
+    if (!device) {
+      throw new BadRequestException("Device was not found.");
+    }
+
+    return {
+      device: this.toDeviceResponse(device, settings),
       remoteAccess: this.toRmmSettingsResponse(settings)
     };
   }
@@ -101,7 +154,8 @@ export class DevicesService {
         remoteAccessApiKeyReference: this.optionalTrim(input.apiKeyReference),
         remoteAccessAgentsPath: this.normalizePath(input.agentsPath) ?? "/agents/",
         remoteAccessDashboardUrl: this.optionalTrim(input.dashboardUrl),
-        remoteAccessDeviceUrlTemplate: this.optionalTrim(input.deviceUrlTemplate)
+        remoteAccessDeviceUrlTemplate: this.optionalTrim(input.deviceUrlTemplate),
+        remoteAccessControlUrlTemplate: this.optionalTrim(input.controlUrlTemplate)
       }
     });
 
@@ -137,7 +191,7 @@ export class DevicesService {
     try {
       const records = await this.fetchAgents(apiBaseUrl, settings.remoteAccessAgentsPath, apiKey);
       const agents = records
-        .map((record) => this.normalizeAgent(record, settings.remoteAccessDeviceUrlTemplate, settings.remoteAccessDashboardUrl))
+        .map((record) => this.normalizeAgent(record, settings))
         .filter((agent): agent is NormalizedRmmAgent => Boolean(agent));
 
       let created = 0;
@@ -180,14 +234,14 @@ export class DevicesService {
           update: {
             provider: RemoteAccessProvider.TACTICAL_RMM,
             remoteIdentifier: agent.remoteIdentifier,
-            connectionUrl: agent.connectionUrl,
+            connectionUrl: agent.controlUrl ?? agent.systemInfoUrl,
             notes: agent.siteName ? `Site: ${agent.siteName}` : null
           },
           create: {
             deviceId: device.id,
             provider: RemoteAccessProvider.TACTICAL_RMM,
             remoteIdentifier: agent.remoteIdentifier,
-            connectionUrl: agent.connectionUrl,
+            connectionUrl: agent.controlUrl ?? agent.systemInfoUrl,
             notes: agent.siteName ? `Site: ${agent.siteName}` : null
           }
         });
@@ -257,7 +311,7 @@ export class DevicesService {
     return [];
   }
 
-  private normalizeAgent(record: RmmAgentRecord, urlTemplate?: string | null, dashboardUrl?: string | null): NormalizedRmmAgent | null {
+  private normalizeAgent(record: RmmAgentRecord, settings: RmmSettingsRecord): NormalizedRmmAgent | null {
     const remoteIdentifier = this.pickString(record, ["id", "agent_id", "agentId", "pk", "guid", "mesh_node_id", "meshNodeId"]);
     const hostname = this.pickString(record, ["hostname", "computer_name", "computerName", "host", "description"]);
     const name = this.pickString(record, ["name", "hostname", "computer_name", "computerName", "description"]) ?? remoteIdentifier;
@@ -282,14 +336,16 @@ export class DevicesService {
     const serialNumber = this.pickString(record, ["serial_number", "serialNumber", "serial"]);
     const assetTag = this.pickString(record, ["asset_tag", "assetTag", "asset"]);
     const primaryUser = this.pickString(record, ["logged_in_user", "loggedInUser", "primary_user", "primaryUser", "last_user"]);
-    const connectionUrl = this.buildConnectionUrl(urlTemplate, dashboardUrl, {
+    const urlTokens = {
       agentId: remoteIdentifier,
       deviceId: remoteIdentifier,
       hostname: hostname ?? name,
       clientName,
       siteName: siteName ?? "",
       meshNodeId: this.pickString(record, ["mesh_node_id", "meshNodeId"]) ?? remoteIdentifier
-    });
+    };
+    const systemInfoUrl = this.buildConnectionUrl(settings.remoteAccessDeviceUrlTemplate, settings.remoteAccessDashboardUrl, urlTokens);
+    const controlUrl = this.buildConnectionUrl(settings.remoteAccessControlUrlTemplate, null, urlTokens);
 
     return {
       remoteIdentifier,
@@ -305,7 +361,8 @@ export class DevicesService {
       status,
       type: this.inferDeviceType(name, operatingSystem),
       lastSeenAt,
-      connectionUrl
+      systemInfoUrl,
+      controlUrl
     };
   }
 
@@ -348,18 +405,7 @@ export class DevicesService {
     return settings;
   }
 
-  private toRmmSettingsResponse(settings: {
-    remoteAccessProviderEnabled: boolean;
-    remoteAccessProviderName: string;
-    remoteAccessApiBaseUrl: string | null;
-    remoteAccessApiKeyReference: string | null;
-    remoteAccessAgentsPath: string;
-    remoteAccessDashboardUrl: string | null;
-    remoteAccessDeviceUrlTemplate: string | null;
-    remoteAccessLastSyncAt: Date | null;
-    remoteAccessLastSyncStatus: string | null;
-    remoteAccessLastSyncMessage: string | null;
-  }) {
+  private toRmmSettingsResponse(settings: RmmSettingsRecord) {
     return {
       enabled: settings.remoteAccessProviderEnabled,
       providerName: settings.remoteAccessProviderName,
@@ -369,9 +415,43 @@ export class DevicesService {
       agentsPath: settings.remoteAccessAgentsPath,
       dashboardUrl: settings.remoteAccessDashboardUrl,
       deviceUrlTemplate: settings.remoteAccessDeviceUrlTemplate,
+      controlUrlTemplate: settings.remoteAccessControlUrlTemplate,
       lastSyncAt: settings.remoteAccessLastSyncAt,
       lastSyncStatus: settings.remoteAccessLastSyncStatus,
       lastSyncMessage: settings.remoteAccessLastSyncMessage
+    };
+  }
+
+  private toDeviceResponse(device: DeviceWithRemoteProfile, settings: RmmSettingsRecord) {
+    const actionUrls = this.buildDeviceActionUrls(device, settings);
+    return {
+      ...device,
+      actionUrls,
+      remoteAccessProfile: device.remoteAccessProfile
+        ? {
+            ...device.remoteAccessProfile,
+            connectionUrl: actionUrls.controlUrl ?? device.remoteAccessProfile.connectionUrl
+          }
+        : null
+    };
+  }
+
+  private buildDeviceActionUrls(device: DeviceWithRemoteProfile, settings: RmmSettingsRecord): DeviceActionUrls {
+    const remoteIdentifier = device.remoteAccessProfile?.remoteIdentifier ?? device.remoteAccessId ?? device.id;
+    const tokens = {
+      agentId: remoteIdentifier,
+      deviceId: remoteIdentifier,
+      hostname: device.hostname ?? device.name,
+      clientName: device.client.name,
+      siteName: device.deviceGroupId ?? "",
+      meshNodeId: remoteIdentifier
+    };
+    return {
+      systemInfoUrl: this.buildConnectionUrl(settings.remoteAccessDeviceUrlTemplate, settings.remoteAccessDashboardUrl, tokens),
+      controlUrl:
+        this.buildConnectionUrl(settings.remoteAccessControlUrlTemplate, null, tokens) ??
+        device.remoteAccessProfile?.connectionUrl ??
+        null
     };
   }
 

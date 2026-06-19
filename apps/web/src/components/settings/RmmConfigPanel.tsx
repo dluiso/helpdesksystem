@@ -13,6 +13,7 @@ interface RmmSettings {
   agentsPath: string;
   dashboardUrl: string | null;
   deviceUrlTemplate: string | null;
+  controlUrlTemplate: string | null;
   lastSyncAt: string | null;
   lastSyncStatus: string | null;
   lastSyncMessage: string | null;
@@ -25,7 +26,8 @@ const defaultDraft = {
   apiKeyReference: "env:TACTICAL_RMM_API_KEY",
   agentsPath: "/agents/",
   dashboardUrl: "https://rmm.aviditytechnologies.com",
-  deviceUrlTemplate: "https://rmm.aviditytechnologies.com/agents/{agentId}"
+  deviceUrlTemplate: "https://rmm.aviditytechnologies.com/agents/{agentId}",
+  controlUrlTemplate: "https://rmm.aviditytechnologies.com/takecontrol/{agentId}"
 };
 
 export function RmmConfigPanel() {
@@ -48,7 +50,8 @@ export function RmmConfigPanel() {
         apiKeyReference: response.apiKeyReference || defaultDraft.apiKeyReference,
         agentsPath: response.agentsPath || defaultDraft.agentsPath,
         dashboardUrl: response.dashboardUrl || defaultDraft.dashboardUrl,
-        deviceUrlTemplate: response.deviceUrlTemplate || defaultDraft.deviceUrlTemplate
+        deviceUrlTemplate: response.deviceUrlTemplate || defaultDraft.deviceUrlTemplate,
+        controlUrlTemplate: response.controlUrlTemplate || defaultDraft.controlUrlTemplate
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load RMM settings.");
@@ -133,8 +136,12 @@ export function RmmConfigPanel() {
           <input className="input" value={draft.dashboardUrl} onChange={(event) => setDraft((current) => ({ ...current, dashboardUrl: event.target.value }))} />
         </label>
         <label className="field">
-          <span>Device URL template</span>
+          <span>System info URL template</span>
           <input className="input" value={draft.deviceUrlTemplate} onChange={(event) => setDraft((current) => ({ ...current, deviceUrlTemplate: event.target.value }))} />
+        </label>
+        <label className="field">
+          <span>Remote control URL template</span>
+          <input className="input" value={draft.controlUrlTemplate} onChange={(event) => setDraft((current) => ({ ...current, controlUrlTemplate: event.target.value }))} />
         </label>
       </div>
 
@@ -142,7 +149,7 @@ export function RmmConfigPanel() {
         <Monitor size={18} aria-hidden="true" />
         <div>
           <strong>Supported URL tokens</strong>
-          <p className="muted">Use {"{agentId}"}, {"{hostname}"}, {"{clientName}"}, {"{siteName}"}, or {"{meshNodeId}"} in the device URL template. Secrets must stay in environment variables, not in the database.</p>
+          <p className="muted">Use {"{agentId}"}, {"{hostname}"}, {"{clientName}"}, {"{siteName}"}, or {"{meshNodeId}"} in URL templates. Secrets must stay in environment variables, not in the database.</p>
           <p className="muted">API key resolved: {settings?.hasResolvedApiKey ? "Yes" : "No"}</p>
         </div>
       </div>

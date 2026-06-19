@@ -370,6 +370,7 @@ model SystemSetting {
   remoteAccessAgentsPath     String   @default("/agents/")
   remoteAccessDashboardUrl   String?
   remoteAccessDeviceUrlTemplate String?
+  remoteAccessControlUrlTemplate String?
   remoteAccessLastSyncAt     DateTime?
   remoteAccessLastSyncStatus String?
   remoteAccessLastSyncMessage String?

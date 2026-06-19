@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
@@ -35,5 +35,11 @@ export class DevicesController {
   @RequirePermissions("remote_access.configure")
   syncFromRemoteAccessProvider(@CurrentUser() user: AuthenticatedUser) {
     return this.devicesService.syncFromRemoteAccessProvider(user);
+  }
+
+  @Get(":deviceId")
+  @RequirePermissions("devices.view")
+  getById(@CurrentUser() user: AuthenticatedUser, @Param("deviceId") deviceId: string) {
+    return this.devicesService.getById(user, deviceId);
   }
 }
