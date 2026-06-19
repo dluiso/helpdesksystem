@@ -741,10 +741,10 @@ function DevicePagination({
   return (
     <div className="device-pagination">
       <div className="device-pagination-leading">
-        <span className="muted">Showing {Math.min(total, (page - 1) * pageSize + 1)}-{Math.min(total, page * pageSize)} of {total}</span>
         {tabs}
       </div>
       <div className="button-row">
+        <span className="muted device-pagination-count">Showing {Math.min(total, (page - 1) * pageSize + 1)}-{Math.min(total, page * pageSize)} of {total}</span>
         <select className="input compact-select" value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}>
           {PAGE_SIZE_OPTIONS.map((size) => (
             <option key={size} value={size}>{size} rows</option>
@@ -776,7 +776,7 @@ function DeviceCategoryTabs({
     <div className="segmented-control device-category-tabs" aria-label="Device category">
       {tabs.map((tab) => (
         <button key={tab.value} type="button" className={activeTab === tab.value ? "active" : ""} onClick={() => onChange(tab.value)} aria-pressed={activeTab === tab.value}>
-          <span>{tab.label}</span>
+          <span className="device-category-label">{tab.label}</span>
           <small>{counts[tab.value]}</small>
         </button>
       ))}

@@ -967,6 +967,14 @@ select.compact-select {
   margin: 14px 0;
 }
 
+.device-pagination .button-row {
+  flex-wrap: nowrap;
+}
+
+.device-pagination-count {
+  white-space: nowrap;
+}
+
 .device-pagination-leading,
 .device-tree-tab-row {
   display: flex;
@@ -981,22 +989,34 @@ select.compact-select {
 }
 
 .device-category-tabs {
+  flex: 0 0 auto;
   width: fit-content;
 }
 
 .device-category-tabs button {
-  gap: 6px;
+  display: inline-flex;
+  align-items: center;
+  min-width: 112px;
+  justify-content: center;
+  gap: 8px;
+  padding-inline: 14px;
+}
+
+.device-category-label {
+  white-space: nowrap;
 }
 
 .device-category-tabs small {
-  min-width: 20px;
-  padding: 1px 6px;
+  min-width: 24px;
+  padding: 1px 7px;
   border-radius: 999px;
   background: var(--surface-muted);
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 800;
   line-height: 1.4;
+  text-align: center;
+  flex: 0 0 auto;
 }
 
 .device-category-tabs button.active small {
@@ -7914,6 +7934,7 @@ a.dashboard-list-row:hover {
 
   .device-pagination .button-row {
     width: 100%;
+    flex-wrap: wrap;
   }
 
   .device-card-grid,
