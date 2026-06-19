@@ -26,6 +26,47 @@ interface NormalizedRmmAgent {
   lastSeenAt: Date | null;
   systemInfoUrl: string | null;
   controlUrl: string | null;
+  detailSnapshot: RemoteAccessDetailSnapshot;
+}
+
+interface RemoteAccessDiskSummary {
+  name: string;
+  fileSystem: string | null;
+  totalBytes: number | null;
+  freeBytes: number | null;
+  usedPercent: number | null;
+}
+
+interface RemoteAccessDetailSnapshot {
+  syncedAt: string;
+  hardware: {
+    manufacturer: string | null;
+    model: string | null;
+    cpu: string | null;
+    cpuCores: string | null;
+    memory: string | null;
+    video: string | null;
+    serialNumber: string | null;
+  };
+  network: {
+    publicIp: string | null;
+    localIps: string[];
+  };
+  storage: {
+    disks: RemoteAccessDiskSummary[];
+  };
+  agent: {
+    version: string | null;
+    bootTime: string | null;
+    uptime: string | null;
+    lastResponse: string | null;
+    lastSeen: string | null;
+    loggedInUser: string | null;
+  };
+  checks: {
+    status: string | null;
+    summary: string | null;
+  };
 }
 
 type RmmSettingsRecord = {
@@ -369,14 +410,18 @@ export class DevicesService {
             provider: RemoteAccessProvider.TACTICAL_RMM,
             remoteIdentifier: agent.remoteIdentifier,
             connectionUrl: agent.controlUrl ?? agent.systemInfoUrl,
-            notes: agent.siteName ? `Site: ${agent.siteName}` : null
+            notes: agent.siteName ? `Site: ${agent.siteName}` : null,
+            detailSnapshot: agent.detailSnapshot as unknown as Prisma.InputJsonValue,
+            detailSyncedAt: new Date(agent.detailSnapshot.syncedAt)
           },
           create: {
             deviceId: device.id,
             provider: RemoteAccessProvider.TACTICAL_RMM,
             remoteIdentifier: agent.remoteIdentifier,
             connectionUrl: agent.controlUrl ?? agent.systemInfoUrl,
-            notes: agent.siteName ? `Site: ${agent.siteName}` : null
+            notes: agent.siteName ? `Site: ${agent.siteName}` : null,
+            detailSnapshot: agent.detailSnapshot as unknown as Prisma.InputJsonValue,
+            detailSyncedAt: new Date(agent.detailSnapshot.syncedAt)
           }
         });
 
@@ -416,6 +461,84 @@ export class DevicesService {
     }
   }
 
+  async refreshRemoteAccessDetails(user: AuthenticatedUser, deviceId: string) {
+    const [device, settings] = await Promise.all([
+      this.prisma.device.findFirst({
+        where: { id: deviceId, deletedAt: null, client: { organizationId: user.organizationId } },
+        include: {
+          client: { select: { id: true, name: true, shortName: true } },
+          remoteAccessProfile: true,
+          favorites: { where: { userId: user.id }, select: { userId: true } }
+        }
+      }),
+      this.getSettingsRecord(user.organizationId)
+    ]);
+
+    if (!device) {
+      throw new NotFoundException("Device was not found.");
+    }
+    if (!settings.remoteAccessProviderEnabled) {
+      throw new BadRequestException("RMM integration is disabled.");
+    }
+
+    const apiBaseUrl = settings.remoteAccessApiBaseUrl?.trim();
+    const apiKey = this.resolveSecret(settings.remoteAccessApiKeyReference);
+    const remoteIdentifier = device.remoteAccessProfile?.remoteIdentifier ?? device.remoteAccessId;
+    if (!apiBaseUrl || !apiKey || !remoteIdentifier) {
+      throw new BadRequestException("RMM API settings and remote identifier are required before refreshing device details.");
+    }
+
+    const record = await this.fetchAgentDetail(apiBaseUrl, settings.remoteAccessAgentsPath, remoteIdentifier, apiKey);
+    const normalized = this.normalizeAgent(record, settings);
+    const snapshot = this.buildRemoteAccessDetailSnapshot(record, normalized);
+
+    const updateData: Prisma.DeviceUpdateInput = {
+      hostname: normalized?.hostname ?? device.hostname,
+      type: normalized?.type ?? device.type,
+      operatingSystem: normalized?.operatingSystem ?? device.operatingSystem,
+      osVersion: normalized?.osVersion ?? device.osVersion,
+      serialNumber: normalized?.serialNumber ?? device.serialNumber,
+      assetTag: normalized?.assetTag ?? device.assetTag,
+      primaryUser: normalized?.primaryUser ?? device.primaryUser,
+      remoteAccessProvider: RemoteAccessProvider.TACTICAL_RMM,
+      remoteAccessId: normalized?.remoteIdentifier ?? remoteIdentifier,
+      lastSeenAt: normalized?.lastSeenAt ?? device.lastSeenAt,
+      status: normalized?.status ?? device.status
+    };
+
+    await this.prisma.$transaction([
+      this.prisma.device.update({ where: { id: device.id }, data: updateData }),
+      this.prisma.remoteAccessProfile.upsert({
+        where: { deviceId: device.id },
+        update: {
+          provider: RemoteAccessProvider.TACTICAL_RMM,
+          remoteIdentifier: normalized?.remoteIdentifier ?? remoteIdentifier,
+          connectionUrl: normalized?.controlUrl ?? normalized?.systemInfoUrl ?? device.remoteAccessProfile?.connectionUrl,
+          detailSnapshot: snapshot as unknown as Prisma.InputJsonValue,
+          detailSyncedAt: new Date(snapshot.syncedAt)
+        },
+        create: {
+          deviceId: device.id,
+          provider: RemoteAccessProvider.TACTICAL_RMM,
+          remoteIdentifier: normalized?.remoteIdentifier ?? remoteIdentifier,
+          connectionUrl: normalized?.controlUrl ?? normalized?.systemInfoUrl,
+          detailSnapshot: snapshot as unknown as Prisma.InputJsonValue,
+          detailSyncedAt: new Date(snapshot.syncedAt)
+        }
+      })
+    ]);
+
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "Device",
+      entityId: device.id,
+      action: "remote_access.device_details_refreshed",
+      metadata: { provider: "TACTICAL_RMM", remoteIdentifier }
+    });
+
+    return this.getById(user, device.id);
+  }
+
   private async fetchAgents(apiBaseUrl: string, agentsPath: string, apiKey: string) {
     const url = this.joinUrl(apiBaseUrl, agentsPath);
     const response = await fetch(url, {
@@ -435,6 +558,25 @@ export class DevicesService {
     return this.extractAgentRecords(payload);
   }
 
+  private async fetchAgentDetail(apiBaseUrl: string, agentsPath: string, remoteIdentifier: string, apiKey: string) {
+    const url = this.joinUrl(apiBaseUrl, this.buildAgentDetailPath(agentsPath, remoteIdentifier));
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "X-API-KEY": apiKey,
+        Authorization: `Token ${apiKey}`
+      }
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Tactical RMM device detail returned ${response.status}: ${text.slice(0, 300)}`);
+    }
+
+    const payload = (await response.json()) as unknown;
+    return this.extractAgentRecord(payload);
+  }
+
   private extractAgentRecords(payload: unknown): RmmAgentRecord[] {
     if (Array.isArray(payload)) return payload.filter(this.isRecord);
     if (!this.isRecord(payload)) return [];
@@ -443,6 +585,17 @@ export class DevicesService {
       if (Array.isArray(value)) return value.filter(this.isRecord);
     }
     return [];
+  }
+
+  private extractAgentRecord(payload: unknown): RmmAgentRecord {
+    if (this.isRecord(payload)) {
+      for (const key of ["data", "agent", "device", "result"]) {
+        const value = payload[key];
+        if (this.isRecord(value)) return value;
+      }
+      return payload;
+    }
+    throw new Error("Tactical RMM returned an unexpected device detail payload.");
   }
 
   private normalizeAgent(record: RmmAgentRecord, settings: RmmSettingsRecord): NormalizedRmmAgent | null {
@@ -496,7 +649,8 @@ export class DevicesService {
       type: this.inferDeviceType(name, operatingSystem),
       lastSeenAt,
       systemInfoUrl,
-      controlUrl
+      controlUrl,
+      detailSnapshot: this.buildRemoteAccessDetailSnapshot(record)
     };
   }
 
@@ -559,10 +713,12 @@ export class DevicesService {
   private toDeviceResponse(device: DeviceWithRemoteProfile, settings: RmmSettingsRecord) {
     const actionUrls = this.buildDeviceActionUrls(device, settings);
     const { favorites, ...deviceRecord } = device;
+    const detailSnapshot = device.remoteAccessProfile?.detailSnapshot ?? null;
     return {
       ...deviceRecord,
       isFavorite: favorites.length > 0,
       actionUrls,
+      remoteAccessDetails: detailSnapshot,
       remoteAccessProfile: device.remoteAccessProfile
         ? {
             ...device.remoteAccessProfile,
@@ -589,6 +745,89 @@ export class DevicesService {
         device.remoteAccessProfile?.connectionUrl ??
         null
     };
+  }
+
+  private buildRemoteAccessDetailSnapshot(record: RmmAgentRecord, normalized?: NormalizedRmmAgent | null): RemoteAccessDetailSnapshot {
+    const hardwareRecord = this.pickRecord(record, ["hardware", "hardware_details", "hardwareDetails", "system"]);
+    const cpuRecord = this.pickRecord(record, ["cpu", "processor"]);
+    const memoryRecord = this.pickRecord(record, ["memory", "ram"]);
+    const networkRecord = this.pickRecord(record, ["network", "networking", "net"]);
+    const checksRecord = this.pickRecord(record, ["checks", "checks_status", "checksStatus"]);
+
+    return {
+      syncedAt: new Date().toISOString(),
+      hardware: {
+        manufacturer:
+          this.pickString(record, ["make", "manufacturer", "vendor"]) ??
+          this.pickString(hardwareRecord ?? {}, ["make", "manufacturer", "vendor"]),
+        model: this.pickString(record, ["model", "product_name", "productName"]) ?? this.pickString(hardwareRecord ?? {}, ["model", "product_name", "productName"]),
+        cpu:
+          this.pickString(record, ["cpu", "processor", "cpu_model", "cpuModel"]) ??
+          this.pickString(cpuRecord ?? {}, ["name", "model", "description"]),
+        cpuCores:
+          this.pickString(record, ["total_cores", "totalCores", "cores", "cpu_cores", "cpuCores"]) ??
+          this.pickString(cpuRecord ?? {}, ["total_cores", "totalCores", "cores", "threads"]),
+        memory:
+          this.formatBytesValue(this.pickUnknown(record, ["total_ram", "totalRam", "ram", "memory", "memory_total", "memoryTotal"])) ??
+          this.formatBytesValue(this.pickUnknown(memoryRecord ?? {}, ["total", "total_bytes", "totalBytes", "size"])),
+        video:
+          this.pickString(record, ["video", "gpu", "display_adapter", "displayAdapter"]) ??
+          this.pickString(hardwareRecord ?? {}, ["video", "gpu", "display_adapter", "displayAdapter"]),
+        serialNumber: normalized?.serialNumber ?? this.pickString(record, ["serial_number", "serialNumber", "serial"])
+      },
+      network: {
+        publicIp: this.pickString(record, ["public_ip", "publicIp", "wan_ip", "wanIp"]) ?? this.pickString(networkRecord ?? {}, ["public_ip", "publicIp", "wan_ip", "wanIp"]),
+        localIps: this.pickStringList(record, ["local_ips", "localIps", "lan_ips", "lanIps", "ips", "ip_addresses", "ipAddresses"]).concat(
+          this.pickStringList(networkRecord ?? {}, ["local_ips", "localIps", "lan_ips", "lanIps", "ips", "ip_addresses", "ipAddresses"])
+        )
+      },
+      storage: {
+        disks: this.normalizeDisks(record)
+      },
+      agent: {
+        version: normalized?.osVersion ?? this.pickString(record, ["agent_version", "agentVersion", "version", "agentver"]),
+        bootTime: this.pickString(record, ["boot_time", "bootTime", "boot_time_utc", "bootTimeUtc"]),
+        uptime: this.pickString(record, ["uptime", "uptime_text", "uptimeText"]),
+        lastResponse:
+          this.pickString(record, ["last_response", "lastResponse", "last_seen", "lastSeen", "last_checkin", "lastCheckin"]) ??
+          (normalized?.lastSeenAt ? normalized.lastSeenAt.toISOString() : null),
+        lastSeen: normalized?.lastSeenAt?.toISOString() ?? this.pickString(record, ["last_seen", "lastSeen", "last_checkin", "lastCheckin"]),
+        loggedInUser: normalized?.primaryUser ?? this.pickString(record, ["logged_in_user", "loggedInUser", "last_user", "lastUser"])
+      },
+      checks: {
+        status:
+          this.pickString(record, ["checks_status", "checksStatus", "monitoring_status", "monitoringStatus"]) ??
+          this.pickString(checksRecord ?? {}, ["status", "state"]),
+        summary:
+          this.pickString(record, ["checks_summary", "checksSummary", "checks", "alerts"]) ??
+          this.pickString(checksRecord ?? {}, ["summary", "description", "status"])
+      }
+    };
+  }
+
+  private normalizeDisks(record: RmmAgentRecord): RemoteAccessDiskSummary[] {
+    const diskRecords = this.pickRecordList(record, ["disks", "drives", "volumes", "logical_disks", "logicalDisks", "storage"]);
+    return diskRecords
+      .map((disk, index) => {
+        const totalBytes = this.coerceBytes(this.pickUnknown(disk, ["total_bytes", "totalBytes", "total", "size", "capacity"]));
+        const freeBytes = this.coerceBytes(this.pickUnknown(disk, ["free_bytes", "freeBytes", "free", "available", "free_space", "freeSpace"]));
+        const usedPercent =
+          this.pickNumber(disk, ["used_percent", "usedPercent", "percent_used", "percentUsed"]) ??
+          (totalBytes && freeBytes !== null ? Math.max(0, Math.min(100, Math.round(((totalBytes - freeBytes) / totalBytes) * 100))) : null);
+        return {
+          name: this.pickString(disk, ["name", "device", "drive", "letter", "mount", "label"]) ?? `Disk ${index + 1}`,
+          fileSystem: this.pickString(disk, ["file_system", "fileSystem", "filesystem", "fs", "type"]),
+          totalBytes,
+          freeBytes,
+          usedPercent
+        };
+      })
+      .slice(0, 12);
+  }
+
+  private buildAgentDetailPath(agentsPath: string, remoteIdentifier: string) {
+    const basePath = this.normalizePath(agentsPath) ?? "/agents/";
+    return `${basePath.replace(/\/+$/, "")}/${encodeURIComponent(remoteIdentifier)}/`;
   }
 
   private resolveSecret(reference?: string | null) {
@@ -619,6 +858,13 @@ export class DevicesService {
     return trimmed ? trimmed : null;
   }
 
+  private pickUnknown(record: RmmAgentRecord, keys: string[]) {
+    for (const key of keys) {
+      if (record[key] !== undefined && record[key] !== null) return record[key];
+    }
+    return null;
+  }
+
   private pickString(record: RmmAgentRecord, keys: string[]) {
     for (const key of keys) {
       const value = record[key];
@@ -626,6 +872,27 @@ export class DevicesService {
       if (typeof value === "number" && Number.isFinite(value)) return String(value);
     }
     return null;
+  }
+
+  private pickNumber(record: RmmAgentRecord, keys: string[]) {
+    for (const key of keys) {
+      const value = this.coerceNumber(record[key]);
+      if (value !== null) return value;
+    }
+    return null;
+  }
+
+  private pickStringList(record: RmmAgentRecord, keys: string[]) {
+    const values: string[] = [];
+    for (const key of keys) {
+      const value = record[key];
+      if (Array.isArray(value)) {
+        values.push(...value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim()));
+      } else if (typeof value === "string" && value.trim()) {
+        values.push(...value.split(/[,\s]+/).map((item) => item.trim()).filter(Boolean));
+      }
+    }
+    return [...new Set(values)];
   }
 
   private pickBoolean(record: RmmAgentRecord, keys: string[]) {
@@ -653,6 +920,53 @@ export class DevicesService {
       if (this.isRecord(value)) return value;
     }
     return null;
+  }
+
+  private pickRecordList(record: RmmAgentRecord, keys: string[]) {
+    for (const key of keys) {
+      const value = record[key];
+      if (Array.isArray(value)) return value.filter(this.isRecord);
+      if (this.isRecord(value)) return Object.values(value).filter(this.isRecord);
+    }
+    return [];
+  }
+
+  private formatBytesValue(value: unknown) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    const bytes = this.coerceBytes(value);
+    if (bytes === null) return null;
+    return this.formatBytes(bytes);
+  }
+
+  private coerceBytes(value: unknown) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value !== "string") return null;
+    const trimmed = value.trim();
+    const match = trimmed.match(/^([\d.]+)\s*(b|kb|mb|gb|tb)?$/i);
+    if (!match) return this.coerceNumber(value);
+    const amount = Number(match[1]);
+    if (!Number.isFinite(amount)) return null;
+    const unit = (match[2] ?? "b").toLowerCase();
+    const multiplier = unit === "tb" ? 1024 ** 4 : unit === "gb" ? 1024 ** 3 : unit === "mb" ? 1024 ** 2 : unit === "kb" ? 1024 : 1;
+    return Math.round(amount * multiplier);
+  }
+
+  private coerceNumber(value: unknown) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value !== "string") return null;
+    const number = Number(value.replace(/[^\d.-]/g, ""));
+    return Number.isFinite(number) ? number : null;
+  }
+
+  private formatBytes(bytes: number) {
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let size = bytes;
+    let unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex += 1;
+    }
+    return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
   }
 
   private inferDeviceType(name: string, operatingSystem: string | null) {

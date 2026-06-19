@@ -1295,6 +1295,123 @@ select.compact-select {
   gap: 12px;
 }
 
+.device-detail-section-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.device-detail-section,
+.device-detail-empty {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.device-detail-section {
+  padding: 14px;
+}
+
+.device-detail-section h3 {
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 17px;
+}
+
+.device-detail-list,
+.device-storage-list {
+  display: grid;
+  gap: 10px;
+}
+
+.device-detail-list-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(110px, 0.42fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.device-detail-list-row span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.device-detail-list-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.device-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.device-detail-chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: none;
+}
+
+.device-storage-row {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.device-storage-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.device-storage-header strong,
+.device-storage-header span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.device-storage-header span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.device-storage-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.device-storage-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand-primary);
+}
+
+.device-detail-empty {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  color: var(--text-muted);
+}
+
+.device-detail-empty strong {
+  color: var(--text);
+}
+
 .button.compact {
   min-height: 36px;
   padding: 0 10px;
@@ -7642,7 +7759,8 @@ a.dashboard-list-row:hover {
   }
 
   .device-card-grid,
-  .device-detail-grid {
+  .device-detail-grid,
+  .device-detail-section-grid {
     grid-template-columns: 1fr;
   }
 
@@ -7659,6 +7777,13 @@ a.dashboard-list-row:hover {
 
   .device-detail-actions .button {
     flex: 1 1 0;
+  }
+
+  .device-detail-list-row,
+  .device-storage-header {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    gap: 4px;
   }
 
   .device-card-meta {

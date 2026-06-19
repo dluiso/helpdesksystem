@@ -1584,6 +1584,8 @@ model RemoteAccessProfile {
   connectionUrl           String?
   notes                   String?
   lastConnectionAttemptAt DateTime?
+  detailSnapshot          Json?
+  detailSyncedAt          DateTime?
   createdAt               DateTime             @default(now())
   updatedAt               DateTime             @updatedAt
   device                  Device               @relation(fields: [deviceId], references: [id], onDelete: Cascade)

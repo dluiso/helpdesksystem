@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ExternalLink, HardDrive, Laptop, Monitor, RefreshCcw, Server, Smartphone, TerminalSquare } from "lucide-react";
+import { ArrowLeft, Cpu, ExternalLink, HardDrive, Laptop, Monitor, Network, RefreshCcw, Server, ShieldCheck, Smartphone, TerminalSquare } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
@@ -34,7 +34,47 @@ interface DeviceRecord {
     remoteIdentifier: string;
     connectionUrl: string | null;
     lastConnectionAttemptAt: string | null;
+    detailSyncedAt: string | null;
   } | null;
+  remoteAccessDetails: RemoteAccessDetails | null;
+}
+
+interface RemoteAccessDetails {
+  syncedAt: string;
+  hardware: {
+    manufacturer: string | null;
+    model: string | null;
+    cpu: string | null;
+    cpuCores: string | null;
+    memory: string | null;
+    video: string | null;
+    serialNumber: string | null;
+  };
+  network: {
+    publicIp: string | null;
+    localIps: string[];
+  };
+  storage: {
+    disks: Array<{
+      name: string;
+      fileSystem: string | null;
+      totalBytes: number | null;
+      freeBytes: number | null;
+      usedPercent: number | null;
+    }>;
+  };
+  agent: {
+    version: string | null;
+    bootTime: string | null;
+    uptime: string | null;
+    lastResponse: string | null;
+    lastSeen: string | null;
+    loggedInUser: string | null;
+  };
+  checks: {
+    status: string | null;
+    summary: string | null;
+  };
 }
 
 interface DeviceDetailResponse {
@@ -84,6 +124,21 @@ export function DeviceDetailWorkspace({ deviceId }: { deviceId: string }) {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to open remote access.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function refreshRmmDetails() {
+    const device = data?.device;
+    if (!device) return;
+    setBusy("details");
+    setError(null);
+    try {
+      const response = await apiFetch<DeviceDetailResponse>(`/devices/${device.id}/rmm-details/refresh`, { method: "POST" });
+      setData(response);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to refresh RMM details.");
     } finally {
       setBusy(null);
     }
@@ -142,6 +197,10 @@ export function DeviceDetailWorkspace({ deviceId }: { deviceId: string }) {
                 <HardDrive size={16} aria-hidden="true" />
                 <span>SysInfo</span>
               </button>
+              <button className="button secondary" type="button" onClick={refreshRmmDetails} disabled={busy === "details" || !device.remoteAccessProfile}>
+                <RefreshCcw size={16} aria-hidden="true" />
+                <span>{busy === "details" ? "Refreshing..." : "Refresh RMM Details"}</span>
+              </button>
             </div>
           </div>
 
@@ -159,9 +218,105 @@ export function DeviceDetailWorkspace({ deviceId }: { deviceId: string }) {
             <DetailItem label="Remote ID" value={device.remoteAccessId ?? device.remoteAccessProfile?.remoteIdentifier ?? "-"} />
             <DetailItem label="Updated" value={formatDate(device.updatedAt)} />
           </div>
+
+          <RemoteAccessDetailsPanel details={device.remoteAccessDetails} detailSyncedAt={device.remoteAccessProfile?.detailSyncedAt ?? null} />
         </section>
       ) : null}
     </>
+  );
+}
+
+function RemoteAccessDetailsPanel({ details, detailSyncedAt }: { details: RemoteAccessDetails | null; detailSyncedAt: string | null }) {
+  if (!details) {
+    return (
+      <div className="device-detail-empty">
+        <strong>Extended RMM details</strong>
+        <span>Refresh RMM details to load hardware, network, storage, and agent information from Tactical RMM.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="device-detail-section-grid">
+      <DetailSection title="Hardware" icon={<Cpu size={16} aria-hidden="true" />}>
+        <DetailRow label="Manufacturer" value={details.hardware.manufacturer} />
+        <DetailRow label="Model" value={details.hardware.model} />
+        <DetailRow label="CPU" value={details.hardware.cpu} />
+        <DetailRow label="CPU cores" value={details.hardware.cpuCores} />
+        <DetailRow label="Memory" value={details.hardware.memory} />
+        <DetailRow label="Video" value={details.hardware.video} />
+        <DetailRow label="Serial" value={details.hardware.serialNumber} />
+      </DetailSection>
+
+      <DetailSection title="Network" icon={<Network size={16} aria-hidden="true" />}>
+        <DetailRow label="Public IP" value={details.network.publicIp} />
+        <div className="device-detail-list-row">
+          <span>LAN IPs</span>
+          <div className="device-chip-list">
+            {details.network.localIps.length ? details.network.localIps.map((ip) => <span className="device-detail-chip" key={ip}>{ip}</span>) : <strong>-</strong>}
+          </div>
+        </div>
+      </DetailSection>
+
+      <DetailSection title="Storage" icon={<HardDrive size={16} aria-hidden="true" />}>
+        <StorageList disks={details.storage.disks} />
+      </DetailSection>
+
+      <DetailSection title="Agent and checks" icon={<ShieldCheck size={16} aria-hidden="true" />}>
+        <DetailRow label="Agent version" value={details.agent.version} />
+        <DetailRow label="Logged in user" value={details.agent.loggedInUser} />
+        <DetailRow label="Last response" value={formatDetailDate(details.agent.lastResponse)} />
+        <DetailRow label="Boot time" value={formatDetailDate(details.agent.bootTime)} />
+        <DetailRow label="Uptime" value={details.agent.uptime} />
+        <DetailRow label="Checks" value={details.checks.summary ?? details.checks.status} />
+        <DetailRow label="Detail synced" value={formatDate(detailSyncedAt ?? details.syncedAt)} />
+      </DetailSection>
+    </div>
+  );
+}
+
+function DetailSection({ title, icon, children }: { title: string; icon: ReactNode; children: ReactNode }) {
+  return (
+    <section className="device-detail-section">
+      <h3>{icon}{title}</h3>
+      <div className="device-detail-list">{children}</div>
+    </section>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="device-detail-list-row">
+      <span>{label}</span>
+      <strong>{value || "-"}</strong>
+    </div>
+  );
+}
+
+function StorageList({ disks }: { disks: RemoteAccessDetails["storage"]["disks"] }) {
+  if (!disks.length) {
+    return <DetailRow label="Disks" value="-" />;
+  }
+
+  return (
+    <div className="device-storage-list">
+      {disks.map((disk) => {
+        const labelParts = [disk.fileSystem, disk.freeBytes !== null && disk.totalBytes !== null ? `${formatBytes(disk.freeBytes)} free of ${formatBytes(disk.totalBytes)}` : null].filter(Boolean);
+        return (
+          <div className="device-storage-row" key={`${disk.name}-${disk.fileSystem ?? ""}`}>
+            <div className="device-storage-header">
+              <strong>{disk.name}</strong>
+              <span>{labelParts.join(" - ") || "No capacity reported"}</span>
+            </div>
+            {disk.usedPercent !== null ? (
+              <div className="device-storage-bar" aria-label={`${disk.name} used ${disk.usedPercent}%`}>
+                <span style={{ width: `${disk.usedPercent}%` }} />
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -195,4 +350,21 @@ function formatEnum(value: string) {
 
 function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleString() : "-";
+}
+
+function formatDetailDate(value: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
+}
+
+function formatBytes(bytes: number) {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = bytes;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }

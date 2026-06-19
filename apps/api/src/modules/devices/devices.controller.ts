@@ -38,6 +38,12 @@ export class DevicesController {
     return this.devicesService.syncFromRemoteAccessProvider(user);
   }
 
+  @Post(":deviceId/rmm-details/refresh")
+  @RequirePermissions("remote_access.connect")
+  refreshRemoteAccessDetails(@CurrentUser() user: AuthenticatedUser, @Param("deviceId") deviceId: string) {
+    return this.devicesService.refreshRemoteAccessDetails(user, deviceId);
+  }
+
   @Get("views")
   @RequirePermissions("devices.view")
   listViews(@CurrentUser() user: AuthenticatedUser) {
