@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
@@ -6,6 +6,7 @@ import { RequirePermissions } from "../permissions/decorators/require-permission
 import { PermissionsGuard } from "../permissions/guards/permissions.guard";
 import { DeviceQueryDto } from "./dto/device-query.dto";
 import { UpdateRmmSettingsDto } from "./dto/update-rmm-settings.dto";
+import { UpsertDeviceViewDto } from "./dto/upsert-device-view.dto";
 import { DevicesService } from "./devices.service";
 
 @Controller("devices")
@@ -35,6 +36,42 @@ export class DevicesController {
   @RequirePermissions("remote_access.configure")
   syncFromRemoteAccessProvider(@CurrentUser() user: AuthenticatedUser) {
     return this.devicesService.syncFromRemoteAccessProvider(user);
+  }
+
+  @Get("views")
+  @RequirePermissions("devices.view")
+  listViews(@CurrentUser() user: AuthenticatedUser) {
+    return this.devicesService.listViews(user);
+  }
+
+  @Post("views")
+  @RequirePermissions("devices.view")
+  createView(@CurrentUser() user: AuthenticatedUser, @Body() body: UpsertDeviceViewDto) {
+    return this.devicesService.saveView(user, body);
+  }
+
+  @Patch("views/:viewId")
+  @RequirePermissions("devices.view")
+  updateView(@CurrentUser() user: AuthenticatedUser, @Param("viewId") viewId: string, @Body() body: UpsertDeviceViewDto) {
+    return this.devicesService.updateView(user, viewId, body);
+  }
+
+  @Delete("views/:viewId")
+  @RequirePermissions("devices.view")
+  deleteView(@CurrentUser() user: AuthenticatedUser, @Param("viewId") viewId: string) {
+    return this.devicesService.deleteView(user, viewId);
+  }
+
+  @Put(":deviceId/favorite")
+  @RequirePermissions("devices.view")
+  markFavorite(@CurrentUser() user: AuthenticatedUser, @Param("deviceId") deviceId: string) {
+    return this.devicesService.setFavorite(user, deviceId, true);
+  }
+
+  @Delete(":deviceId/favorite")
+  @RequirePermissions("devices.view")
+  unmarkFavorite(@CurrentUser() user: AuthenticatedUser, @Param("deviceId") deviceId: string) {
+    return this.devicesService.setFavorite(user, deviceId, false);
   }
 
   @Get(":deviceId")

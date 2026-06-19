@@ -803,9 +803,30 @@ select.compact-select {
 
 .device-toolbar-panel {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(180px, 220px) minmax(160px, 190px) auto;
+  grid-template-columns: minmax(260px, 1fr) minmax(170px, 210px) minmax(150px, 180px) minmax(140px, 170px) auto;
   gap: 12px;
   align-items: center;
+}
+
+.device-saved-view-panel {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) auto minmax(180px, 1fr) minmax(150px, 190px) auto auto auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.device-default-view-toggle {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text);
+  background: var(--surface);
+  font-weight: 800;
 }
 
 .device-search-field {
@@ -892,6 +913,13 @@ select.compact-select {
   gap: 10px;
 }
 
+.device-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
 .device-name-cell a {
   color: var(--text);
   text-decoration: none;
@@ -920,6 +948,24 @@ select.compact-select {
   border: 1px solid color-mix(in srgb, var(--brand-primary) 24%, var(--line));
 }
 
+.device-type-icon.active {
+  color: #047857;
+  background: color-mix(in srgb, #10b981 14%, var(--surface));
+  border-color: color-mix(in srgb, #10b981 38%, var(--line));
+}
+
+.device-type-icon.inactive {
+  color: #b91c1c;
+  background: color-mix(in srgb, #ef4444 12%, var(--surface));
+  border-color: color-mix(in srgb, #ef4444 38%, var(--line));
+}
+
+.device-type-icon.retired {
+  color: #64748b;
+  background: color-mix(in srgb, #64748b 12%, var(--surface));
+  border-color: color-mix(in srgb, #64748b 30%, var(--line));
+}
+
 .device-type-icon.large {
   width: 46px;
   height: 46px;
@@ -930,6 +976,50 @@ select.compact-select {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.device-action-row .button.compact {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.device-action-row .button.primary {
+  border-color: var(--brand-primary);
+  color: #ffffff;
+  background: var(--brand-primary);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18);
+}
+
+.device-action-row .button.primary:hover:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+.device-action-row .button.secondary {
+  color: var(--text);
+  background: var(--surface-muted);
+}
+
+.device-favorite-button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.device-favorite-button:hover:not(:disabled),
+.device-favorite-button.active {
+  color: #b45309;
+  border-color: color-mix(in srgb, #f59e0b 30%, var(--line));
+  background: color-mix(in srgb, #f59e0b 13%, var(--surface));
 }
 
 .device-card-grid {
@@ -943,8 +1033,32 @@ select.compact-select {
   gap: 14px;
   padding: 16px;
   border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
+}
+
+.device-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--brand-primary) 22%, var(--line));
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
+}
+
+.device-card.active {
+  border-left-color: #10b981;
+}
+
+.device-card.inactive {
+  border-left-color: #ef4444;
+}
+
+.device-card.retired {
+  border-left-color: #64748b;
 }
 
 .device-card-header {
@@ -7432,7 +7546,8 @@ a.dashboard-list-row:hover {
 
   .rmm-settings-grid,
   .rmm-sync-summary,
-  .device-toolbar-panel {
+  .device-toolbar-panel,
+  .device-saved-view-panel {
     grid-template-columns: 1fr;
   }
 
@@ -7448,6 +7563,11 @@ a.dashboard-list-row:hover {
   .device-view-toggle {
     width: 100%;
     justify-self: stretch;
+  }
+
+  .device-saved-view-panel .button,
+  .device-default-view-toggle {
+    width: 100%;
   }
 
   .device-view-toggle button {

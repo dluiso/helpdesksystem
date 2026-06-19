@@ -9,10 +9,13 @@ import {
   LayoutList,
   Monitor,
   RefreshCcw,
+  Save,
   Search,
   Server,
   Smartphone,
+  Star,
   Table2,
+  Trash2,
   TerminalSquare
 } from "lucide-react";
 import Link from "next/link";
@@ -33,6 +36,7 @@ interface DeviceRecord {
   status: string;
   remoteAccessProvider: string | null;
   remoteAccessId: string | null;
+  isFavorite: boolean;
   lastSeenAt: string | null;
   client: { id: string; name: string; shortName: string | null };
   actionUrls: {
@@ -60,6 +64,23 @@ interface DevicesResponse {
   };
 }
 
+interface DeviceSavedViewState {
+  search?: string;
+  clientId?: string;
+  status?: string;
+  type?: string;
+  view?: DeviceView;
+  pageSize?: number;
+}
+
+interface DeviceSavedViewRecord {
+  id: string;
+  name: string;
+  state: DeviceSavedViewState;
+  scope: "PRIVATE" | "ADMINISTRATORS";
+  isDefault: boolean;
+}
+
 const PAGE_SIZE_OPTIONS = [25, 50, 100];
 
 export function DevicesWorkspace() {
@@ -67,9 +88,15 @@ export function DevicesWorkspace() {
   const [search, setSearch] = useState("");
   const [clientId, setClientId] = useState("");
   const [status, setStatus] = useState("");
+  const [type, setType] = useState("");
   const [view, setView] = useState<DeviceView>("table");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [savedViews, setSavedViews] = useState<DeviceSavedViewRecord[]>([]);
+  const [selectedViewId, setSelectedViewId] = useState("");
+  const [viewName, setViewName] = useState("");
+  const [viewScope, setViewScope] = useState<"PRIVATE" | "ADMINISTRATORS">("PRIVATE");
+  const [viewIsDefault, setViewIsDefault] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,9 +108,10 @@ export function DevicesWorkspace() {
     if (search.trim()) params.set("search", search.trim());
     if (clientId) params.set("clientId", clientId);
     if (status) params.set("status", status);
+    if (type) params.set("type", type);
     const value = params.toString();
     return value ? `?${value}` : "";
-  }, [clientId, search, status]);
+  }, [clientId, search, status, type]);
 
   const devices = data?.devices ?? [];
   const totalPages = Math.max(1, Math.ceil(devices.length / pageSize));
@@ -104,6 +132,19 @@ export function DevicesWorkspace() {
     }
   }
 
+  async function loadSavedViews() {
+    try {
+      const response = await apiFetch<DeviceSavedViewRecord[]>("/devices/views");
+      setSavedViews(response);
+      const defaultView = response.find((item) => item.isDefault);
+      if (defaultView && !selectedViewId) {
+        applySavedView(defaultView);
+      }
+    } catch {
+      setSavedViews([]);
+    }
+  }
+
   async function syncDevices() {
     setBusy("sync");
     setError(null);
@@ -114,6 +155,82 @@ export function DevicesWorkspace() {
       await loadDevices();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sync RMM devices.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveCurrentView() {
+    const name = viewName.trim();
+    if (!name) {
+      setError("Enter a saved view name before saving.");
+      return;
+    }
+    setBusy("view");
+    setError(null);
+    setNotice(null);
+    const body = {
+      name,
+      state: { search, clientId, status, type, view, pageSize },
+      scope: viewScope,
+      isDefault: viewIsDefault
+    };
+    try {
+      if (selectedViewId) {
+        await apiFetch(`/devices/views/${selectedViewId}`, {
+          method: "PATCH",
+          body: JSON.stringify(body)
+        });
+      } else {
+        await apiFetch("/devices/views", {
+          method: "POST",
+          body: JSON.stringify(body)
+        });
+      }
+      setNotice(`Saved device view "${name}".`);
+      await loadSavedViews();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save device view.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deleteCurrentView() {
+    if (!selectedViewId) return;
+    const current = savedViews.find((item) => item.id === selectedViewId);
+    if (!current || !window.confirm(`Delete saved view "${current.name}"?`)) return;
+    setBusy("view");
+    setError(null);
+    setNotice(null);
+    try {
+      await apiFetch(`/devices/views/${selectedViewId}`, { method: "DELETE" });
+      setSelectedViewId("");
+      setViewName("");
+      setNotice(`Deleted device view "${current.name}".`);
+      await loadSavedViews();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete device view.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function toggleFavorite(device: DeviceRecord) {
+    const nextValue = !device.isFavorite;
+    setBusy(`favorite:${device.id}`);
+    setError(null);
+    try {
+      await apiFetch(`/devices/${device.id}/favorite`, { method: nextValue ? "PUT" : "DELETE" });
+      setData((current) => {
+        if (!current) return current;
+        const nextDevices = current.devices
+          .map((item) => (item.id === device.id ? { ...item, isFavorite: nextValue } : item))
+          .sort((left, right) => Number(right.isFavorite) - Number(left.isFavorite));
+        return { ...current, devices: nextDevices };
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update device favorite.");
     } finally {
       setBusy(null);
     }
@@ -146,9 +263,46 @@ export function DevicesWorkspace() {
     setExpandedGroups((current) => ({ ...current, [key]: !(current[key] ?? true) }));
   }
 
+  function selectSavedView(viewId: string) {
+    setSelectedViewId(viewId);
+    const savedView = savedViews.find((item) => item.id === viewId);
+    if (!savedView) {
+      setViewName("");
+      setViewScope("PRIVATE");
+      setViewIsDefault(false);
+      return;
+    }
+    setViewName(savedView.name);
+    setViewScope(savedView.scope);
+    setViewIsDefault(savedView.isDefault);
+  }
+
+  function applySavedView(savedView: DeviceSavedViewRecord) {
+    const state = savedView.state ?? {};
+    setSearch(state.search ?? "");
+    setClientId(state.clientId ?? "");
+    setStatus(state.status ?? "");
+    setType(state.type ?? "");
+    if (state.view === "table" || state.view === "cards" || state.view === "tree") {
+      setView(state.view);
+    }
+    if (typeof state.pageSize === "number" && PAGE_SIZE_OPTIONS.includes(state.pageSize)) {
+      setPageSize(state.pageSize);
+    }
+    setSelectedViewId(savedView.id);
+    setViewName(savedView.name);
+    setViewScope(savedView.scope);
+    setViewIsDefault(savedView.isDefault);
+    setPage(1);
+  }
+
   useEffect(() => {
     void loadDevices();
   }, [query]);
+
+  useEffect(() => {
+    void loadSavedViews();
+  }, []);
 
   return (
     <>
@@ -188,6 +342,15 @@ export function DevicesWorkspace() {
           <option value="INACTIVE">Inactive</option>
           <option value="RETIRED">Retired</option>
         </select>
+        <select className="input" value={type} onChange={(event) => setType(event.target.value)}>
+          <option value="">All types</option>
+          <option value="SERVER">Servers</option>
+          <option value="DESKTOP">Desktops</option>
+          <option value="LAPTOP">Laptops</option>
+          <option value="PHONE">Phones</option>
+          <option value="TABLET">Tablets</option>
+          <option value="OTHER">Other</option>
+        </select>
         <div className="segmented-control device-view-toggle" aria-label="Device view">
           <button type="button" className={view === "table" ? "active" : ""} onClick={() => setView("table")} title="Table view">
             <Table2 size={16} aria-hidden="true" />
@@ -202,6 +365,45 @@ export function DevicesWorkspace() {
             <span>Tree</span>
           </button>
         </div>
+      </section>
+
+      <section className="panel device-saved-view-panel">
+        <select className="input" value={selectedViewId} onChange={(event) => selectSavedView(event.target.value)}>
+          <option value="">Saved views</option>
+          {savedViews.map((savedView) => (
+            <option key={savedView.id} value={savedView.id}>
+              {savedView.name}{savedView.scope === "ADMINISTRATORS" ? " (Admins)" : ""}{savedView.isDefault ? " - Default" : ""}
+            </option>
+          ))}
+        </select>
+        <button
+          className="button secondary"
+          type="button"
+          onClick={() => {
+            const savedView = savedViews.find((item) => item.id === selectedViewId);
+            if (savedView) applySavedView(savedView);
+          }}
+          disabled={!selectedViewId}
+        >
+          Apply View
+        </button>
+        <input className="input" placeholder="View name" value={viewName} onChange={(event) => setViewName(event.target.value)} />
+        <select className="input" value={viewScope} onChange={(event) => setViewScope(event.target.value as "PRIVATE" | "ADMINISTRATORS")}>
+          <option value="PRIVATE">Private</option>
+          <option value="ADMINISTRATORS">Administrators</option>
+        </select>
+        <label className="device-default-view-toggle">
+          <input type="checkbox" checked={viewIsDefault} onChange={(event) => setViewIsDefault(event.target.checked)} />
+          <span>Default</span>
+        </label>
+        <button className="button primary" type="button" onClick={saveCurrentView} disabled={busy === "view"}>
+          <Save size={16} aria-hidden="true" />
+          <span>{selectedViewId ? "Update View" : "Save View"}</span>
+        </button>
+        <button className="button secondary danger-soft" type="button" onClick={deleteCurrentView} disabled={!selectedViewId || busy === "view"}>
+          <Trash2 size={16} aria-hidden="true" />
+          <span>Delete</span>
+        </button>
       </section>
 
       <section className="panel">
@@ -250,7 +452,7 @@ export function DevicesWorkspace() {
               </thead>
               <tbody>
                 {pageDevices.map((device) => (
-                  <DeviceTableRow key={device.id} device={device} busy={busy} onOpenRemote={openRemote} />
+                  <DeviceTableRow key={device.id} device={device} busy={busy} onFavorite={toggleFavorite} onOpenRemote={openRemote} />
                 ))}
               </tbody>
             </table>
@@ -260,7 +462,7 @@ export function DevicesWorkspace() {
         {view === "cards" && pageDevices.length > 0 ? (
           <div className="device-card-grid">
             {pageDevices.map((device) => (
-              <DeviceCard key={device.id} device={device} busy={busy} onOpenRemote={openRemote} />
+              <DeviceCard key={device.id} device={device} busy={busy} onFavorite={toggleFavorite} onOpenRemote={openRemote} />
             ))}
           </div>
         ) : null}
@@ -284,7 +486,7 @@ export function DevicesWorkspace() {
                         </div>
                         <div className="device-tree-devices">
                           {site.devices.map((device) => (
-                            <DeviceTreeRow key={device.id} device={device} busy={busy} onOpenRemote={openRemote} />
+                            <DeviceTreeRow key={device.id} device={device} busy={busy} onFavorite={toggleFavorite} onOpenRemote={openRemote} />
                           ))}
                         </div>
                       </div>
@@ -300,16 +502,30 @@ export function DevicesWorkspace() {
   );
 }
 
-function DeviceTableRow({ device, busy, onOpenRemote }: { device: DeviceRecord; busy: string | null; onOpenRemote: (device: DeviceRecord, mode: "control" | "system") => void }) {
+function DeviceTableRow({
+  device,
+  busy,
+  onFavorite,
+  onOpenRemote
+}: {
+  device: DeviceRecord;
+  busy: string | null;
+  onFavorite: (device: DeviceRecord) => void;
+  onOpenRemote: (device: DeviceRecord, mode: "control" | "system") => void;
+}) {
   const DeviceIcon = getDeviceIcon(device);
   const OsIcon = getOsIcon(device.operatingSystem);
+  const statusClass = getDeviceStatusClass(device);
   return (
     <tr>
       <td>
         <div className="device-name-cell">
-          <span className="device-type-icon"><DeviceIcon size={18} aria-hidden="true" /></span>
+          <span className={`device-type-icon ${statusClass}`}><DeviceIcon size={18} aria-hidden="true" /></span>
           <div>
-            <Link href={`/devices/${device.id}`}><strong>{device.name}</strong></Link>
+            <div className="device-title-row">
+              <Link href={`/devices/${device.id}`}><strong>{device.name}</strong></Link>
+              <FavoriteButton device={device} busy={busy} onFavorite={onFavorite} />
+            </div>
             <span>{device.hostname ?? device.remoteAccessId ?? device.type}</span>
           </div>
         </div>
@@ -337,15 +553,29 @@ function DeviceTableRow({ device, busy, onOpenRemote }: { device: DeviceRecord; 
   );
 }
 
-function DeviceCard({ device, busy, onOpenRemote }: { device: DeviceRecord; busy: string | null; onOpenRemote: (device: DeviceRecord, mode: "control" | "system") => void }) {
+function DeviceCard({
+  device,
+  busy,
+  onFavorite,
+  onOpenRemote
+}: {
+  device: DeviceRecord;
+  busy: string | null;
+  onFavorite: (device: DeviceRecord) => void;
+  onOpenRemote: (device: DeviceRecord, mode: "control" | "system") => void;
+}) {
   const DeviceIcon = getDeviceIcon(device);
   const OsIcon = getOsIcon(device.operatingSystem);
+  const statusClass = getDeviceStatusClass(device);
   return (
-    <article className="device-card">
+    <article className={`device-card ${statusClass}`}>
       <div className="device-card-header">
-        <span className="device-type-icon large"><DeviceIcon size={22} aria-hidden="true" /></span>
+        <span className={`device-type-icon large ${statusClass}`}><DeviceIcon size={22} aria-hidden="true" /></span>
         <div>
-          <Link href={`/devices/${device.id}`}><h3>{device.name}</h3></Link>
+          <div className="device-title-row">
+            <Link href={`/devices/${device.id}`}><h3>{device.name}</h3></Link>
+            <FavoriteButton device={device} busy={busy} onFavorite={onFavorite} />
+          </div>
           <p>{device.client.name} - {device.deviceGroupId ?? "No site"}</p>
         </div>
         <span className={`status-pill ${device.status === "ACTIVE" ? "success" : "muted"}`}>{device.status}</span>
@@ -369,16 +599,45 @@ function DeviceCard({ device, busy, onOpenRemote }: { device: DeviceRecord; busy
   );
 }
 
-function DeviceTreeRow({ device, busy, onOpenRemote }: { device: DeviceRecord; busy: string | null; onOpenRemote: (device: DeviceRecord, mode: "control" | "system") => void }) {
+function DeviceTreeRow({
+  device,
+  busy,
+  onFavorite,
+  onOpenRemote
+}: {
+  device: DeviceRecord;
+  busy: string | null;
+  onFavorite: (device: DeviceRecord) => void;
+  onOpenRemote: (device: DeviceRecord, mode: "control" | "system") => void;
+}) {
   const DeviceIcon = getDeviceIcon(device);
+  const statusClass = getDeviceStatusClass(device);
   return (
     <div className="device-tree-row">
-      <span className="device-type-icon"><DeviceIcon size={17} aria-hidden="true" /></span>
-      <Link href={`/devices/${device.id}`}><strong>{device.name}</strong></Link>
+      <span className={`device-type-icon ${statusClass}`}><DeviceIcon size={17} aria-hidden="true" /></span>
+      <div className="device-title-row">
+        <Link href={`/devices/${device.id}`}><strong>{device.name}</strong></Link>
+        <FavoriteButton device={device} busy={busy} onFavorite={onFavorite} />
+      </div>
       <span>{device.operatingSystem ?? "Unknown OS"}</span>
       <span className={`status-pill ${device.status === "ACTIVE" ? "success" : "muted"}`}>{device.status}</span>
       <DeviceActions device={device} busy={busy} onOpenRemote={onOpenRemote} />
     </div>
+  );
+}
+
+function FavoriteButton({ device, busy, onFavorite }: { device: DeviceRecord; busy: string | null; onFavorite: (device: DeviceRecord) => void }) {
+  return (
+    <button
+      className={`device-favorite-button ${device.isFavorite ? "active" : ""}`}
+      type="button"
+      title={device.isFavorite ? "Remove favorite" : "Mark as favorite"}
+      aria-label={device.isFavorite ? `Remove ${device.name} from favorites` : `Mark ${device.name} as favorite`}
+      onClick={() => onFavorite(device)}
+      disabled={busy === `favorite:${device.id}`}
+    >
+      <Star size={15} aria-hidden="true" />
+    </button>
   );
 }
 
@@ -437,6 +696,12 @@ function groupDevices(devices: DeviceRecord[]) {
     count: client.count,
     sites: Array.from(client.sites.values())
   }));
+}
+
+function getDeviceStatusClass(device: DeviceRecord) {
+  if (device.status === "ACTIVE") return "active";
+  if (device.status === "INACTIVE") return "inactive";
+  return "retired";
 }
 
 function getDeviceIcon(device: DeviceRecord) {

@@ -150,6 +150,11 @@ enum DeviceStatus {
   RETIRED
 }
 
+enum DeviceViewScope {
+  PRIVATE
+  ADMINISTRATORS
+}
+
 enum RemoteAccessProvider {
   RUSTDESK
   MESH_CENTRAL
@@ -249,6 +254,7 @@ model Organization {
   eventServiceForms    EventServiceForm[]
   eventServiceSequences EventServiceSequence[]
   supportPortalForms   SupportPortalForm[]
+  deviceViews          UserDeviceView[]
 
   @@map("organizations")
 }
@@ -425,6 +431,8 @@ model User {
   notifications       Notification[]
   ticketViews         UserTicketView[]
   dashboardPreference UserDashboardPreference?
+  deviceFavorites     UserDeviceFavorite[]
+  deviceViews         UserDeviceView[]
   uploadedAttachments TicketAttachment[]
   uploadedEventServiceAttachments EventServiceAttachment[]
   signature           UserSignature?
@@ -1560,6 +1568,7 @@ model Device {
   updatedAt            DateTime             @updatedAt
   client               Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
   remoteAccessProfile  RemoteAccessProfile?
+  favorites            UserDeviceFavorite[]
 
   @@index([clientId, status])
   @@index([hostname])
@@ -1581,6 +1590,38 @@ model RemoteAccessProfile {
 
   @@index([provider])
   @@map("remote_access_profiles")
+}
+
+model UserDeviceFavorite {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  deviceId  String   @db.Uuid
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deviceId])
+  @@index([deviceId])
+  @@map("user_device_favorites")
+}
+
+model UserDeviceView {
+  id             String          @id @default(uuid()) @db.Uuid
+  organizationId String          @db.Uuid
+  userId         String          @db.Uuid
+  name           String
+  state          Json
+  scope          DeviceViewScope @default(PRIVATE)
+  isDefault      Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([organizationId, scope])
+  @@index([userId, isDefault])
+  @@map("user_device_views")
 }
 
 model AuditLog {

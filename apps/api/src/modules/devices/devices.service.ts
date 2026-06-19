@@ -1,11 +1,12 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { DeviceStatus, DeviceType, Prisma, RemoteAccessProvider } from "@prisma/client";
+import { DeviceStatus, DeviceType, DeviceViewScope, Prisma, RemoteAccessProvider } from "@prisma/client";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { DeviceQueryDto } from "./dto/device-query.dto";
 import { UpdateRmmSettingsDto } from "./dto/update-rmm-settings.dto";
+import { UpsertDeviceViewDto } from "./dto/upsert-device-view.dto";
 
 type RmmAgentRecord = Record<string, unknown>;
 
@@ -45,6 +46,7 @@ type DeviceWithRemoteProfile = Prisma.DeviceGetPayload<{
   include: {
     client: { select: { id: true; name: true; shortName: true } };
     remoteAccessProfile: true;
+    favorites: { select: { userId: true } };
   };
 }>;
 
@@ -83,13 +85,17 @@ export class DevicesService {
     if (this.isDeviceStatus(query.status)) {
       where.status = query.status;
     }
+    if (this.isDeviceType(query.type)) {
+      where.type = query.type;
+    }
 
     const [devices, clients, settings] = await Promise.all([
       this.prisma.device.findMany({
         where,
         include: {
           client: { select: { id: true, name: true, shortName: true } },
-          remoteAccessProfile: true
+          remoteAccessProfile: true,
+          favorites: { where: { userId: user.id }, select: { userId: true } }
         },
         orderBy: [{ client: { name: "asc" } }, { name: "asc" }],
         take: 500
@@ -102,8 +108,12 @@ export class DevicesService {
       this.getSettingsRecord(user.organizationId)
     ]);
 
+    const mappedDevices = devices
+      .map((device) => this.toDeviceResponse(device, settings))
+      .sort((left, right) => Number(right.isFavorite) - Number(left.isFavorite));
+
     return {
-      devices: devices.map((device) => this.toDeviceResponse(device, settings)),
+      devices: mappedDevices,
       clients,
       remoteAccess: this.toRmmSettingsResponse(settings)
     };
@@ -119,7 +129,8 @@ export class DevicesService {
         },
         include: {
           client: { select: { id: true, name: true, shortName: true } },
-          remoteAccessProfile: true
+          remoteAccessProfile: true,
+          favorites: { where: { userId: user.id }, select: { userId: true } }
         }
       }),
       this.getSettingsRecord(user.organizationId)
@@ -133,6 +144,129 @@ export class DevicesService {
       device: this.toDeviceResponse(device, settings),
       remoteAccess: this.toRmmSettingsResponse(settings)
     };
+  }
+
+  async listViews(user: AuthenticatedUser) {
+    return this.prisma.userDeviceView.findMany({
+      where: {
+        organizationId: user.organizationId,
+        OR: [{ userId: user.id }, { scope: DeviceViewScope.ADMINISTRATORS }]
+      },
+      orderBy: [{ scope: "asc" }, { name: "asc" }]
+    });
+  }
+
+  async saveView(user: AuthenticatedUser, input: UpsertDeviceViewDto) {
+    const name = input.name.trim();
+    const scope = this.normalizeViewScope(input.scope);
+    this.assertCanUseViewScope(user, scope);
+    return this.prisma.$transaction(async (tx) => {
+      if (input.isDefault) {
+        await tx.userDeviceView.updateMany({
+          where: { userId: user.id },
+          data: { isDefault: false }
+        });
+      }
+
+      return tx.userDeviceView.upsert({
+        where: {
+          userId_name: {
+            userId: user.id,
+            name
+          }
+        },
+        update: {
+          state: input.state as Prisma.InputJsonValue,
+          scope,
+          isDefault: input.isDefault ?? false
+        },
+        create: {
+          organizationId: user.organizationId,
+          userId: user.id,
+          name,
+          state: input.state as Prisma.InputJsonValue,
+          scope,
+          isDefault: input.isDefault ?? false
+        }
+      });
+    });
+  }
+
+  async updateView(user: AuthenticatedUser, viewId: string, input: UpsertDeviceViewDto) {
+    const existing = await this.prisma.userDeviceView.findFirst({
+      where: {
+        id: viewId,
+        organizationId: user.organizationId,
+        OR: [{ userId: user.id }, { scope: DeviceViewScope.ADMINISTRATORS }]
+      },
+      select: { id: true, userId: true, scope: true }
+    });
+    if (!existing) {
+      throw new NotFoundException("Device view was not found.");
+    }
+
+    const name = input.name.trim();
+    const scope = this.normalizeViewScope(input.scope);
+    this.assertCanManageView(user, existing.userId, existing.scope);
+    this.assertCanUseViewScope(user, scope);
+    return this.prisma.$transaction(async (tx) => {
+      if (input.isDefault) {
+        await tx.userDeviceView.updateMany({
+          where: { userId: existing.userId, id: { not: viewId } },
+          data: { isDefault: false }
+        });
+      }
+
+      return tx.userDeviceView.update({
+        where: { id: viewId },
+        data: {
+          name,
+          state: input.state as Prisma.InputJsonValue,
+          scope,
+          isDefault: input.isDefault ?? false
+        }
+      });
+    });
+  }
+
+  async deleteView(user: AuthenticatedUser, viewId: string) {
+    const existing = await this.prisma.userDeviceView.findFirst({
+      where: {
+        id: viewId,
+        organizationId: user.organizationId,
+        OR: [{ userId: user.id }, { scope: DeviceViewScope.ADMINISTRATORS }]
+      },
+      select: { id: true, userId: true, scope: true }
+    });
+    if (!existing) {
+      throw new NotFoundException("Device view was not found.");
+    }
+    this.assertCanManageView(user, existing.userId, existing.scope);
+
+    await this.prisma.userDeviceView.delete({ where: { id: viewId } });
+    return { deleted: true };
+  }
+
+  async setFavorite(user: AuthenticatedUser, deviceId: string, isFavorite: boolean) {
+    const device = await this.prisma.device.findFirst({
+      where: { id: deviceId, deletedAt: null, client: { organizationId: user.organizationId } },
+      select: { id: true }
+    });
+    if (!device) {
+      throw new NotFoundException("Device was not found.");
+    }
+
+    if (isFavorite) {
+      await this.prisma.userDeviceFavorite.upsert({
+        where: { userId_deviceId: { userId: user.id, deviceId } },
+        update: {},
+        create: { userId: user.id, deviceId }
+      });
+      return { isFavorite: true };
+    }
+
+    await this.prisma.userDeviceFavorite.deleteMany({ where: { userId: user.id, deviceId } });
+    return { isFavorite: false };
   }
 
   async getRemoteAccessSettings(user: AuthenticatedUser) {
@@ -424,8 +558,10 @@ export class DevicesService {
 
   private toDeviceResponse(device: DeviceWithRemoteProfile, settings: RmmSettingsRecord) {
     const actionUrls = this.buildDeviceActionUrls(device, settings);
+    const { favorites, ...deviceRecord } = device;
     return {
-      ...device,
+      ...deviceRecord,
+      isFavorite: favorites.length > 0,
       actionUrls,
       remoteAccessProfile: device.remoteAccessProfile
         ? {
@@ -529,6 +665,30 @@ export class DevicesService {
 
   private isDeviceStatus(value?: string): value is DeviceStatus {
     return Boolean(value && Object.values(DeviceStatus).includes(value as DeviceStatus));
+  }
+
+  private isDeviceType(value?: string): value is DeviceType {
+    return Boolean(value && Object.values(DeviceType).includes(value as DeviceType));
+  }
+
+  private normalizeViewScope(value?: string) {
+    return value === DeviceViewScope.ADMINISTRATORS ? DeviceViewScope.ADMINISTRATORS : DeviceViewScope.PRIVATE;
+  }
+
+  private assertCanUseViewScope(user: AuthenticatedUser, scope: DeviceViewScope) {
+    if (scope === DeviceViewScope.ADMINISTRATORS && !this.canManageSharedViews(user)) {
+      throw new BadRequestException("Shared device views require administrator access.");
+    }
+  }
+
+  private assertCanManageView(user: AuthenticatedUser, ownerId: string, scope: DeviceViewScope) {
+    if (ownerId !== user.id && scope === DeviceViewScope.ADMINISTRATORS && !this.canManageSharedViews(user)) {
+      throw new BadRequestException("Shared device views require administrator access.");
+    }
+  }
+
+  private canManageSharedViews(user: AuthenticatedUser) {
+    return user.permissions.includes("remote_access.configure");
   }
 
   private isRecord(value: unknown): value is RmmAgentRecord {

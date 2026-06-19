@@ -12,4 +12,8 @@ export class DeviceQueryDto {
   @IsOptional()
   @IsString()
   status?: string;
+
+  @IsOptional()
+  @IsString()
+  type?: string;
 }
