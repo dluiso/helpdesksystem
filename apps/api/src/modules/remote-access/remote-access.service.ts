@@ -37,6 +37,13 @@ export class RemoteAccessService {
       }
     });
 
-    return profile;
+    return {
+      id: profile.id,
+      provider: profile.provider,
+      remoteIdentifier: profile.remoteIdentifier,
+      connectionUrl: profile.connectionUrl,
+      lastConnectionAttemptAt: profile.lastConnectionAttemptAt,
+      deviceId
+    };
   }
 }

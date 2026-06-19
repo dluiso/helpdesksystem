@@ -748,6 +748,130 @@ select.compact-select {
   color: var(--text-muted);
 }
 
+.rmm-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.rmm-settings-grid .full-span,
+.rmm-sync-summary .full-span {
+  grid-column: 1 / -1;
+}
+
+.rmm-help-panel,
+.rmm-sync-summary,
+.device-sync-note {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+}
+
+.rmm-help-panel {
+  display: flex;
+  gap: 10px;
+  padding: 14px;
+}
+
+.rmm-help-panel svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--brand-primary);
+}
+
+.rmm-help-panel p {
+  margin: 4px 0 0;
+}
+
+.rmm-sync-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+}
+
+.rmm-sync-summary div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.rmm-sync-summary strong {
+  overflow-wrap: anywhere;
+}
+
+.device-toolbar-panel {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(180px, 240px) minmax(160px, 200px);
+  gap: 12px;
+  align-items: center;
+}
+
+.device-search-field {
+  position: relative;
+  min-width: 0;
+}
+
+.device-search-field svg {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.device-search-field .input {
+  padding-left: 38px;
+}
+
+.device-sync-note {
+  padding: 12px 14px;
+  color: var(--text-muted);
+}
+
+.device-table-wrapper {
+  overflow-x: auto;
+}
+
+.device-table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+}
+
+.device-table th {
+  border-bottom: 1px solid var(--line);
+  padding: 12px 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.device-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 14px 10px;
+  vertical-align: top;
+}
+
+.device-table td strong,
+.device-table td span {
+  display: block;
+}
+
+.device-table td span {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.button.compact {
+  min-height: 36px;
+  padding: 0 10px;
+}
+
 .theme-toggle:hover {
   background: var(--surface-hover);
 }
@@ -7047,6 +7171,25 @@ a.dashboard-list-row:hover {
   .topbar-brand .muted {
     max-width: 42vw;
     font-size: 12px;
+  }
+
+  .rmm-settings-grid,
+  .rmm-sync-summary,
+  .device-toolbar-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .rmm-settings-grid .full-span,
+  .rmm-sync-summary .full-span {
+    grid-column: auto;
+  }
+
+  .rmm-help-panel {
+    align-items: flex-start;
+  }
+
+  .device-table {
+    min-width: 760px;
   }
 
   .content {

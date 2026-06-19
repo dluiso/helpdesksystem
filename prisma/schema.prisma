@@ -364,6 +364,15 @@ model SystemSetting {
   defaultTicketAutoReplyTemplate String?
   aiAssistantEnabled         Boolean  @default(true)
   remoteAccessProviderEnabled Boolean @default(false)
+  remoteAccessProviderName   String   @default("Tactical RMM")
+  remoteAccessApiBaseUrl     String?
+  remoteAccessApiKeyReference String?
+  remoteAccessAgentsPath     String   @default("/agents/")
+  remoteAccessDashboardUrl   String?
+  remoteAccessDeviceUrlTemplate String?
+  remoteAccessLastSyncAt     DateTime?
+  remoteAccessLastSyncStatus String?
+  remoteAccessLastSyncMessage String?
   attachmentStorageProvider  FileStorageProvider @default(LOCAL)
   maximumUploadSizeMb        Int      @default(25)
   allowedAttachmentFileTypes String[] @default([])

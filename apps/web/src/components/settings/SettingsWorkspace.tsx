@@ -4,6 +4,7 @@ import { Download, Plus, RefreshCcw, RotateCw, TestTube2, Upload, X } from "luci
 import { useEffect, useMemo, useState } from "react";
 import { EventServicesConfigPanel } from "@/components/settings/EventServicesConfigPanel";
 import { KnowledgeConfigPanel } from "@/components/settings/KnowledgeConfigPanel";
+import { RmmConfigPanel } from "@/components/settings/RmmConfigPanel";
 import { SupportPortalConfigPanel } from "@/components/settings/SupportPortalConfigPanel";
 import { UsersWorkspace } from "@/components/users/UsersWorkspace";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
@@ -405,6 +406,7 @@ type ActiveSection =
   | "routing"
   | "domains"
   | "supportPortal"
+  | "rmm"
   | "notifications"
   | "events"
   | "knowledge"
@@ -1925,6 +1927,9 @@ export function SettingsWorkspace() {
     if (requestedSection === "systemHealth") {
       setActiveSection("systemHealth");
     }
+    if (requestedSection === "rmm") {
+      setActiveSection("rmm");
+    }
     if (!oneNoteStatus) return;
     setActiveSection("knowledge");
     setNotice(oneNoteStatus === "connected" ? "Microsoft OneNote connected." : "Microsoft OneNote connection was not completed.");
@@ -1975,6 +1980,9 @@ export function SettingsWorkspace() {
           </button>
           <button className={activeSection === "supportPortal" ? "active" : ""} type="button" onClick={() => setActiveSection("supportPortal")}>
             Support Portal
+          </button>
+          <button className={activeSection === "rmm" ? "active" : ""} type="button" onClick={() => setActiveSection("rmm")}>
+            RMM Integration
           </button>
           <button className={activeSection === "notifications" ? "active" : ""} type="button" onClick={() => setActiveSection("notifications")}>
             Notifications
@@ -3160,6 +3168,8 @@ export function SettingsWorkspace() {
           ) : null}
 
           {activeSection === "supportPortal" ? <SupportPortalConfigPanel /> : null}
+
+          {activeSection === "rmm" ? <RmmConfigPanel /> : null}
 
           {activeSection === "notifications" ? (
             <section className="panel settings-section">
