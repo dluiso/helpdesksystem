@@ -808,6 +808,10 @@ select.compact-select {
   align-items: center;
 }
 
+.device-toolbar-panel.has-card-columns {
+  grid-template-columns: minmax(260px, 1fr) minmax(170px, 210px) minmax(150px, 180px) minmax(140px, 170px) auto minmax(118px, 142px) auto;
+}
+
 .device-saved-view-panel {
   display: grid;
   grid-template-columns: minmax(180px, 240px) auto minmax(180px, 1fr) minmax(150px, 190px) auto auto auto;
@@ -909,6 +913,10 @@ select.compact-select {
   gap: 6px;
 }
 
+.device-card-column-select {
+  min-height: 42px;
+}
+
 .device-pagination {
   display: flex;
   align-items: center;
@@ -930,6 +938,14 @@ select.compact-select {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.device-os-cell > div {
+  min-width: 0;
+}
+
+.device-network-line {
+  overflow-wrap: anywhere;
 }
 
 .device-title-row {
@@ -1081,7 +1097,7 @@ select.compact-select {
 
 .device-card-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--device-card-columns, 3), minmax(150px, 1fr));
   gap: 12px;
 }
 
@@ -1127,7 +1143,9 @@ select.compact-select {
 
 .device-card-header h3 {
   margin: 0;
-  font-size: 18px;
+  font-size: 17px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .device-card-header a {
@@ -1142,6 +1160,8 @@ select.compact-select {
 .device-card-header p {
   margin: 4px 0 0;
   color: var(--text-muted);
+  overflow-wrap: anywhere;
+  font-size: 13px;
 }
 
 .device-card-meta {
@@ -1175,6 +1195,16 @@ select.compact-select {
   gap: 6px;
   margin-top: 6px;
   overflow-wrap: anywhere;
+}
+
+.device-card-meta strong {
+  align-items: flex-start;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.device-card-network-value {
+  display: block;
 }
 
 .device-tree-list {
@@ -1247,7 +1277,7 @@ select.compact-select {
 
 .device-tree-row {
   display: grid;
-  grid-template-columns: auto minmax(150px, 1.2fr) minmax(170px, 1fr) auto auto;
+  grid-template-columns: auto minmax(150px, 1.2fr) minmax(160px, 0.9fr) minmax(170px, 1fr) auto auto;
   gap: 10px;
   align-items: center;
   padding: 12px;
@@ -1259,7 +1289,23 @@ select.compact-select {
   text-decoration: none;
 }
 
-.device-tree-row > span:nth-child(3) {
+.device-tree-row > span:nth-child(4) {
+  color: var(--text-muted);
+}
+
+.device-tree-network {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.device-tree-network strong,
+.device-tree-network span {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.device-tree-network span {
   color: var(--text-muted);
 }
 
@@ -7794,7 +7840,8 @@ a.dashboard-list-row:hover {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .device-tree-row > span:nth-child(3),
+  .device-tree-row > span:nth-child(4),
+  .device-tree-network,
   .device-tree-row .status-pill,
   .device-tree-row .device-action-row {
     grid-column: 2;

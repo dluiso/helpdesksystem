@@ -53,6 +53,7 @@ interface RemoteAccessDetails {
   network: {
     publicIp: string | null;
     localIps: string[];
+    macAddresses?: string[];
   };
   storage: {
     disks: Array<{
@@ -236,6 +237,9 @@ function RemoteAccessDetailsPanel({ details, detailSyncedAt }: { details: Remote
     );
   }
 
+  const localIps = details.network.localIps ?? [];
+  const macAddresses = details.network.macAddresses ?? [];
+
   return (
     <div className="device-detail-section-grid">
       <DetailSection title="Hardware" icon={<Cpu size={16} aria-hidden="true" />}>
@@ -253,7 +257,13 @@ function RemoteAccessDetailsPanel({ details, detailSyncedAt }: { details: Remote
         <div className="device-detail-list-row">
           <span>LAN IPs</span>
           <div className="device-chip-list">
-            {details.network.localIps.length ? details.network.localIps.map((ip) => <span className="device-detail-chip" key={ip}>{ip}</span>) : <strong>-</strong>}
+            {localIps.length ? localIps.map((ip) => <span className="device-detail-chip" key={ip}>{ip}</span>) : <strong>-</strong>}
+          </div>
+        </div>
+        <div className="device-detail-list-row">
+          <span>MAC addresses</span>
+          <div className="device-chip-list">
+            {macAddresses.length ? macAddresses.map((mac) => <span className="device-detail-chip" key={mac}>{mac}</span>) : <strong>-</strong>}
           </div>
         </div>
       </DetailSection>

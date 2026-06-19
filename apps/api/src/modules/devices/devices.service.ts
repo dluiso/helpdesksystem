@@ -51,6 +51,7 @@ interface RemoteAccessDetailSnapshot {
   network: {
     publicIp: string | null;
     localIps: string[];
+    macAddresses: string[];
   };
   storage: {
     disks: RemoteAccessDiskSummary[];
@@ -752,6 +753,7 @@ export class DevicesService {
     const cpuRecord = this.pickRecord(record, ["cpu", "processor"]);
     const memoryRecord = this.pickRecord(record, ["memory", "ram"]);
     const networkRecord = this.pickRecord(record, ["network", "networking", "net"]);
+    const networkRecords = this.extractNetworkRecords(record, networkRecord);
     const checksRecord = this.pickRecord(record, ["checks", "checks_status", "checksStatus"]);
 
     return {
@@ -760,7 +762,9 @@ export class DevicesService {
         manufacturer:
           this.pickString(record, ["make", "manufacturer", "vendor"]) ??
           this.pickString(hardwareRecord ?? {}, ["make", "manufacturer", "vendor"]),
-        model: this.pickString(record, ["model", "product_name", "productName"]) ?? this.pickString(hardwareRecord ?? {}, ["model", "product_name", "productName"]),
+        model:
+          this.pickString(record, ["model", "make_model", "makeModel", "product_name", "productName"]) ??
+          this.pickString(hardwareRecord ?? {}, ["model", "make_model", "makeModel", "product_name", "productName"]),
         cpu:
           this.pickString(record, ["cpu", "processor", "cpu_model", "cpuModel"]) ??
           this.pickString(cpuRecord ?? {}, ["name", "model", "description"]),
@@ -777,9 +781,18 @@ export class DevicesService {
       },
       network: {
         publicIp: this.pickString(record, ["public_ip", "publicIp", "wan_ip", "wanIp"]) ?? this.pickString(networkRecord ?? {}, ["public_ip", "publicIp", "wan_ip", "wanIp"]),
-        localIps: this.pickStringList(record, ["local_ips", "localIps", "lan_ips", "lanIps", "ips", "ip_addresses", "ipAddresses"]).concat(
-          this.pickStringList(networkRecord ?? {}, ["local_ips", "localIps", "lan_ips", "lanIps", "ips", "ip_addresses", "ipAddresses"])
+        localIps: this.uniqueStrings(
+          this.pickStringList(record, ["local_ips", "localIps", "lan_ips", "lanIps", "ips", "ip_addresses", "ipAddresses"])
+            .concat(this.pickStringList(networkRecord ?? {}, ["local_ips", "localIps", "lan_ips", "lanIps", "ips", "ip_addresses", "ipAddresses"]))
+            .concat(this.extractLocalIps(networkRecords))
         )
+          .map((value) => value.replace(/\/\d+$/, ""))
+          .filter((value) => this.isLikelyIp(value) && !this.isLikelyMac(value)),
+        macAddresses: this.uniqueStrings(
+          this.pickStringList(record, ["mac", "mac_address", "macAddress", "mac_addresses", "macAddresses"])
+            .concat(this.pickStringList(networkRecord ?? {}, ["mac", "mac_address", "macAddress", "mac_addresses", "macAddresses"]))
+            .concat(this.extractMacAddresses(networkRecords))
+        ).filter((value) => this.isLikelyMac(value))
       },
       storage: {
         disks: this.normalizeDisks(record)
@@ -806,7 +819,7 @@ export class DevicesService {
   }
 
   private normalizeDisks(record: RmmAgentRecord): RemoteAccessDiskSummary[] {
-    const diskRecords = this.pickRecordList(record, ["disks", "drives", "volumes", "logical_disks", "logicalDisks", "storage"]);
+    const diskRecords = this.pickRecordList(record, ["disks", "drives", "volumes", "logical_disks", "logicalDisks", "physical_disks", "physicalDisks", "storage"]);
     return diskRecords
       .map((disk, index) => {
         const totalBytes = this.coerceBytes(this.pickUnknown(disk, ["total_bytes", "totalBytes", "total", "size", "capacity"]));
@@ -823,6 +836,28 @@ export class DevicesService {
         };
       })
       .slice(0, 12);
+  }
+
+  private extractNetworkRecords(record: RmmAgentRecord, networkRecord: RmmAgentRecord | null) {
+    const keys = ["network_adapters", "networkAdapters", "adapters", "interfaces", "nics", "network_interfaces", "networkInterfaces"];
+    return this.pickRecordList(record, keys).concat(this.pickRecordList(networkRecord ?? {}, keys));
+  }
+
+  private extractLocalIps(records: RmmAgentRecord[]) {
+    const keys = ["ip", "ips", "ipv4", "ipv4_address", "ipv4Address", "address", "addresses", "ip_address", "ipAddress", "ip_addresses", "ipAddresses", "local_ip", "localIp"];
+    return records
+      .flatMap((record) => this.pickStringList(record, keys))
+      .map((value) => value.replace(/\/\d+$/, ""))
+      .filter((value) => this.isLikelyIp(value) && !this.isLikelyMac(value));
+  }
+
+  private extractMacAddresses(records: RmmAgentRecord[]) {
+    const keys = ["mac", "mac_address", "macAddress", "physical_address", "physicalAddress", "hwaddr", "hardware_address", "hardwareAddress"];
+    return records.flatMap((record) => this.pickStringList(record, keys)).filter((value) => this.isLikelyMac(value));
+  }
+
+  private uniqueStrings(values: string[]) {
+    return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
   }
 
   private buildAgentDetailPath(agentsPath: string, remoteIdentifier: string) {
@@ -956,6 +991,14 @@ export class DevicesService {
     if (typeof value !== "string") return null;
     const number = Number(value.replace(/[^\d.-]/g, ""));
     return Number.isFinite(number) ? number : null;
+  }
+
+  private isLikelyIp(value: string) {
+    return /^(\d{1,3}\.){3}\d{1,3}$/.test(value) || /^[0-9a-f:]{3,}$/i.test(value);
+  }
+
+  private isLikelyMac(value: string) {
+    return /^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i.test(value);
   }
 
   private formatBytes(bytes: number) {

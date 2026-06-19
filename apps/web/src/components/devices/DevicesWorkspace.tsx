@@ -20,10 +20,19 @@ import {
   TerminalSquare
 } from "lucide-react";
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
 type DeviceView = "table" | "cards" | "tree";
+
+interface RemoteAccessDetails {
+  network?: {
+    publicIp?: string | null;
+    localIps?: string[];
+    macAddresses?: string[];
+  };
+}
 
 interface DeviceRecord {
   id: string;
@@ -51,6 +60,7 @@ interface DeviceRecord {
     connectionUrl: string | null;
     lastConnectionAttemptAt: string | null;
   } | null;
+  remoteAccessDetails: RemoteAccessDetails | null;
 }
 
 interface DevicesResponse {
@@ -72,6 +82,7 @@ interface DeviceSavedViewState {
   type?: string;
   view?: DeviceView;
   pageSize?: number;
+  cardColumns?: number;
 }
 
 interface DeviceSavedViewRecord {
@@ -83,6 +94,7 @@ interface DeviceSavedViewRecord {
 }
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100];
+const CARD_COLUMN_OPTIONS = [2, 3, 4, 5, 6];
 
 export function DevicesWorkspace() {
   const [data, setData] = useState<DevicesResponse | null>(null);
@@ -93,6 +105,7 @@ export function DevicesWorkspace() {
   const [view, setView] = useState<DeviceView>("table");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [cardColumns, setCardColumns] = useState(3);
   const [savedViews, setSavedViews] = useState<DeviceSavedViewRecord[]>([]);
   const [selectedViewId, setSelectedViewId] = useState("");
   const [viewName, setViewName] = useState("");
@@ -173,7 +186,7 @@ export function DevicesWorkspace() {
     setNotice(null);
     const body = {
       name,
-      state: { search, clientId, status, type, view, pageSize },
+      state: { search, clientId, status, type, view, pageSize, cardColumns },
       scope: viewScope,
       isDefault: viewIsDefault
     };
@@ -291,6 +304,9 @@ export function DevicesWorkspace() {
     if (typeof state.pageSize === "number" && PAGE_SIZE_OPTIONS.includes(state.pageSize)) {
       setPageSize(state.pageSize);
     }
+    if (typeof state.cardColumns === "number" && CARD_COLUMN_OPTIONS.includes(state.cardColumns)) {
+      setCardColumns(state.cardColumns);
+    }
     setSelectedViewId(savedView.id);
     setViewName(savedView.name);
     setViewScope(savedView.scope);
@@ -327,7 +343,7 @@ export function DevicesWorkspace() {
       {error ? <div className="error-banner">{error}</div> : null}
       {notice ? <div className="success-banner">{notice}</div> : null}
 
-      <section className="panel device-toolbar-panel">
+      <section className={`panel device-toolbar-panel ${view === "cards" ? "has-card-columns" : ""}`}>
         <div className="device-search-field">
           <Search size={16} aria-hidden="true" />
           <input className="input" placeholder="Search device, hostname, client, OS, or user" value={search} onChange={(event) => setSearch(event.target.value)} />
@@ -367,6 +383,13 @@ export function DevicesWorkspace() {
             <span>Tree</span>
           </button>
         </div>
+        {view === "cards" ? (
+          <select className="input compact-select device-card-column-select" value={cardColumns} onChange={(event) => setCardColumns(Number(event.target.value))} aria-label="Card columns">
+            {CARD_COLUMN_OPTIONS.map((columns) => (
+              <option key={columns} value={columns}>{columns} columns</option>
+            ))}
+          </select>
+        ) : null}
         <button
           className={`button icon-button device-view-menu-button ${savedViewPanelOpen ? "active" : ""}`}
           type="button"
@@ -470,7 +493,7 @@ export function DevicesWorkspace() {
         ) : null}
 
         {view === "cards" && pageDevices.length > 0 ? (
-          <div className="device-card-grid">
+          <div className="device-card-grid" style={{ "--device-card-columns": cardColumns } as CSSProperties}>
             {pageDevices.map((device) => (
               <DeviceCard key={device.id} device={device} busy={busy} onFavorite={toggleFavorite} onOpenRemote={openRemote} />
             ))}
@@ -526,6 +549,7 @@ function DeviceTableRow({
   const DeviceIcon = getDeviceIcon(device);
   const OsIcon = getOsIcon(device.operatingSystem);
   const statusClass = getDeviceStatusClass(device);
+  const network = getDeviceNetworkInfo(device);
   return (
     <tr>
       <td>
@@ -550,6 +574,7 @@ function DeviceTableRow({
           <div>
             <strong>{device.operatingSystem ?? "Unknown"}</strong>
             <span>{device.osVersion ?? device.primaryUser ?? ""}</span>
+            <span className="device-network-line">{formatNetworkSummary(network)}</span>
           </div>
         </div>
       </td>
@@ -576,6 +601,7 @@ function DeviceCard({
   const DeviceIcon = getDeviceIcon(device);
   const OsIcon = getOsIcon(device.operatingSystem);
   const statusClass = getDeviceStatusClass(device);
+  const network = getDeviceNetworkInfo(device);
   return (
     <article className={`device-card ${statusClass}`}>
       <div className="device-card-header">
@@ -599,8 +625,8 @@ function DeviceCard({
           <strong>{formatDate(device.lastSeenAt)}</strong>
         </div>
         <div>
-          <span>User</span>
-          <strong>{device.primaryUser ?? "-"}</strong>
+          <span>IP / MAC</span>
+          <strong className="device-card-network-value">{formatNetworkSummary(network)}</strong>
         </div>
       </div>
       <DeviceActions device={device} busy={busy} onOpenRemote={onOpenRemote} />
@@ -621,12 +647,17 @@ function DeviceTreeRow({
 }) {
   const DeviceIcon = getDeviceIcon(device);
   const statusClass = getDeviceStatusClass(device);
+  const network = getDeviceNetworkInfo(device);
   return (
     <div className="device-tree-row">
       <span className={`device-type-icon ${statusClass}`}><DeviceIcon size={17} aria-hidden="true" /></span>
       <div className="device-title-row">
         <Link href={`/devices/${device.id}`}><strong>{device.name}</strong></Link>
         <FavoriteButton device={device} busy={busy} onFavorite={onFavorite} />
+      </div>
+      <div className="device-tree-network">
+        <strong>{network.localIp ?? "-"}</strong>
+        <span>{network.macAddress ?? "-"}</span>
       </div>
       <span>{device.operatingSystem ?? "Unknown OS"}</span>
       <span className={`status-pill ${device.status === "ACTIVE" ? "success" : "muted"}`}>{device.status}</span>
@@ -726,6 +757,19 @@ function looksLikeLinuxServer(source: string) {
   const linuxServerSignals = ["linux", "ubuntu", "debian", "centos", "red hat", "rhel", "rocky", "alma", "fedora", "suse", "pve", "proxmox", "esxi"];
   const workstationSignals = ["desktop", "workstation", "laptop", "notebook", "tablet", "phone"];
   return linuxServerSignals.some((signal) => source.includes(signal)) && !workstationSignals.some((signal) => source.includes(signal));
+}
+
+function getDeviceNetworkInfo(device: DeviceRecord) {
+  const network = device.remoteAccessDetails?.network;
+  return {
+    localIp: network?.localIps?.find(Boolean) ?? null,
+    macAddress: network?.macAddresses?.find(Boolean) ?? null
+  };
+}
+
+function formatNetworkSummary(network: { localIp: string | null; macAddress: string | null }) {
+  if (!network.localIp && !network.macAddress) return "-";
+  return [network.localIp ? `IP: ${network.localIp}` : null, network.macAddress ? `MAC: ${network.macAddress}` : null].filter(Boolean).join(" / ");
 }
 
 function getOsIcon(os?: string | null) {
