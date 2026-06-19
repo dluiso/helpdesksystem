@@ -335,6 +335,62 @@ interface AuditLogResult {
   entityTypes: string[];
 }
 
+interface SystemHealthComponent {
+  key: string;
+  name: string;
+  status: "ok" | "warning" | "error";
+  severity: "green" | "orange" | "red";
+  message: string;
+  checkedAt: string;
+  metadata?: unknown;
+}
+
+interface SystemHealthSummary {
+  status: "ok" | "warning" | "error";
+  severity: "green" | "orange" | "red";
+  checkedAt: string;
+  serverTime: string;
+  timezone: string;
+  dateFormat: string;
+  timeFormat: "12h" | "24h";
+  components: SystemHealthComponent[];
+  recorded: boolean;
+}
+
+interface SystemHealthHistory {
+  range: "daily" | "weekly" | "monthly" | "yearly";
+  from: string;
+  to: string;
+  totals: { ok: number; warning: number; error: number };
+  snapshots: Array<{
+    id: string;
+    component: string;
+    status: "ok" | "warning" | "error";
+    severity: "green" | "orange" | "red";
+    message: string;
+    checkedAt: string;
+  }>;
+}
+
+type ActiveSection =
+  | "general"
+  | "users"
+  | "mailboxes"
+  | "autoReplies"
+  | "teams"
+  | "routing"
+  | "domains"
+  | "supportPortal"
+  | "notifications"
+  | "events"
+  | "knowledge"
+  | "spam"
+  | "maintenance"
+  | "logs"
+  | "security"
+  | "ai"
+  | "systemHealth";
+
 const AI_ACTIONS = [
   { type: "paraphrase", label: "Paraphrase" },
   { type: "improve_reply", label: "Improve reply" },
@@ -608,6 +664,9 @@ export function SettingsWorkspace() {
   const [securitySettings, setSecuritySettings] = useState<SecuritySettings | null>(null);
   const [securityDraft, setSecurityDraft] = useState<SecuritySettings>(DEFAULT_SECURITY_SETTINGS);
   const [auditLogs, setAuditLogs] = useState<AuditLogResult | null>(null);
+  const [systemHealth, setSystemHealth] = useState<SystemHealthSummary | null>(null);
+  const [systemHealthHistory, setSystemHealthHistory] = useState<SystemHealthHistory | null>(null);
+  const [systemHealthRange, setSystemHealthRange] = useState<"daily" | "weekly" | "monthly" | "yearly">("daily");
   const [auditFilters, setAuditFilters] = useState({
     startDate: "",
     endDate: "",
@@ -686,7 +745,7 @@ export function SettingsWorkspace() {
   const [selectedClientByDomain, setSelectedClientByDomain] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<"general" | "users" | "mailboxes" | "autoReplies" | "teams" | "routing" | "domains" | "supportPortal" | "notifications" | "events" | "knowledge" | "spam" | "maintenance" | "logs" | "security" | "ai">("general");
+  const [activeSection, setActiveSection] = useState<ActiveSection>("general");
   const [generalTab, setGeneralTab] = useState<GeneralTab>("identity");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -835,6 +894,31 @@ export function SettingsWorkspace() {
     const query = auditQueryString(nextFilters);
     const result = await apiFetch<AuditLogResult>(`/system-settings/audit-logs${query ? `?${query}` : ""}`);
     setAuditLogs(result);
+  }
+
+  async function loadSystemHealth(range = systemHealthRange) {
+    const [summary, history] = await Promise.all([
+      apiFetch<SystemHealthSummary>("/system-health/summary"),
+      apiFetch<SystemHealthHistory>(`/system-health/history?range=${range}`)
+    ]);
+    setSystemHealth(summary);
+    setSystemHealthHistory(history);
+  }
+
+  async function runSystemHealthCheck() {
+    setBusy("system-health");
+    setError(null);
+    try {
+      const summary = await apiFetch<SystemHealthSummary>("/system-health/check", { method: "POST" });
+      const history = await apiFetch<SystemHealthHistory>(`/system-health/history?range=${systemHealthRange}`);
+      setSystemHealth(summary);
+      setSystemHealthHistory(history);
+      setNotice("System health check completed.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to run system health check.");
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function loadSettingsData() {
@@ -1806,10 +1890,19 @@ export function SettingsWorkspace() {
 
   useEffect(() => {
     const oneNoteStatus = new URLSearchParams(window.location.search).get("onenote");
+    const requestedSection = new URLSearchParams(window.location.search).get("section");
+    if (requestedSection === "systemHealth") {
+      setActiveSection("systemHealth");
+    }
     if (!oneNoteStatus) return;
     setActiveSection("knowledge");
     setNotice(oneNoteStatus === "connected" ? "Microsoft OneNote connected." : "Microsoft OneNote connection was not completed.");
   }, []);
+
+  useEffect(() => {
+    if (activeSection !== "systemHealth") return;
+    loadSystemHealth(systemHealthRange).catch(() => setError("Unable to load system health information."));
+  }, [activeSection, systemHealthRange]);
 
   return (
     <div className="settings-page">
@@ -1875,6 +1968,9 @@ export function SettingsWorkspace() {
           </button>
           <button className={activeSection === "ai" ? "active" : ""} type="button" onClick={() => setActiveSection("ai")}>
             AI & Security
+          </button>
+          <button className={activeSection === "systemHealth" ? "active" : ""} type="button" onClick={() => setActiveSection("systemHealth")}>
+            System Health
           </button>
         </nav>
 
@@ -3794,6 +3890,123 @@ export function SettingsWorkspace() {
               <div className="panel">
                 <h2>AI Safety</h2>
                 <p className="muted">AI suggestions require human approval before sending. Attachment contents are not included by default; prompts use ticket context and the current draft only.</p>
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === "systemHealth" ? (
+            <section className="grid">
+              <div className="panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>System Health</h2>
+                    <p className="muted">Monitor the application services, portals, integrations, and recent health history.</p>
+                  </div>
+                  <div className="settings-actions compact-actions">
+                    <span className={`system-health-badge ${systemHealth?.status ?? "warning"}`}>
+                      <span aria-hidden="true" />
+                      {systemHealth?.status ? systemHealth.status.toUpperCase() : "LOADING"}
+                    </span>
+                    <button className="button secondary" type="button" onClick={runSystemHealthCheck} disabled={busy === "system-health"}>
+                      <RefreshCcw size={16} aria-hidden="true" />
+                      <span>Run Check</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="system-health-summary settings-section">
+                  <div className="panel subtle-panel metric">
+                    <span className="muted">Server time</span>
+                    <strong>{systemHealth?.serverTime ? new Date(systemHealth.serverTime).toLocaleString() : "Loading"}</strong>
+                    <span className="muted">{systemHealth?.timezone ?? "Timezone unavailable"}</span>
+                  </div>
+                  <div className="panel subtle-panel metric">
+                    <span className="muted">Last check</span>
+                    <strong>{systemHealth?.checkedAt ? new Date(systemHealth.checkedAt).toLocaleString() : "Never"}</strong>
+                    <span className="muted">{systemHealth?.recorded ? "Recorded snapshot" : "Live summary"}</span>
+                  </div>
+                  <div className="panel subtle-panel metric">
+                    <span className="muted">Warnings</span>
+                    <strong>{systemHealth?.components.filter((component) => component.status === "warning").length ?? 0}</strong>
+                    <span className="muted">Needs review</span>
+                  </div>
+                  <div className="panel subtle-panel metric">
+                    <span className="muted">Errors</span>
+                    <strong>{systemHealth?.components.filter((component) => component.status === "error").length ?? 0}</strong>
+                    <span className="muted">Needs action</span>
+                  </div>
+                </div>
+
+                <div className="system-health-component-grid settings-section">
+                  {(systemHealth?.components ?? []).map((component) => (
+                    <article className={`system-health-card ${component.status}`} key={component.key}>
+                      <div>
+                        <span className="system-health-led" aria-hidden="true" />
+                        <strong>{component.name}</strong>
+                      </div>
+                      <p>{component.message}</p>
+                      <span className="muted">Checked {new Date(component.checkedAt).toLocaleString()}</span>
+                    </article>
+                  ))}
+                  {!systemHealth ? <p className="muted">Loading system health components...</p> : null}
+                </div>
+              </div>
+
+              <div className="panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>Health History</h2>
+                    <p className="muted">Manual checks are stored as snapshots for operational review.</p>
+                  </div>
+                  <div className="segmented-control">
+                    {(["daily", "weekly", "monthly", "yearly"] as const).map((range) => (
+                      <button className={systemHealthRange === range ? "active" : ""} type="button" key={range} onClick={() => setSystemHealthRange(range)}>
+                        {range[0].toUpperCase() + range.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="system-health-history-counts settings-section">
+                  <span className="status-pill success">OK {systemHealthHistory?.totals.ok ?? 0}</span>
+                  <span className="status-pill warning-pill">Warnings {systemHealthHistory?.totals.warning ?? 0}</span>
+                  <span className="status-pill danger-pill">Errors {systemHealthHistory?.totals.error ?? 0}</span>
+                </div>
+
+                <div className="table-scroll settings-section">
+                  <table className="tickets-table system-health-table">
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Component</th>
+                        <th>Status</th>
+                        <th>Message</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {systemHealthHistory?.snapshots.length === 0 ? (
+                        <tr>
+                          <td colSpan={4}>
+                            <span className="muted">No health snapshots in this range. Run a check to record the current state.</span>
+                          </td>
+                        </tr>
+                      ) : null}
+                      {(systemHealthHistory?.snapshots ?? []).map((snapshot) => (
+                        <tr key={snapshot.id}>
+                          <td>{new Date(snapshot.checkedAt).toLocaleString()}</td>
+                          <td>{snapshot.component}</td>
+                          <td>
+                            <span className={`system-health-inline-status ${snapshot.status}`}>
+                              <span aria-hidden="true" />
+                              {snapshot.status}
+                            </span>
+                          </td>
+                          <td>{snapshot.message}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </section>
           ) : null}

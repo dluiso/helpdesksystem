@@ -1591,6 +1591,20 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+model SystemHealthSnapshot {
+  id        String   @id @default(uuid()) @db.Uuid
+  component String
+  status    String
+  severity  String
+  message   String
+  metadata  Json?
+  checkedAt DateTime @default(now())
+
+  @@index([component, checkedAt])
+  @@index([status, checkedAt])
+  @@map("system_health_snapshots")
+}
+
 model EventServiceSequence {
   key              String       @id
   organizationId   String       @db.Uuid

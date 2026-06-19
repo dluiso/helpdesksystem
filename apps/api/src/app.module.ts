@@ -28,6 +28,7 @@ import { RolesModule } from "./modules/roles/roles.module";
 import { SignaturesModule } from "./modules/signatures/signatures.module";
 import { SpamManagementModule } from "./modules/spam-management/spam-management.module";
 import { SystemSettingsModule } from "./modules/system-settings/system-settings.module";
+import { SystemHealthModule } from "./modules/system-health/system-health.module";
 import { TicketAttachmentsModule } from "./modules/ticket-attachments/ticket-attachments.module";
 import { TicketTeamsModule } from "./modules/ticket-teams/ticket-teams.module";
 import { TicketMessagesModule } from "./modules/ticket-messages/ticket-messages.module";
@@ -60,6 +61,7 @@ import { UsersModule } from "./modules/users/users.module";
     PrismaModule,
     AuditLogsModule,
     HealthModule,
+    SystemHealthModule,
     SystemSettingsModule,
     AuthModule,
     UsersModule,

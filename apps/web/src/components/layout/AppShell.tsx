@@ -21,6 +21,7 @@ import { ReactNode, useEffect, useMemo, useState } from "react";
 import { useBranding } from "@/components/providers/BrandingProvider";
 import { apiFetch } from "@/lib/api";
 import { NotificationBell } from "./NotificationBell";
+import { SystemStatusClock } from "./SystemStatusClock";
 import { ThemeToggle } from "./ThemeToggle";
 import { UserMenu } from "./UserMenu";
 
@@ -166,6 +167,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Monitor size={16} aria-hidden="true" />
               <span>RMM</span>
             </a>
+            <SystemStatusClock />
             <ThemeToggle />
             <NotificationBell />
             <UserMenu user={user} />
