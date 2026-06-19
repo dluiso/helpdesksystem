@@ -85,10 +85,11 @@ export function RmmConfigPanel() {
     try {
       const response = await apiFetch<{ total: number; created: number; updated: number; settings: RmmSettings }>("/devices/rmm-sync", { method: "POST" });
       setSettings(response.settings);
-      setNotice(
+      const message =
         response.settings.lastSyncMessage ||
-          `Synced ${response.total} device${response.total === 1 ? "" : "s"} (${response.created} created, ${response.updated} updated).`
-      );
+        `Synced ${response.total} device${response.total === 1 ? "" : "s"} (${response.created} created, ${response.updated} updated).`;
+      if (response.settings.lastSyncStatus === "warning") setError(message);
+      else setNotice(message);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sync RMM devices.");
     } finally {

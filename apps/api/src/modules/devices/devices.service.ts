@@ -471,7 +471,7 @@ export class DevicesService {
         where: { organizationId: user.organizationId },
         data: {
           remoteAccessLastSyncAt: new Date(),
-          remoteAccessLastSyncStatus: "success",
+          remoteAccessLastSyncStatus: detailFailures > 0 ? "warning" : "success",
           remoteAccessLastSyncMessage: message
         }
       });
@@ -585,11 +585,7 @@ export class DevicesService {
   private async fetchAgents(apiBaseUrl: string, agentsPath: string, apiKey: string) {
     const url = this.joinUrl(apiBaseUrl, agentsPath);
     const response = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        "X-API-KEY": apiKey,
-        Authorization: `Bearer ${apiKey}`
-      }
+      headers: this.buildTacticalHeaders(apiKey)
     });
 
     if (!response.ok) {
@@ -604,11 +600,7 @@ export class DevicesService {
   private async fetchAgentDetail(apiBaseUrl: string, agentsPath: string, remoteIdentifier: string, apiKey: string) {
     const url = this.joinUrl(apiBaseUrl, this.buildAgentDetailPath(agentsPath, remoteIdentifier));
     const response = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        "X-API-KEY": apiKey,
-        Authorization: `Token ${apiKey}`
-      }
+      headers: this.buildTacticalHeaders(apiKey)
     });
 
     if (!response.ok) {
@@ -618,6 +610,14 @@ export class DevicesService {
 
     const payload = (await response.json()) as unknown;
     return this.extractAgentRecord(payload);
+  }
+
+  private buildTacticalHeaders(apiKey: string) {
+    return {
+      Accept: "application/json",
+      "X-API-KEY": apiKey,
+      Authorization: `Bearer ${apiKey}`
+    };
   }
 
   private async enrichRemoteAccessAgentDetails(
