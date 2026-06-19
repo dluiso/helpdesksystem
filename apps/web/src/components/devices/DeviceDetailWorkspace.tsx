@@ -311,7 +311,13 @@ function StorageList({ disks }: { disks: RemoteAccessDetails["storage"]["disks"]
   return (
     <div className="device-storage-list">
       {disks.map((disk) => {
-        const labelParts = [disk.fileSystem, disk.freeBytes !== null && disk.totalBytes !== null ? `${formatBytes(disk.freeBytes)} free of ${formatBytes(disk.totalBytes)}` : null].filter(Boolean);
+        const capacityLabel =
+          disk.freeBytes !== null && disk.totalBytes !== null
+            ? `${formatBytes(disk.freeBytes)} free of ${formatBytes(disk.totalBytes)}`
+            : disk.totalBytes !== null
+              ? `${formatBytes(disk.totalBytes)} total`
+              : null;
+        const labelParts = [disk.fileSystem, capacityLabel].filter(Boolean);
         return (
           <div className="device-storage-row" key={`${disk.name}-${disk.fileSystem ?? ""}`}>
             <div className="device-storage-header">

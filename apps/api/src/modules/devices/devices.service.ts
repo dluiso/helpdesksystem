@@ -849,14 +849,17 @@ export class DevicesService {
         };
       })
       .filter((disk) => disk.totalBytes !== null || disk.freeBytes !== null || disk.usedPercent !== null);
+    if (parsedDisks.length > 0) {
+      return parsedDisks.slice(0, 12);
+    }
     const physicalDisks = this.pickStringList(record, ["physical_disks", "physicalDisks"]).map((name) => ({
       name,
       fileSystem: null,
-      totalBytes: null,
+      totalBytes: this.parseDiskSizeFromLabel(name),
       freeBytes: null,
       usedPercent: null
     }));
-    return parsedDisks.concat(physicalDisks).slice(0, 12);
+    return physicalDisks.slice(0, 12);
   }
 
   private extractNetworkRecords(record: RmmAgentRecord, networkRecord: RmmAgentRecord | null, wmiRecord?: RmmAgentRecord | null) {
@@ -1038,6 +1041,13 @@ export class DevicesService {
     if (typeof value !== "string") return null;
     const number = Number(value.replace(/[^\d.-]/g, ""));
     return Number.isFinite(number) ? number : null;
+  }
+
+  private parseDiskSizeFromLabel(value: string) {
+    const matches = [...value.matchAll(/(\d+(?:\.\d+)?)\s*(tb|gb|mb)\b/gi)];
+    const match = matches.at(-1);
+    if (!match) return null;
+    return this.coerceBytes(`${match[1]} ${match[2]}`);
   }
 
   private formatCpuCores(cpu: string | null, cpuRecord: RmmAgentRecord | null, computerRecord: RmmAgentRecord | null) {
