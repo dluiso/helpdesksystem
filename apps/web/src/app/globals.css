@@ -8972,7 +8972,7 @@ a.dashboard-list-row:hover {
   font-size: 14px;
 }
 
-@media (max-width: 1400px) {
+@media (max-width: 1440px) {
   .dashboard-hero {
     grid-template-columns: 1fr;
   }
@@ -9003,6 +9003,44 @@ a.dashboard-list-row:hover {
 
   .dashboard-insight-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1280px) {
+  .settings-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .profile-summary-grid,
+  .clients-summary-grid,
+  .knowledge-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .device-card-grid {
+    --device-card-columns: 2;
+  }
+}
+
+@media (max-width: 1024px) {
+  .dashboard-kpi-grid,
+  .dashboard-event-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .reports-filter-grid,
+  .tickets-filter-grid,
+  .device-toolbar-panel,
+  .event-filter-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ticket-detail-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ticket-side-panel {
+    position: static;
   }
 }
 
@@ -9938,6 +9976,8 @@ a.dashboard-list-row:hover {
     gap: 12px;
   }
 
+  .settings-page .settings-nav,
+  .profile-nav,
   .settings-page .settings-layout > aside,
   .settings-layout > aside,
   .profile-layout > aside {
@@ -9945,6 +9985,8 @@ a.dashboard-list-row:hover {
     overflow-x: auto;
   }
 
+  .settings-page .settings-nav,
+  .profile-nav,
   .settings-page .settings-layout > aside nav,
   .settings-layout > aside nav,
   .profile-layout > aside nav {
@@ -9953,9 +9995,12 @@ a.dashboard-list-row:hover {
     gap: 6px;
   }
 
+  .settings-page .settings-nav button,
+  .profile-nav button,
   .settings-page .settings-layout > aside a,
   .settings-layout > aside a,
   .profile-layout > aside a {
+    flex: 0 0 auto;
     white-space: nowrap;
   }
 
@@ -10053,6 +10098,20 @@ a.dashboard-list-row:hover {
     width: 100%;
     max-width: 100%;
     min-height: 210px;
+  }
+
+  .signature-toolbar,
+  .knowledge-page-nav,
+  .knowledge-color-palette {
+    overflow-x: auto;
+  }
+
+  .signature-editor,
+  .knowledge-rich-editor,
+  .event-message-composer {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
   }
 
   .ticket-editor-attachments {
@@ -10164,6 +10223,47 @@ a.dashboard-list-row:hover {
 
   .tickets-header-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-summary-grid,
+  .profile-summary-grid,
+  .clients-summary-grid,
+  .knowledge-summary-grid,
+  .dashboard-kpi-grid,
+  .dashboard-event-kpi-grid,
+  .reports-filter-grid,
+  .tickets-filter-grid,
+  .device-toolbar-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-summary-card strong,
+  .profile-summary-card strong,
+  .client-summary-card strong,
+  .knowledge-summary-card strong {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .settings-page .settings-nav,
+  .profile-nav,
+  .settings-subtabs,
+  .event-workspace-tabs,
+  .event-detail-tabs,
+  .reports-type-tabs,
+  .client-detail-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: thin;
+  }
+
+  .settings-subtabs button,
+  .event-workspace-tabs button,
+  .event-detail-tabs button,
+  .reports-type-tabs button,
+  .client-detail-tabs button {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   .reports-header-actions,
