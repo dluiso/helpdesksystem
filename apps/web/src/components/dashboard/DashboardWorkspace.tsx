@@ -179,7 +179,7 @@ function KpiCard({ title, value, href, tone, icon: Icon, note }: { title: string
       <span className="dashboard-kpi-icon">
         <Icon size={18} aria-hidden="true" />
       </span>
-      <span className="muted">{title}</span>
+      <span className="dashboard-kpi-label">{title}</span>
       <strong>{value}</strong>
       <small>{note}</small>
     </Link>
@@ -238,7 +238,7 @@ function DonutChart({ title, subtitle, items }: { title: string; subtitle: strin
               </Link>
             ))
           ) : (
-            <p className="muted">No data yet.</p>
+            <p className="dashboard-empty">No data yet.</p>
           )}
         </div>
       </div>
@@ -336,7 +336,7 @@ function SpecialistTrendChart({ items }: { items: NonNullable<DashboardStats["sp
           </div>
         </>
       ) : (
-        <p className="muted">No specialist activity yet.</p>
+        <p className="dashboard-empty">No specialist activity yet.</p>
       )}
     </div>
   );
@@ -401,7 +401,7 @@ function HorizontalBarList({ title, subtitle, items }: { title: string; subtitle
             );
           })
         ) : (
-          <p className="muted">No data yet.</p>
+          <p className="dashboard-empty">No data yet.</p>
         )}
       </div>
     </div>
@@ -446,7 +446,7 @@ function SpecialistPerformanceCard({ items }: { items: NonNullable<DashboardStat
             </Link>
           ))
         ) : (
-          <p className="muted">No specialist workload yet.</p>
+          <p className="dashboard-empty">No specialist workload yet.</p>
         )}
       </div>
     </div>
@@ -478,7 +478,7 @@ function InsightTable({ title, subtitle, tickets }: { title: string; subtitle: s
             </Link>
           ))
         ) : (
-          <p className="muted">No tickets in this group.</p>
+          <p className="dashboard-empty">No tickets in this group.</p>
         )}
       </div>
     </div>
@@ -765,6 +765,7 @@ export function DashboardWorkspace() {
   const specialistPerformance = stats.specialistPerformance ?? [];
   const specialistTrend = stats.specialistTrend ?? [];
   const hiddenWidgets = new Set(preference.hiddenWidgets);
+  const activeEventCount = eventSummaryCards.find((card) => card.title === "Active Events")?.value ?? 0;
 
   const renderWidget = (id: DashboardWidgetId) => {
     switch (id) {
@@ -851,10 +852,31 @@ export function DashboardWorkspace() {
 
   return (
     <div className="dashboard-page">
-      <div className="dashboard-toolbar">
-        <button className={`button ${customizing ? "primary" : "secondary"}`} type="button" onClick={() => setCustomizing((current) => !current)}>
-          <Settings2 size={16} /> {customizing ? "Done" : "Customize"}
-        </button>
+      <div className="dashboard-hero panel">
+        <div className="dashboard-hero-copy">
+          <span className="status-pill">Live overview</span>
+          <h2>Service operations at a glance</h2>
+          <p className="muted">Track ticket volume, event service demand, specialist workload, and queues that need action.</p>
+        </div>
+        <div className="dashboard-hero-metrics" aria-label="Dashboard summary">
+          <Link href={ticketHref({ statuses: activeStatuses })}>
+            <span>Open tickets</span>
+            <strong>{stats.summary.totalOpen}</strong>
+          </Link>
+          <Link href={eventHref({ status: "IN_PROGRESS" })}>
+            <span>Active events</span>
+            <strong>{activeEventCount}</strong>
+          </Link>
+          <Link href={ticketHref({ scope: "unassigned", statuses: activeStatuses })}>
+            <span>Unassigned</span>
+            <strong>{stats.summary.unassignedTickets}</strong>
+          </Link>
+        </div>
+        <div className="dashboard-toolbar">
+          <button className={`button ${customizing ? "primary" : "secondary"}`} type="button" onClick={() => setCustomizing((current) => !current)}>
+            <Settings2 size={16} /> {customizing ? "Done" : "Customize"}
+          </button>
+        </div>
       </div>
       {preferenceNotice ? <div className={preferenceNotice.includes("Unable") ? "error-banner" : "success-banner"}>{preferenceNotice}</div> : null}
       {customizing ? (
