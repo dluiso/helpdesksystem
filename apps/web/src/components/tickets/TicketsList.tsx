@@ -229,6 +229,10 @@ function statusClass(value: string) {
   return `ticket-status-${value.toLowerCase().replace(/_/g, "-")}`;
 }
 
+function priorityClass(value: string) {
+  return `ticket-priority-${value.toLowerCase().replace(/_/g, "-")}`;
+}
+
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
@@ -923,7 +927,7 @@ export function TicketsList() {
   function renderCell(ticket: TicketListItem, columnId: ColumnId) {
     switch (columnId) {
       case "ticketNumber":
-        return ticket.id ? <Link href={`/tickets/${ticket.ticketNumber}`}>{ticket.ticketNumber}</Link> : ticket.ticketNumber;
+        return ticket.id ? <Link className="ticket-number-link" href={`/tickets/${ticket.ticketNumber}`}>{ticket.ticketNumber}</Link> : <span className="ticket-number-link">{ticket.ticketNumber}</span>;
       case "subject":
         return ticket.id ? (
           <Link className="table-cell-stack ticket-subject-link" href={`/tickets/${ticket.ticketNumber}`}>
@@ -1023,7 +1027,7 @@ export function TicketsList() {
       case "priority":
         return (
           <select
-            className="input inline-ticket-select"
+            className={`input inline-ticket-select inline-priority-select ${priorityClass(ticket.priority)}`}
             value={ticket.priority}
             onChange={(event) => void updateTicketInline(ticket, "priority", { priority: event.target.value })}
             disabled={isTicketInlineBusy(ticket) || ticket.status === "MERGED" || trashMode}
@@ -1037,15 +1041,15 @@ export function TicketsList() {
           </select>
         );
       case "source":
-        return label(ticket.source);
+        return <span className="status-pill muted-pill ticket-source-pill">{label(ticket.source)}</span>;
       case "createdAt":
         return formatDate(ticket.createdAt);
       case "updatedAt":
         return formatDate(ticket.updatedAt);
       case "messages":
-        return ticket._count.messages;
+        return <span className="ticket-count-pill">{ticket._count.messages}</span>;
       case "attachments":
-        return ticket._count.attachments;
+        return <span className="ticket-count-pill">{ticket._count.attachments}</span>;
       default:
         return null;
     }
@@ -1183,7 +1187,10 @@ export function TicketsList() {
     <>
       <div className="tickets-compact-header">
         <div className="tickets-compact-title">
-          <h1>Tickets</h1>
+          <div className="tickets-title-copy">
+            <h1>Tickets</h1>
+            <p className="muted">Manage queue triage, assignments, status, priority, saved views, and recycle bin recovery.</p>
+          </div>
           <span className="count-pill">{totalTickets} total</span>
         </div>
         <label className="input-with-icon tickets-search-field">
@@ -1484,16 +1491,16 @@ export function TicketsList() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={visibleOrderedColumns.length + 2}>Loading tickets...</td>
+                  <td className="tickets-empty-cell" colSpan={visibleOrderedColumns.length + 2}>Loading tickets...</td>
                 </tr>
               ) : null}
               {!loading && tickets.length === 0 ? (
                 <tr>
-                  <td colSpan={visibleOrderedColumns.length + 2}>No tickets match the current filters.</td>
+                  <td className="tickets-empty-cell" colSpan={visibleOrderedColumns.length + 2}>No tickets match the current filters.</td>
                 </tr>
               ) : null}
               {tickets.map((ticket, index) => (
-                <tr key={ticket.id ?? `${ticket.ticketNumber}-${index}`}>
+                <tr className={selectedTicketIds.includes(ticket.id) ? "selected" : ""} key={ticket.id ?? `${ticket.ticketNumber}-${index}`}>
                   <td>
                     <input
                       type="checkbox"
@@ -1521,7 +1528,7 @@ export function TicketsList() {
           {loading ? <div className="mobile-empty-state">Loading tickets...</div> : null}
           {!loading && tickets.length === 0 ? <div className="mobile-empty-state">No tickets match the current filters.</div> : null}
           {tickets.map((ticket, index) => (
-            <article className="mobile-ticket-card" key={ticket.id ?? `${ticket.ticketNumber}-mobile-${index}`}>
+            <article className={`mobile-ticket-card${selectedTicketIds.includes(ticket.id) ? " selected" : ""}`} key={ticket.id ?? `${ticket.ticketNumber}-mobile-${index}`}>
               <div className="mobile-ticket-card-header">
                 <label className="mobile-ticket-select-row">
                   <input
