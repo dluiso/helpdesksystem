@@ -524,8 +524,8 @@ export function EventServicesConfigPanel() {
                         </div>
                         <span className="status-pill">{service.isActive ? "Active" : "Inactive"}</span>
                         <div className="event-config-actions">
-                          <button className="button icon-button" type="button" title="Move up" onClick={() => moveService(service, -1)}><ArrowUp size={15} /></button>
-                          <button className="button icon-button" type="button" title="Move down" onClick={() => moveService(service, 1)}><ArrowDown size={15} /></button>
+                          <button className="button icon-button" type="button" title="Move up" aria-label={`Move ${service.name} service up`} onClick={() => moveService(service, -1)}><ArrowUp size={15} /></button>
+                          <button className="button icon-button" type="button" title="Move down" aria-label={`Move ${service.name} service down`} onClick={() => moveService(service, 1)}><ArrowDown size={15} /></button>
                           <button className="button secondary" type="button" onClick={() => startServiceEdit(service)}>Edit</button>
                           <button className="button secondary" type="button" onClick={() => toggleService(service)}>{service.isActive ? "Deactivate" : "Activate"}</button>
                         </div>
@@ -585,8 +585,8 @@ export function EventServicesConfigPanel() {
                         </div>
                         <span className="status-pill">{field.isActive ? "Active" : "Inactive"}</span>
                         <div className="event-config-actions">
-                          <button className="button icon-button" type="button" title="Move up" onClick={() => moveField(field, -1)}><ArrowUp size={15} /></button>
-                          <button className="button icon-button" type="button" title="Move down" onClick={() => moveField(field, 1)}><ArrowDown size={15} /></button>
+                          <button className="button icon-button" type="button" title="Move up" aria-label={`Move ${field.label} field up`} onClick={() => moveField(field, -1)}><ArrowUp size={15} /></button>
+                          <button className="button icon-button" type="button" title="Move down" aria-label={`Move ${field.label} field down`} onClick={() => moveField(field, 1)}><ArrowDown size={15} /></button>
                           <button className="button secondary" type="button" onClick={() => startFieldEdit(field)}>Edit</button>
                           <button className="button secondary" type="button" onClick={() => toggleField(field)}>{field.isActive ? "Deactivate" : "Activate"}</button>
                         </div>

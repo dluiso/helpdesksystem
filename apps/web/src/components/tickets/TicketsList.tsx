@@ -1358,10 +1358,10 @@ export function TicketsList() {
                     <span>{column.label}</span>
                   </label>
                   <div className="row-actions">
-                    <button className="icon-button" type="button" title="Move left" onClick={() => moveColumn(column.id, -1)} disabled={index === 0}>
+                    <button className="icon-button" type="button" title="Move left" aria-label={`Move ${column.label} column left`} onClick={() => moveColumn(column.id, -1)} disabled={index === 0}>
                       <ArrowLeft size={15} aria-hidden="true" />
                     </button>
-                    <button className="icon-button" type="button" title="Move right" onClick={() => moveColumn(column.id, 1)} disabled={index === columnOrder.length - 1}>
+                    <button className="icon-button" type="button" title="Move right" aria-label={`Move ${column.label} column right`} onClick={() => moveColumn(column.id, 1)} disabled={index === columnOrder.length - 1}>
                       <ArrowRight size={15} aria-hidden="true" />
                     </button>
                   </div>
@@ -1514,7 +1514,7 @@ export function TicketsList() {
                   ))}
                   <td className="row-actions-cell">
                     {ticket.id ? (
-                      <Link className="icon-button" href={`/tickets/${ticket.ticketNumber}`} title="Open ticket">
+                      <Link className="icon-button" href={`/tickets/${ticket.ticketNumber}`} title="Open ticket" aria-label={`Open ticket ${ticket.ticketNumber}`}>
                         <Eye size={16} aria-hidden="true" />
                       </Link>
                     ) : null}

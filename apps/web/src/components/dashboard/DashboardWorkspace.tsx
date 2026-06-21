@@ -533,7 +533,7 @@ function DashboardWidgetShell({
           <span>
             <GripVertical size={14} /> {widgetLabel}
           </span>
-          <button className="icon-button subtle" type="button" onClick={() => onHide(id)} title={`Hide ${widgetLabel}`}>
+          <button className="icon-button subtle" type="button" onClick={() => onHide(id)} title={`Hide ${widgetLabel}`} aria-label={`Hide ${widgetLabel}`}>
             <EyeOff size={14} />
           </button>
         </div>

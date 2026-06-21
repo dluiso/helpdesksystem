@@ -271,9 +271,23 @@ a:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
-[role="button"]:focus-visible {
-  outline: 2px solid transparent;
-  box-shadow: 0 0 0 3px var(--focus-ring);
+[role="button"]:focus-visible,
+[role="tab"]:focus-visible,
+[role="menuitem"]:focus-visible,
+[role="switch"]:focus-visible,
+summary:focus-visible,
+[contenteditable="true"]:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand-primary) 86%, var(--text) 14%);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--focus-ring);
+}
+
+button:focus:not(:focus-visible),
+a:focus:not(:focus-visible),
+input:focus:not(:focus-visible),
+textarea:focus:not(:focus-visible),
+select:focus:not(:focus-visible) {
+  outline: none;
 }
 
 select {
@@ -473,6 +487,7 @@ select.compact-select {
 .button:disabled {
   color: var(--disabled-text);
   background: var(--disabled-bg);
+  border-color: var(--line);
   cursor: not-allowed;
   opacity: 1;
   transform: none;
@@ -2074,7 +2089,7 @@ select.compact-select {
 .error-banner {
   margin-bottom: 16px;
   padding: 12px 14px;
-  border: 1px solid #f5b5ae;
+  border: 1px solid color-mix(in srgb, var(--danger) 38%, var(--line));
   border-radius: var(--radius);
   color: var(--danger);
   background: var(--danger-surface);
@@ -2084,7 +2099,7 @@ select.compact-select {
 .success-banner {
   margin-bottom: 16px;
   padding: 12px 14px;
-  border: 1px solid #a8e0c6;
+  border: 1px solid color-mix(in srgb, var(--success) 36%, var(--line));
   border-radius: var(--radius);
   color: var(--success);
   background: var(--success-surface);
@@ -5063,6 +5078,14 @@ select.public-event-input[multiple] {
   background: var(--surface-hover);
 }
 
+.profile-toggle-card:focus-within,
+.profile-check-card:focus-within,
+.checkbox-row:focus-within,
+.notification-channel-item:focus-within {
+  border-color: color-mix(in srgb, var(--brand-primary) 48%, var(--line));
+  box-shadow: 0 0 0 4px var(--focus-ring);
+}
+
 .profile-toggle-card input,
 .profile-check-card input {
   margin-top: 3px;
@@ -7580,6 +7603,7 @@ a.dashboard-list-row:hover {
 .status-pill {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
   min-height: 24px;
   border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
@@ -7596,7 +7620,9 @@ a.dashboard-list-row:hover {
 .count-pill {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   min-height: 26px;
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
   border-radius: 999px;
   padding: 0 9px;
   color: var(--count-pill-text);
@@ -8071,8 +8097,9 @@ a.dashboard-list-row:hover {
 }
 
 .icon-button {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-xs);
@@ -8100,6 +8127,7 @@ a.dashboard-list-row:hover {
 }
 
 .icon-button:disabled {
+  border-color: var(--line);
   color: var(--disabled-text);
   background: var(--disabled-bg);
   cursor: not-allowed;
@@ -10086,7 +10114,7 @@ a.dashboard-list-row:hover {
   }
 
   .editor-toolbar .icon-button {
-    flex: 0 0 36px;
+    flex: 0 0 40px;
   }
 
   .editor-toolbar .compact-button {
