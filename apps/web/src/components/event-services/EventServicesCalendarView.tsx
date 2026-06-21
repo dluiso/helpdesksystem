@@ -157,6 +157,7 @@ export function EventServicesCalendarView() {
     });
     return next;
   }, [requests]);
+  const todayKey = localDateKey(new Date());
 
   async function loadCalendar(nextFilters = filters) {
     setLoading(true);
@@ -272,11 +273,13 @@ export function EventServicesCalendarView() {
 
   return (
     <div className="event-calendar-page">
-      <div className="compact-page-header">
-        <div>
+      <div className="compact-page-header event-calendar-header">
+        <div className="event-page-title-block">
+          <span className="event-page-eyebrow">Calendar Operations</span>
           <h1>Event Calendar</h1>
+          <p className="muted">Plan event requests, specialists, service tasks, and Microsoft Calendar work.</p>
         </div>
-        <div className="button-row">
+        <div className="button-row event-header-actions">
           <button className="button secondary" type="button" onClick={() => { window.location.href = "/event-services"; }}>Back to Requests</button>
           <button className="button secondary" type="button" onClick={() => void loadCalendar()} disabled={loading}>
             <RefreshCw size={16} aria-hidden="true" />
@@ -306,18 +309,18 @@ export function EventServicesCalendarView() {
             </button>
           ))}
         </div>
-        <select className="input" value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}>
+        <label className="event-filter-field"><span>Status</span><select className="input" value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}>
           <option value="">All statuses</option>
           {statuses.map((status) => <option key={status} value={status}>{label(status)}</option>)}
-        </select>
-        <select className="input" value={filters.serviceId} onChange={(event) => setFilters((current) => ({ ...current, serviceId: event.target.value }))}>
+        </select></label>
+        <label className="event-filter-field"><span>Service</span><select className="input" value={filters.serviceId} onChange={(event) => setFilters((current) => ({ ...current, serviceId: event.target.value }))}>
           <option value="">All services</option>
           {services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}
-        </select>
-        <select className="input" value={filters.assignedUserId} onChange={(event) => setFilters((current) => ({ ...current, assignedUserId: event.target.value }))}>
+        </select></label>
+        <label className="event-filter-field"><span>Specialist</span><select className="input" value={filters.assignedUserId} onChange={(event) => setFilters((current) => ({ ...current, assignedUserId: event.target.value }))}>
           <option value="">All specialists</option>
           {users.map((user) => <option key={user.id} value={user.id}>{userName(user)}</option>)}
-        </select>
+        </select></label>
         <button className="button" type="button" onClick={() => void loadCalendar(filters)}>Apply</button>
       </section>
 
@@ -329,14 +332,14 @@ export function EventServicesCalendarView() {
             const dayRequests = eventsByDay.get(key) ?? [];
             const outsideMonth = mode === "month" && day.getMonth() !== anchor.getMonth();
             return (
-              <article className={`event-calendar-day${outsideMonth ? " muted-day" : ""}`} key={key}>
+              <article className={`event-calendar-day${outsideMonth ? " muted-day" : ""}${key === todayKey ? " today-day" : ""}`} key={key}>
                 <header>
                   <strong>{mode === "day" ? day.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }) : day.getDate()}</strong>
                   <span>{dayRequests.length ? `${dayRequests.length} event${dayRequests.length === 1 ? "" : "s"}` : ""}</span>
                 </header>
                 <div className="event-calendar-events">
                   {dayRequests.map((request) => (
-                    <button className={`event-calendar-card status-${request.status.toLowerCase()}`} type="button" key={request.id} onClick={() => setSelectedId(request.id)}>
+                    <button className={`event-calendar-card status-${request.status.toLowerCase()}${selectedId === request.id ? " active" : ""}`} type="button" key={request.id} onClick={() => setSelectedId(request.id)}>
                       <span>{request.startTime ?? "--"} {request.trackingNumber}</span>
                       <strong>{request.eventName}</strong>
                       <small>{request.services.map((item) => item.service.name).join(", ") || "No service"}</small>
@@ -354,7 +357,7 @@ export function EventServicesCalendarView() {
             <>
               <div className="section-heading compact-heading">
                 <div>
-                  <span className="status-pill">{label(selected.status)}</span>
+                  <span className={`status-pill event-status-${selected.status.toLowerCase().replace(/_/g, "-")}`}>{label(selected.status)}</span>
                   <h2>{selected.trackingNumber}</h2>
                   <p className="muted">{selected.eventName}</p>
                 </div>
@@ -412,7 +415,7 @@ export function EventServicesCalendarView() {
                 <h3>Tasks</h3>
                 <div className="event-calendar-task-list">
                   {selected.tasks.map((task) => (
-                    <article className="event-task-card" key={task.id}>
+                    <article className={`event-task-card task-status-${task.status.toLowerCase().replace(/_/g, "-")}`} key={task.id}>
                       <strong>{task.title}</strong>
                       <span className="muted">{userName(task.assignedUser)} · {task.dueAt ? new Date(task.dueAt).toLocaleString() : "No due date"}</span>
                       <select className="input compact-select" value={task.status} onChange={(event) => void updateTask(task, event.target.value as TaskStatus)} disabled={busy === `task-${task.id}`}>

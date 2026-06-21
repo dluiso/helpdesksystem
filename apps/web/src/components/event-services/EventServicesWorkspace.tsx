@@ -468,11 +468,13 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
 
   return (
     <div className={detailPage ? "event-services-page event-detail-page" : "event-services-page"}>
-      <div className="compact-page-header">
-        <div>
+      <div className="compact-page-header event-page-header">
+        <div className="event-page-title-block">
+          <span className="event-page-eyebrow">Service Operations</span>
           <h1>{detailPage ? selected?.trackingNumber ?? detailTrackingNumber : "Event & Services"}</h1>
+          <p className="muted">{detailPage ? selected?.eventName ?? "Event request detail" : "Coordinate requests, specialists, tasks, calendar work, and requester updates."}</p>
         </div>
-        <div className="button-row">
+        <div className="button-row event-header-actions">
           {detailPage ? (
             <button className="button secondary" type="button" onClick={closeRequest}>
               <span>Back to Requests</span>
@@ -503,10 +505,10 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
       {notice ? <div className="alert success">{notice}</div> : null}
 
       <section className="dashboard-kpi-grid event-kpi-grid event-compact-kpi-grid">
-        <div className="dashboard-kpi-card"><ClipboardList size={18} /><span>Total Requests</span><strong>{summary.total}</strong><small>Current filtered view</small></div>
-        <div className="dashboard-kpi-card"><CalendarDays size={18} /><span>New</span><strong>{summary.newRequests}</strong><small>Needs review</small></div>
-        <div className="dashboard-kpi-card"><UsersRound size={18} /><span>Assigned Specialists</span><strong>{summary.assigned}</strong><small>Direct assignments</small></div>
-        <div className="dashboard-kpi-card"><CheckCircle2 size={18} /><span>Completed</span><strong>{summary.completed}</strong><small>Finished events</small></div>
+        <div className="dashboard-kpi-card event-kpi-card"><ClipboardList size={18} /><span>Total Requests</span><strong>{summary.total}</strong><small>Current filtered view</small></div>
+        <div className="dashboard-kpi-card event-kpi-card"><CalendarDays size={18} /><span>New</span><strong>{summary.newRequests}</strong><small>Needs review</small></div>
+        <div className="dashboard-kpi-card event-kpi-card"><UsersRound size={18} /><span>Assigned Specialists</span><strong>{summary.assigned}</strong><small>Direct assignments</small></div>
+        <div className="dashboard-kpi-card event-kpi-card"><CheckCircle2 size={18} /><span>Completed</span><strong>{summary.completed}</strong><small>Finished events</small></div>
       </section>
 
       <div className="event-workspace-tabs" role="tablist" aria-label="Event & Services views">
@@ -522,19 +524,19 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
       {activeTab === "requests" ? (
       <>
       <section className="panel event-filter-panel">
-        <input className="input" placeholder="Search tracking, event, requester, venue..." value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} />
-        <select className="input" value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}>
+        <label className="event-filter-field"><span>Search</span><input className="input" placeholder="Search tracking, event, requester, venue..." value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} /></label>
+        <label className="event-filter-field"><span>Status</span><select className="input" value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}>
           <option value="">All statuses</option>
           {statuses.map((status) => <option key={status} value={status}>{label(status)}</option>)}
-        </select>
-        <select className="input" value={filters.serviceId} onChange={(event) => setFilters((current) => ({ ...current, serviceId: event.target.value }))}>
+        </select></label>
+        <label className="event-filter-field"><span>Service</span><select className="input" value={filters.serviceId} onChange={(event) => setFilters((current) => ({ ...current, serviceId: event.target.value }))}>
           <option value="">All services</option>
           {services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}
-        </select>
-        <select className="input" value={filters.assignedUserId} onChange={(event) => setFilters((current) => ({ ...current, assignedUserId: event.target.value }))}>
+        </select></label>
+        <label className="event-filter-field"><span>Specialist</span><select className="input" value={filters.assignedUserId} onChange={(event) => setFilters((current) => ({ ...current, assignedUserId: event.target.value }))}>
           <option value="">All technicians</option>
           {users.map((user) => <option key={user.id} value={user.id}>{userName(user)}</option>)}
-        </select>
+        </select></label>
         <button className="button" type="button" onClick={() => void loadData(filters)}>Apply Filters</button>
       </section>
 
@@ -552,7 +554,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
               </button>
             </div>
           </div>
-          <div className="table-scroll">
+          <div className="table-scroll event-table-scroll">
             <table className="tickets-table event-request-table">
               <thead>
                 <tr>
@@ -595,7 +597,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                         onClick={(event) => event.stopPropagation()}
                       />
                     </td>
-                    <td><strong>{request.trackingNumber}</strong></td>
+                    <td><strong className="event-tracking-number">{request.trackingNumber}</strong></td>
                     <td>
                       <strong>{request.eventName}</strong>
                       <span className="muted">{request.venue ?? "No venue"}</span>
@@ -623,7 +625,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                         <ChevronDown className="event-select-chevron" size={15} aria-hidden="true" />
                       </span>
                     </td>
-                    <td>{label(request.priority)}</td>
+                    <td><span className={`status-pill event-priority-${request.priority.toLowerCase()}`}>{label(request.priority)}</span></td>
                     <td><span className="muted">{request.assignees.map((assignee) => userName(assignee.user)).join(", ") || "Unassigned"}</span></td>
                     <td>{formatDateTime(request.updatedAt)}</td>
                     <td>
@@ -671,7 +673,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
               </div>
 
               {detailSection === "overview" ? (
-                <div className="nested-panel">
+                <div className="nested-panel event-detail-section-panel">
                   <div className="section-heading compact-heading">
                     <div>
                       <h3>Request Management</h3>
@@ -701,7 +703,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
               ) : null}
 
               {detailSection === "tasks" ? (
-                <div className="nested-panel">
+                <div className="nested-panel event-detail-section-panel">
                   <div className="section-heading compact-heading">
                     <div>
                       <h3>Task Flow</h3>
@@ -721,7 +723,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                         {selected.tasks.filter((task) => task.status === status).map((task) => {
                           const calendarDraft = calendarDrafts[task.id] ?? { startDate: selected.eventDate?.slice(0, 10) ?? "", startTime: selected.startTime ?? "", endDate: selected.eventDate?.slice(0, 10) ?? "", endTime: selected.endTime ?? "", location: selected.venue ?? "", notes: "" };
                           return (
-                            <article className="event-task-card" key={task.id}>
+                            <article className={`event-task-card task-status-${task.status.toLowerCase().replace(/_/g, "-")}`} key={task.id}>
                               <strong>{task.title}</strong>
                               {task.description ? <p className="muted">{task.description}</p> : null}
                               <span className="muted">Assigned: {userName(task.assignedUser)}</span>
@@ -752,7 +754,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
               ) : null}
 
               {detailSection === "messages" ? (
-                <div className="nested-panel">
+                <div className="nested-panel event-detail-section-panel">
                   <div className="section-heading compact-heading">
                     <div>
                       <h3><MessageSquare size={16} />Requester Messages</h3>
@@ -791,7 +793,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
               ) : null}
 
               {detailSection === "activity" ? (
-                <div className="nested-panel">
+                <div className="nested-panel event-detail-section-panel">
                   <h3>Activity Timeline</h3>
                   {selected.comments?.length || selected.messages?.length ? null : <p className="muted">No visible activity yet.</p>}
                   {selected.messages?.map((message) => <div className="event-comment" key={`message-${message.id}`}><strong>{label(message.direction)} message</strong><p>{message.bodyText}</p><small>{formatDateTime(message.createdAt)}</small></div>)}
@@ -816,7 +818,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
               <span>Refresh</span>
             </button>
           </div>
-          <div className="table-scroll">
+          <div className="table-scroll event-table-scroll">
             <table className="tickets-table event-task-table">
               <thead>
                 <tr>
@@ -887,7 +889,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                 <X size={16} aria-hidden="true" />
               </button>
             </div>
-            <div className="table-scroll">
+            <div className="table-scroll event-table-scroll">
               <table className="tickets-table event-request-table">
                 <thead>
                   <tr>

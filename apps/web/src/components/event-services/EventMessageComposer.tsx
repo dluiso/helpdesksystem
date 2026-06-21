@@ -517,7 +517,7 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
 
   return (
     <div className="editor event-message-composer">
-      <div className="editor-toolbar" aria-label="Event message tools">
+      <div className="editor-toolbar editor-format-toolbar" aria-label="Event message tools">
         {toolbar.map((item) => {
           const Icon = item.icon;
           return (
@@ -555,7 +555,7 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
           <Wand2 size={15} aria-hidden="true" /><span>Draft Reply</span>
         </button>
       </div>
-      <div className="button-row">
+      <div className="reply-mode-toggle event-message-mode-toggle">
         <button className={`button ${mode === "public" ? "" : "secondary"}`} type="button" onClick={() => setMode("public")}>Public Message</button>
         <button className={`button ${mode === "internal" ? "" : "secondary"}`} type="button" onClick={() => setMode("internal")}>Internal Note</button>
       </div>
@@ -616,14 +616,14 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
           </div>
         </div>
       ) : null}
-      <div className="grid columns-2">
+      <div className="grid columns-2 ticket-editor-attachments event-composer-attachments">
         <EventAttachmentDropzone requestId={requestId} onUploaded={(attachment) => setAttachments((current) => [...current, attachment])} />
-        <div className="panel">
+        <div className="panel ticket-attachment-preview-panel event-attachment-preview-panel">
           <h3>Attachments</h3>
           <AttachmentPreviewList attachments={attachments} onRemove={(attachmentId) => void removeAttachment(attachmentId)} />
         </div>
       </div>
-      <div className="editor-toolbar">
+      <div className="editor-toolbar editor-submit-toolbar">
         <SignatureInserter onInsert={insertHtml} />
         {users.length ? (
           <div className="notify-picker">
