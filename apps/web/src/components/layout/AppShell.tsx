@@ -95,7 +95,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="shell">
       {mobileNavOpen ? <button className="mobile-nav-backdrop" type="button" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} /> : null}
-      <aside className={`sidebar${mobileNavOpen ? " mobile-open" : ""}`}>
+      <aside className={`sidebar${mobileNavOpen ? " mobile-open" : ""}`} aria-label="Application navigation">
         <Link className="brand" href="/dashboard">
           {branding.logoUrl ? <img className="brand-logo desktop-brand-logo" src={branding.logoUrl} alt="" style={logoBackgroundStyle} /> : null}
           {branding.mobileLogoUrl || branding.logoUrl ? (
@@ -132,14 +132,16 @@ export function AppShell({ children }: { children: ReactNode }) {
             const eventServicesActive = item.label === "Event & Services" && active;
             return (
               <div className="nav-item-group" key={item.href}>
-                <Link className={`nav-link${active ? " active" : ""}`} href={item.href}>
-                  <Icon size={18} aria-hidden="true" />
-                  <span>{item.label}</span>
+                <Link className={`nav-link${active ? " active" : ""}`} href={item.href} aria-current={active ? "page" : undefined}>
+                  <span className="nav-icon">
+                    <Icon size={18} aria-hidden="true" />
+                  </span>
+                  <span className="nav-label">{item.label}</span>
                 </Link>
                 {eventServicesActive ? (
                   <div className="nav-submenu" aria-label="Event & Services subnavigation">
-                    <Link className={pathname === "/event-services" ? "active" : ""} href="/event-services">Requests</Link>
-                    <Link className={pathname === "/event-services/calendar" ? "active" : ""} href="/event-services/calendar">Calendar View</Link>
+                    <Link className={pathname === "/event-services" ? "active" : ""} href="/event-services" aria-current={pathname === "/event-services" ? "page" : undefined}>Requests</Link>
+                    <Link className={pathname === "/event-services/calendar" ? "active" : ""} href="/event-services/calendar" aria-current={pathname === "/event-services/calendar" ? "page" : undefined}>Calendar View</Link>
                   </div>
                 ) : null}
               </div>
@@ -153,7 +155,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <button className="mobile-menu-button" type="button" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}>
               <Menu size={20} aria-hidden="true" />
             </button>
-            <div>
+            <div className="topbar-company">
               <strong>{branding.companyName}</strong>
               <div className="muted">{branding.supportEmail}</div>
             </div>
@@ -179,7 +181,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             const Icon = iconMap[item.label as keyof typeof iconMap] ?? LifeBuoy;
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
-              <Link className={`mobile-bottom-nav-link${active ? " active" : ""}`} href={item.href} key={item.href}>
+              <Link className={`mobile-bottom-nav-link${active ? " active" : ""}`} href={item.href} key={item.href} aria-current={active ? "page" : undefined}>
                 <Icon size={18} aria-hidden="true" />
                 <span>{item.label}</span>
               </Link>
