@@ -235,8 +235,8 @@ function SummaryCard({ title, value, note }: { title: string; value: string | nu
 function ActivityChart({ items }: { items: TicketReportSummary["activity"] }) {
   const maxValue = Math.max(1, ...items.flatMap((item) => [item.created, item.closed, item.resolved]));
   return (
-    <div className="panel dashboard-chart-card dashboard-wide-card">
-      <div>
+    <div className="panel dashboard-chart-card dashboard-wide-card report-chart-card">
+      <div className="report-card-heading">
         <h2>Ticket Activity</h2>
         <p className="muted">Created, resolved, and closed tickets in the selected period.</p>
       </div>
@@ -264,8 +264,8 @@ function ActivityChart({ items }: { items: TicketReportSummary["activity"] }) {
 function EventActivityChart({ items }: { items: EventReportSummary["activity"] }) {
   const maxValue = Math.max(1, ...items.flatMap((item) => [item.created, item.completed, item.cancelled]));
   return (
-    <div className="panel dashboard-chart-card dashboard-wide-card">
-      <div>
+    <div className="panel dashboard-chart-card dashboard-wide-card report-chart-card">
+      <div className="report-card-heading">
         <h2>Event Activity</h2>
         <p className="muted">Created, completed, and cancelled event requests in the selected period.</p>
       </div>
@@ -293,8 +293,8 @@ function EventActivityChart({ items }: { items: EventReportSummary["activity"] }
 function HorizontalBars({ title, subtitle, items }: { title: string; subtitle: string; items: Array<{ label: string; count: number }> }) {
   const maxValue = Math.max(1, ...items.map((item) => item.count));
   return (
-    <div className="panel dashboard-chart-card">
-      <div>
+    <div className="panel dashboard-chart-card report-chart-card">
+      <div className="report-card-heading">
         <h2>{title}</h2>
         <p className="muted">{subtitle}</p>
       </div>
@@ -662,13 +662,13 @@ export function ReportsWorkspace() {
     <div className="reports-workspace">
       {error ? <div className="error-banner">{error}</div> : null}
       <section className="panel reports-filter-panel">
-        <div className="section-heading compact-heading">
+        <div className="section-heading compact-heading reports-filter-heading">
           <div>
             <h2>{isTicketReport ? "Ticket Reports" : "Event & Services Reports"}</h2>
             <p className="muted">{isTicketReport ? "Operational ticket performance, workload, status, and export reporting." : "Event request volume, service workload, task status, and export reporting."}</p>
           </div>
-          <div className="form-actions">
-            <div className="segmented-control">
+          <div className="form-actions reports-header-actions">
+            <div className="segmented-control reports-type-tabs">
               <button className={isTicketReport ? "active" : ""} type="button" aria-pressed={isTicketReport} onClick={() => setReportType("ticket-report")}>Tickets</button>
               <button className={!isTicketReport ? "active" : ""} type="button" aria-pressed={!isTicketReport} onClick={() => setReportType("event-service-report")}>Events & Services</button>
             </div>
@@ -758,18 +758,30 @@ export function ReportsWorkspace() {
           </div>
         ) : null}
         <div className="reports-filter-grid">
-          <input className="input" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
-          <input className="input" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
-          <select className="input" value={groupBy} onChange={(event) => setGroupBy(event.target.value as typeof groupBy)}>
-            <option value="day">By day</option>
-            <option value="week">By week</option>
-            <option value="month">By month</option>
-            <option value="year">By year</option>
-          </select>
-          <select className="input" value={clientId} onChange={(event) => setClientId(event.target.value)}>
-            <option value="">All clients</option>
-            {options?.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
-          </select>
+          <label className="report-filter-field">
+            <span>Start date</span>
+            <input className="input" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+          </label>
+          <label className="report-filter-field">
+            <span>End date</span>
+            <input className="input" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+          </label>
+          <label className="report-filter-field">
+            <span>Grouping</span>
+            <select className="input" value={groupBy} onChange={(event) => setGroupBy(event.target.value as typeof groupBy)}>
+              <option value="day">By day</option>
+              <option value="week">By week</option>
+              <option value="month">By month</option>
+              <option value="year">By year</option>
+            </select>
+          </label>
+          <label className="report-filter-field">
+            <span>Client</span>
+            <select className="input" value={clientId} onChange={(event) => setClientId(event.target.value)}>
+              <option value="">All clients</option>
+              {options?.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+            </select>
+          </label>
         </div>
         <button className="button secondary reports-advanced-toggle" type="button" onClick={() => setShowAdvancedFilters((current) => !current)}>
           <SlidersHorizontal size={16} aria-hidden="true" />
@@ -778,44 +790,68 @@ export function ReportsWorkspace() {
         </button>
         {showAdvancedFilters ? (
           <div className="reports-advanced-panel">
-            <div className="reports-filter-grid">
-          <select className="input" value={assignedUserId} onChange={(event) => setAssignedUserId(event.target.value)}>
-            <option value="">{isTicketReport ? "All technicians" : "All specialists"}</option>
-            {options?.users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
-          </select>
-          {isTicketReport ? (
-            <select className="input" value={assignedTeamId} onChange={(event) => setAssignedTeamId(event.target.value)}>
-              <option value="">All teams</option>
-              {ticketData?.options.teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
-            </select>
-          ) : (
-            <select className="input" value={serviceId} onChange={(event) => setServiceId(event.target.value)}>
-              <option value="">All services</option>
-              {eventData?.options.services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}
-            </select>
-          )}
-          <select className="input" value={priority} onChange={(event) => setPriority(event.target.value)}>
-            <option value="">All priorities</option>
-            {options?.priorities.map((item) => <option key={item} value={item}>{label(item)}</option>)}
-          </select>
-          {isTicketReport ? (
-            <>
-              <select className="input" value={source} onChange={(event) => setSource(event.target.value)}>
-                <option value="">All sources</option>
-                {ticketData?.options.sources.map((item) => <option key={item} value={item}>{label(item)}</option>)}
-              </select>
-              <select className="input" value={attachments} onChange={(event) => setAttachments(event.target.value as typeof attachments)}>
-                <option value="all">All attachments</option>
-                <option value="with">With attachments</option>
-                <option value="without">Without attachments</option>
-              </select>
-              <select className="input" value={estimateMode} onChange={(event) => setEstimateMode(event.target.value as typeof estimateMode)}>
-                <option value="none">No estimate</option>
-                <option value="perTicket">Value per ticket</option>
-              </select>
-              <input className="input" type="number" min="0" step="0.01" value={valuePerTicket} onChange={(event) => setValuePerTicket(event.target.value)} disabled={estimateMode === "none"} placeholder="Value per ticket" />
-            </>
-          ) : null}
+            <div className="reports-filter-grid reports-advanced-grid">
+              <label className="report-filter-field">
+                <span>{isTicketReport ? "Technician" : "Specialist"}</span>
+                <select className="input" value={assignedUserId} onChange={(event) => setAssignedUserId(event.target.value)}>
+                  <option value="">{isTicketReport ? "All technicians" : "All specialists"}</option>
+                  {options?.users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
+                </select>
+              </label>
+              {isTicketReport ? (
+                <label className="report-filter-field">
+                  <span>Team</span>
+                  <select className="input" value={assignedTeamId} onChange={(event) => setAssignedTeamId(event.target.value)}>
+                    <option value="">All teams</option>
+                    {ticketData?.options.teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+                  </select>
+                </label>
+              ) : (
+                <label className="report-filter-field">
+                  <span>Service</span>
+                  <select className="input" value={serviceId} onChange={(event) => setServiceId(event.target.value)}>
+                    <option value="">All services</option>
+                    {eventData?.options.services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}
+                  </select>
+                </label>
+              )}
+              <label className="report-filter-field">
+                <span>Priority</span>
+                <select className="input" value={priority} onChange={(event) => setPriority(event.target.value)}>
+                  <option value="">All priorities</option>
+                  {options?.priorities.map((item) => <option key={item} value={item}>{label(item)}</option>)}
+                </select>
+              </label>
+              {isTicketReport ? (
+                <>
+                  <label className="report-filter-field">
+                    <span>Source</span>
+                    <select className="input" value={source} onChange={(event) => setSource(event.target.value)}>
+                      <option value="">All sources</option>
+                      {ticketData?.options.sources.map((item) => <option key={item} value={item}>{label(item)}</option>)}
+                    </select>
+                  </label>
+                  <label className="report-filter-field">
+                    <span>Attachments</span>
+                    <select className="input" value={attachments} onChange={(event) => setAttachments(event.target.value as typeof attachments)}>
+                      <option value="all">All attachments</option>
+                      <option value="with">With attachments</option>
+                      <option value="without">Without attachments</option>
+                    </select>
+                  </label>
+                  <label className="report-filter-field">
+                    <span>Estimate</span>
+                    <select className="input" value={estimateMode} onChange={(event) => setEstimateMode(event.target.value as typeof estimateMode)}>
+                      <option value="none">No estimate</option>
+                      <option value="perTicket">Value per ticket</option>
+                    </select>
+                  </label>
+                  <label className="report-filter-field">
+                    <span>Value</span>
+                    <input className="input" type="number" min="0" step="0.01" value={valuePerTicket} onChange={(event) => setValuePerTicket(event.target.value)} disabled={estimateMode === "none"} placeholder="Value per ticket" />
+                  </label>
+                </>
+              ) : null}
             </div>
             <div className="reports-status-filter">
               <span><Filter size={14} aria-hidden="true" /> Status</span>
@@ -888,14 +924,14 @@ export function ReportsWorkspace() {
             ) : null}
           </section>
 
-          <section className="panel">
+          <section className="panel report-detail-panel">
             <div className="section-heading compact-heading">
               <div>
                 <h2>Report Detail</h2>
                 <p className="muted">Showing {firstDetailRow}-{lastDetailRow} of {activeData.totalMatched} {isTicketReport ? "tickets" : "event requests"}. Exports include the full filtered result.</p>
               </div>
             </div>
-            <div className="table-scroll">
+            <div className="table-scroll report-table-scroll">
               {ticketData ? (
               <table className="tickets-table">
                 <thead>
@@ -935,6 +971,11 @@ export function ReportsWorkspace() {
                       <td>{currency(ticket.estimatedValue)}</td>
                     </tr>
                   ))}
+                  {ticketData.detail.length === 0 ? (
+                    <tr>
+                      <td colSpan={9}>No ticket detail rows match this report.</td>
+                    </tr>
+                  ) : null}
                 </tbody>
               </table>
               ) : null}
@@ -979,11 +1020,16 @@ export function ReportsWorkspace() {
                       <td>{formatDate(request.updatedAt)}</td>
                     </tr>
                   ))}
+                  {eventData.detail.length === 0 ? (
+                    <tr>
+                      <td colSpan={10}>No event request detail rows match this report.</td>
+                    </tr>
+                  ) : null}
                 </tbody>
               </table>
               ) : null}
             </div>
-            <div className="pagination-bar">
+            <div className="pagination-bar report-pagination-bar">
               <div className="form-actions">
                 <span className="muted">Rows</span>
                 <select className="input compact-select" value={detailPageSize} onChange={(event) => { setDetailPageSize(event.target.value); setDetailPage(1); }}>
@@ -1006,7 +1052,7 @@ export function ReportsWorkspace() {
           </section>
 
           <section className="reports-admin-grid">
-            <div className="panel">
+            <div className="panel reports-admin-panel">
               <div className="section-heading compact-heading">
                 <div>
                   <h2><CalendarClock size={18} aria-hidden="true" /> Scheduled Reports</h2>
@@ -1032,7 +1078,7 @@ export function ReportsWorkspace() {
                 )) : <p className="muted">No scheduled reports yet.</p>}
               </div>
             </div>
-            <div className="panel">
+            <div className="panel reports-admin-panel">
               <div className="section-heading compact-heading">
                 <div>
                   <h2><History size={18} aria-hidden="true" /> Export History</h2>

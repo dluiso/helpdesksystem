@@ -195,6 +195,8 @@ export function ProfileWorkspace() {
     });
     return [...names];
   }, [profile?.user.groups]);
+  const groupCount = profile?.user.groups.length ?? 0;
+  const signatureStatus = signatureHtml.trim() ? "Configured" : "Not set";
 
   async function saveAccount() {
     setBusy("account");
@@ -406,15 +408,40 @@ export function ProfileWorkspace() {
   }, [activeSection, signatureHtml]);
 
   return (
-    <div className="stack">
-      <div className="compact-page-header">
+    <div className="stack profile-page">
+      <div className="compact-page-header profile-page-header">
         <div>
+          <span className="page-eyebrow">Account Preferences</span>
           <h1>Profile</h1>
+          <p className="muted">Manage your account information, security, appearance, notifications, and ticket reply signature.</p>
         </div>
       </div>
 
       {message ? <div className="success-banner">{message}</div> : null}
       {error ? <div className="error-banner">{error}</div> : null}
+
+      <section className="profile-summary-grid" aria-label="Profile summary">
+        <div className="profile-summary-card">
+          <span>Account</span>
+          <strong>{profile ? `${profile.user.firstName} ${profile.user.lastName}`.trim() || profile.user.email : "Loading"}</strong>
+          <small>{profile?.user.email ?? "Preparing account details"}</small>
+        </div>
+        <div className="profile-summary-card">
+          <span>Access</span>
+          <strong>{roles.length || groupCount}</strong>
+          <small>{roles.length ? "Assigned roles" : "Group memberships"}</small>
+        </div>
+        <div className="profile-summary-card">
+          <span>Security</span>
+          <strong>{profile?.user.mfaEnabled ? "2FA on" : "2FA off"}</strong>
+          <small>{profile?.user.lastLoginAt ? `Last login ${new Date(profile.user.lastLoginAt).toLocaleDateString()}` : "No recent login recorded"}</small>
+        </div>
+        <div className="profile-summary-card">
+          <span>Signature</span>
+          <strong>{signatureStatus}</strong>
+          <small>{useSignatureByDefault ? "Used by default" : "Manual use only"}</small>
+        </div>
+      </section>
 
       <div className="settings-layout profile-layout">
         <aside className="settings-nav profile-nav" aria-label="Profile sections">

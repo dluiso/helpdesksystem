@@ -180,11 +180,11 @@ export function NotificationBell() {
           <div className="notification-panel-header">
             <strong>{showPreferences ? "Notification Preferences" : "Notifications"}</strong>
             <div className="form-actions">
-              <button className="icon-button" type="button" onClick={() => setShowPreferences((current) => !current)} title="Preferences">
+              <button className="icon-button" type="button" onClick={() => setShowPreferences((current) => !current)} title="Preferences" aria-label="Notification preferences">
                 <Settings2 size={15} aria-hidden="true" />
               </button>
               {!showPreferences ? (
-                <button className="icon-button" type="button" onClick={markAllRead} disabled={busy} title="Mark all read">
+                <button className="icon-button" type="button" onClick={markAllRead} disabled={busy} title="Mark all read" aria-label="Mark all notifications as read">
                   <CheckCheck size={15} aria-hidden="true" />
                 </button>
               ) : null}

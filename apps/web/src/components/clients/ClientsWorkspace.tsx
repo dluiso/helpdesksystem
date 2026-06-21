@@ -156,6 +156,9 @@ export function ClientsWorkspace() {
     [clients, selectedClientId]
   );
   const selectedClientRequesterCount = selectedClientContacts.length || (selectedClient ? requesterCount(selectedClient) : 0);
+  const activeClientCount = clients.filter((client) => client.status === "ACTIVE").length;
+  const activeDomainCount = clients.reduce((total, client) => total + client.domains.filter((item) => item.isActive).length, 0);
+  const totalRequesterCount = clients.reduce((total, client) => total + requesterCount(client), 0);
   const filteredRequesters = useMemo(() => {
     const query = requesterSearch.trim().toLowerCase();
     if (!query) {
@@ -424,22 +427,42 @@ export function ClientsWorkspace() {
   return (
     <>
       <div className="compact-page-header clients-page-header">
-        <div>
+        <div className="clients-page-title">
+          <span className="page-eyebrow">Client Directory</span>
           <h1>Clients</h1>
+          <p className="muted">Manage institution profiles, routing domains, and authorized requesters.</p>
         </div>
-        <div className="form-actions">
+        <div className="form-actions clients-header-actions">
           <button className="button secondary" type="button" onClick={loadClients} disabled={loading || saving}>
             <RefreshCcw size={16} aria-hidden="true" />
             <span>Refresh</span>
           </button>
           <button className="button" type="button" onClick={openCreateClient}>
             <Plus size={16} aria-hidden="true" />
-          <span>Add Institution</span>
+            <span>Add Institution</span>
           </button>
         </div>
       </div>
 
       {error ? <div className="error-banner">{error}</div> : null}
+
+      <section className="clients-summary-grid" aria-label="Client summary">
+        <div className="client-summary-card">
+          <span>Institutions</span>
+          <strong>{clients.length}</strong>
+          <small>{activeClientCount} active</small>
+        </div>
+        <div className="client-summary-card">
+          <span>Routing domains</span>
+          <strong>{activeDomainCount}</strong>
+          <small>Active email domains</small>
+        </div>
+        <div className="client-summary-card">
+          <span>Requesters</span>
+          <strong>{totalRequesterCount}</strong>
+          <small>Directory contacts</small>
+        </div>
+      </section>
 
       <section className={selectedClient ? "client-detail-workspace" : "clients-workspace"}>
         {!selectedClient ? (
@@ -466,12 +489,12 @@ export function ClientsWorkspace() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={5}>Loading clients...</td>
+                    <td className="client-table-state" colSpan={5}>Loading clients...</td>
                   </tr>
                 ) : null}
                 {!loading && clients.length === 0 ? (
                   <tr>
-                    <td colSpan={5}>No institutions yet. Use Add Institution to create the first one.</td>
+                    <td className="client-table-state" colSpan={5}>No institutions yet. Use Add Institution to create the first one.</td>
                   </tr>
                 ) : null}
                 {clients.map((client) => (
@@ -491,7 +514,9 @@ export function ClientsWorkspace() {
                         <span>{activeDomainLabels(client)}</span>
                       </div>
                     </td>
-                    <td>{requesterCount(client)}</td>
+                    <td>
+                      <span className="client-count-pill">{requesterCount(client)}</span>
+                    </td>
                     <td>
                       <span className={`status-pill ${client.status === "ACTIVE" ? "success" : "muted-pill"}`}>
                         {client.status === "ACTIVE" ? "Active" : "Inactive"}
@@ -525,6 +550,9 @@ export function ClientsWorkspace() {
                   <div className="client-profile-title">
                     <span className="client-profile-mark">{selectedClient.name.slice(0, 1).toUpperCase()}</span>
                     <div>
+                      <span className={`status-pill ${selectedClient.status === "ACTIVE" ? "success" : "muted-pill"}`}>
+                        {selectedClient.status === "ACTIVE" ? "Active" : "Inactive"}
+                      </span>
                       <h2>{selectedClient.name}</h2>
                       <p className="muted">{selectedClient.shortName || "No short name"}</p>
                     </div>

@@ -214,6 +214,8 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
   const draftPages = draft.pages?.length ? draft.pages : [newPage(draft.title || "Content", draft.content ?? "<p></p>")];
   const activeDraftPage = draftPages.find((page) => page.id === activeDraftPageId) ?? draftPages[0];
   const allTags = useMemo(() => [...new Set(articles.flatMap((article) => article.tags))].sort(), [articles]);
+  const publishedArticleCount = articles.filter((article) => article.status === "PUBLISHED").length;
+  const draftArticleCount = articles.filter((article) => article.status === "DRAFT").length;
   const visibleAttachments = selectedArticle?.attachments.filter((attachment) => !attachment.isInline) ?? [];
   const isOneNoteArticle = Boolean(selectedArticle?.sourceType?.startsWith("ONENOTE") || selectedArticle?.pages?.some((page) => page.sourceType === "ONENOTE_PAGE"));
 
@@ -782,6 +784,28 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
             <button className="button secondary" type="button" onClick={createCategory} disabled={busy}>Add</button>
           </div>
         </div>
+        <div className="knowledge-summary-grid" aria-label="Knowledge Base summary">
+          <div className="knowledge-summary-card">
+            <span>Articles</span>
+            <strong>{articles.length}</strong>
+            <small>Visible with current filters</small>
+          </div>
+          <div className="knowledge-summary-card">
+            <span>Categories</span>
+            <strong>{categories.length}</strong>
+            <small>Content groupings</small>
+          </div>
+          <div className="knowledge-summary-card">
+            <span>Published</span>
+            <strong>{publishedArticleCount}</strong>
+            <small>Available internally</small>
+          </div>
+          <div className="knowledge-summary-card">
+            <span>Drafts</span>
+            <strong>{draftArticleCount}</strong>
+            <small>Pending content</small>
+          </div>
+        </div>
         {search.trim() ? (
           <div className="knowledge-search-results">
             <div className="section-heading compact-heading">
@@ -816,8 +840,18 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
             </div>
           </div>
         ) : null}
-        {loading ? <p className="muted">Loading articles...</p> : null}
-        {!loading && articles.length === 0 ? <p className="muted">No articles match the current filters.</p> : null}
+        {loading ? (
+          <div className="knowledge-empty-state">
+            <h3>Loading articles...</h3>
+            <p className="muted">Preparing the current Knowledge Base view.</p>
+          </div>
+        ) : null}
+        {!loading && articles.length === 0 ? (
+          <div className="knowledge-empty-state">
+            <h3>No articles match the current filters.</h3>
+            <p className="muted">Adjust the search, category, status, or tag filters to broaden the catalog.</p>
+          </div>
+        ) : null}
         {viewMode === "list" ? (
           <div className="knowledge-table" role="table" aria-label="Knowledge articles">
             <div className="knowledge-table-row header" role="row">
@@ -838,7 +872,7 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
                 <button className="knowledge-row-open" type="button" onClick={() => openArticle(article.id)}>
                 <span className="knowledge-title-cell"><i style={{ backgroundColor: article.accentColor ?? accentPalette[0] }} />{article.title}</span>
                 <span>{article.category?.name ?? "Uncategorized"}</span>
-                <span>{label(article.status)}</span>
+                <span className={`status-pill ${article.status === "PUBLISHED" ? "success" : article.status === "ARCHIVED" ? "muted-pill" : ""}`}>{label(article.status)}</span>
                 <span>{article.pages?.length ?? 1}</span>
                 <span>{new Date(article.updatedAt).toLocaleDateString()}</span>
                 </button>
@@ -857,6 +891,7 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
                   <span className={`status-pill ${article.status === "PUBLISHED" ? "success" : article.status === "ARCHIVED" ? "muted-pill" : ""}`}>{label(article.status)}</span>
                   <strong>{article.title}</strong>
                   <small>{article.category?.name ?? "Uncategorized"} - {article.pages?.length ?? 1} page{(article.pages?.length ?? 1) === 1 ? "" : "s"}</small>
+                  {article.sourceType ? <span className="knowledge-source-badge">{label(article.sourceType)}</span> : null}
                   <span className="knowledge-tag-line">{article.tags.slice(0, 3).map((item) => <span className="tag-chip" key={item}>{item}</span>)}</span>
                 </button>
               </article>
