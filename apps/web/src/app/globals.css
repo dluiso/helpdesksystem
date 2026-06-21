@@ -4714,36 +4714,104 @@ select.public-event-input[multiple] {
   gap: 14px;
 }
 
-.settings-page .page-header {
-  margin-bottom: 2px;
+.settings-page-header,
+.profile-page-header {
   align-items: center;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--brand-primary) 7%, transparent), transparent 58%),
+    var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 
-.settings-page .page-header h1 {
-  font-size: 28px;
+.settings-page-header h1,
+.settings-page-header p,
+.profile-page-header h1,
+.profile-page-header p {
+  margin: 0;
 }
 
-.settings-page .page-header p {
-  margin-top: 6px;
+.settings-page-header p,
+.profile-page-header p {
+  margin-top: 4px;
+}
+
+.settings-refresh-button {
+  flex: 0 0 auto;
+}
+
+.settings-summary-grid,
+.profile-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.settings-summary-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.settings-summary-card,
+.profile-summary-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.settings-summary-card span,
+.settings-summary-card small,
+.profile-summary-card span,
+.profile-summary-card small {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.settings-summary-card strong,
+.profile-summary-card strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-page .settings-layout {
-  gap: 12px;
+  gap: 16px;
 }
 
 .settings-page .settings-nav {
   top: 12px;
-  gap: 4px;
-  padding: 7px;
+  gap: 5px;
+  padding: 8px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
 }
 
 .settings-page .settings-nav button {
-  min-height: 34px;
-  padding: 7px 10px;
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+}
+
+.settings-page .settings-nav button.active,
+.settings-page .settings-nav button:hover {
+  border-color: color-mix(in srgb, var(--brand-primary) 24%, var(--line));
+  box-shadow: inset 3px 0 0 var(--brand-primary);
 }
 
 .settings-page .panel {
-  padding: 16px;
+  padding: 18px;
+  border-radius: var(--radius-lg);
 }
 
 .settings-page .settings-section {
@@ -4911,11 +4979,16 @@ select.public-event-input[multiple] {
   gap: 18px;
 }
 
+.profile-page {
+  gap: 16px;
+}
+
 .profile-nav {
   gap: 8px;
   padding: 10px;
+  border-radius: var(--radius-lg);
   border-color: var(--line);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
+  box-shadow: var(--shadow-xs);
 }
 
 .profile-nav button {
@@ -4947,7 +5020,8 @@ select.public-event-input[multiple] {
 .profile-panel {
   padding: 22px;
   border-color: var(--line);
-  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.05);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 .profile-form-grid {
@@ -4973,7 +5047,7 @@ select.public-event-input[multiple] {
 .profile-toggle-card,
 .profile-check-card {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   display: flex;
   align-items: flex-start;
   gap: 10px;
@@ -5021,9 +5095,10 @@ select.public-event-input[multiple] {
 
 .notification-channel-card {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 14px;
   background: var(--surface-raised);
+  box-shadow: var(--shadow-xs);
 }
 
 .notification-channel-card h3 {
@@ -8966,6 +9041,8 @@ a.dashboard-list-row:hover {
   .dashboard-donut-layout,
   .dashboard-insight-row,
   .clients-summary-grid,
+  .settings-summary-grid,
+  .profile-summary-grid,
   .reports-filter-grid,
   .reports-saved-row,
   .reports-delivery-grid,
@@ -8992,8 +9069,21 @@ a.dashboard-list-row:hover {
   }
 
   .reports-page-header,
+  .settings-page-header,
+  .profile-page-header,
   .reports-filter-panel {
     padding: 14px;
+  }
+
+  .settings-page-header,
+  .profile-page-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-refresh-button {
+    width: 100%;
+    justify-content: center;
   }
 
   .reports-filter-heading {

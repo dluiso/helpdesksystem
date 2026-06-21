@@ -779,6 +779,10 @@ export function SettingsWorkspace() {
   const [aiConfigError, setAiConfigError] = useState<string | null>(null);
 
   const hasClients = useMemo(() => clients.length > 0, [clients.length]);
+  const activeMailboxCount = mailboxes.filter((mailbox) => mailbox.isActive).length;
+  const activeTeamCount = ticketTeams.filter((team) => team.isActive).length;
+  const enabledAiProviderCount = aiProviders.filter((provider) => provider.isEnabled).length;
+  const healthStatusLabel = systemHealth?.status ? systemHealth.status.toUpperCase() : loading ? "LOADING" : "NOT CHECKED";
   const bulkProvider = useMemo(() => aiProviders.find((provider) => provider.id === aiBulkDraft.providerConfigId), [aiBulkDraft.providerConfigId, aiProviders]);
   const filteredSpamEntries = useMemo(() => {
     const search = spamSearch.trim().toLowerCase();
@@ -1942,11 +1946,13 @@ export function SettingsWorkspace() {
 
   return (
     <div className="settings-page">
-      <div className="compact-page-header">
+      <div className="compact-page-header settings-page-header">
         <div>
+          <span className="page-eyebrow">Administration</span>
           <h1>Settings</h1>
+          <p className="muted">Configure identity, users, mail flow, portals, integrations, security, and operational health.</p>
         </div>
-        <button className="button secondary" type="button" onClick={loadSettingsData} disabled={loading}>
+        <button className="button secondary settings-refresh-button" type="button" onClick={loadSettingsData} disabled={loading}>
           <RefreshCcw size={16} aria-hidden="true" />
           <span>Refresh</span>
         </button>
@@ -1954,6 +1960,34 @@ export function SettingsWorkspace() {
 
       {error ? <div className="error-banner">{error}</div> : null}
       {notice ? <div className="success-banner">{notice}</div> : null}
+
+      <section className="settings-summary-grid" aria-label="Settings summary">
+        <div className="settings-summary-card">
+          <span>Users</span>
+          <strong>{users.length}</strong>
+          <small>Directory accounts</small>
+        </div>
+        <div className="settings-summary-card">
+          <span>Mailboxes</span>
+          <strong>{activeMailboxCount}/{mailboxes.length}</strong>
+          <small>Active inbound sources</small>
+        </div>
+        <div className="settings-summary-card">
+          <span>Teams</span>
+          <strong>{activeTeamCount}/{ticketTeams.length}</strong>
+          <small>Active ticket teams</small>
+        </div>
+        <div className="settings-summary-card">
+          <span>AI Providers</span>
+          <strong>{enabledAiProviderCount}</strong>
+          <small>Enabled configurations</small>
+        </div>
+        <div className="settings-summary-card">
+          <span>System Health</span>
+          <strong>{healthStatusLabel}</strong>
+          <small>{systemHealth?.checkedAt ? `Checked ${new Date(systemHealth.checkedAt).toLocaleDateString()}` : "Awaiting check"}</small>
+        </div>
+      </section>
 
       <section className="settings-layout">
         <nav className="settings-nav" aria-label="Settings sections">
