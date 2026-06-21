@@ -152,19 +152,20 @@ export function DeviceDetailWorkspace({ deviceId }: { deviceId: string }) {
   const device = data?.device;
   const DeviceIcon = device ? getDeviceIcon(device) : Monitor;
   const OsIcon = getOsIcon(device?.operatingSystem);
+  const deviceStatusClass = device ? getDeviceStatusClass(device.status) : "";
 
   return (
     <>
-      <div className="compact-page-header">
-        <div>
-          <Link className="button secondary compact" href="/devices">
+      <div className="compact-page-header device-detail-page-header">
+        <div className="device-detail-page-heading">
+          <Link className="device-detail-back-link" href="/devices">
             <ArrowLeft size={15} aria-hidden="true" />
             <span>Back to Devices</span>
           </Link>
           <h1>{device?.name ?? "Device"}</h1>
           <p className="muted">{device ? `${device.client.name} - ${device.deviceGroupId ?? "No site"}` : "Loading device detail..."}</p>
         </div>
-        <div className="button-row">
+        <div className="button-row device-detail-header-actions">
           <button className="button secondary" type="button" onClick={loadDevice} disabled={loading}>
             <RefreshCcw size={16} aria-hidden="true" />
             <span>Refresh</span>
@@ -175,7 +176,7 @@ export function DeviceDetailWorkspace({ deviceId }: { deviceId: string }) {
       {error ? <div className="error-banner">{error}</div> : null}
 
       {loading && !device ? (
-        <section className="panel">
+        <section className="panel device-detail-loading">
           <p className="muted">Loading device detail...</p>
         </section>
       ) : null}
@@ -183,18 +184,18 @@ export function DeviceDetailWorkspace({ deviceId }: { deviceId: string }) {
       {device ? (
         <section className="panel device-detail-panel">
           <div className="device-detail-hero">
-            <span className="device-type-icon large"><DeviceIcon size={28} aria-hidden="true" /></span>
-            <div>
+            <span className={`device-type-icon large ${deviceStatusClass}`}><DeviceIcon size={28} aria-hidden="true" /></span>
+            <div className="device-detail-hero-copy">
               <span className={`status-pill ${device.status === "ACTIVE" ? "success" : "muted"}`}>{device.status}</span>
               <h2>{device.name}</h2>
               <p className="muted">{device.hostname ?? "No hostname"} - {device.remoteAccessProvider ?? "Manual device"}</p>
             </div>
             <div className="device-detail-actions">
-              <button className="button primary" type="button" onClick={() => openRemote("control")} disabled={busy === "control" || !device.actionUrls.controlUrl}>
+              <button className="button primary device-connect-button" type="button" onClick={() => openRemote("control")} disabled={busy === "control" || !device.actionUrls.controlUrl}>
                 <ExternalLink size={16} aria-hidden="true" />
                 <span>{busy === "control" ? "Opening..." : "Connect"}</span>
               </button>
-              <button className="button secondary" type="button" onClick={() => openRemote("system")} disabled={busy === "system" || !device.actionUrls.systemInfoUrl}>
+              <button className="button secondary device-sysinfo-button" type="button" onClick={() => openRemote("system")} disabled={busy === "system" || !device.actionUrls.systemInfoUrl}>
                 <HardDrive size={16} aria-hidden="true" />
                 <span>SysInfo</span>
               </button>
@@ -358,6 +359,12 @@ function getOsIcon(os?: string | null) {
   if (source.includes("linux") || source.includes("ubuntu") || source.includes("debian")) return TerminalSquare;
   if (source.includes("server")) return Server;
   return Monitor;
+}
+
+function getDeviceStatusClass(status: string) {
+  if (status === "ACTIVE") return "active";
+  if (status === "INACTIVE") return "inactive";
+  return "retired";
 }
 
 function formatEnum(value: string) {

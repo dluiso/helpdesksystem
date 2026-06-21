@@ -13,6 +13,7 @@ import {
   Save,
   Search,
   Server,
+  ShieldCheck,
   Smartphone,
   Star,
   Table2,
@@ -342,15 +343,19 @@ export function DevicesWorkspace() {
     <>
       <div className="compact-page-header device-page-header">
         <div className="device-page-heading">
-          <h1>Devices</h1>
+          <div className="device-page-title-block">
+            <span className="device-page-eyebrow">RMM Inventory</span>
+            <h1>Devices</h1>
+          </div>
           <div className="device-header-summary" aria-label="Device inventory summary">
             <span><strong>Devices:</strong> {totalDeviceCount}</span>
             <span><strong>Devices in this view:</strong> {loading ? "Loading..." : activeDevices.length}</span>
             <span><strong>Last sync:</strong> {lastSyncMessage}</span>
           </div>
         </div>
-        <div className="button-row">
-          <span className={`status-pill ${data?.remoteAccess.enabled ? "success" : "muted"}`}>
+        <div className="button-row device-header-actions">
+          <span className={`status-pill device-rmm-pill ${data?.remoteAccess.enabled ? "success" : "muted"}`}>
+            <ShieldCheck size={14} aria-hidden="true" />
             {data?.remoteAccess.enabled ? data.remoteAccess.providerName : "RMM disabled"}
           </span>
           <button className="button secondary" type="button" onClick={loadDevices} disabled={loading}>
@@ -467,9 +472,16 @@ export function DevicesWorkspace() {
         </section>
       ) : null}
 
-      <section className="panel">
+      <section className="panel device-results-panel">
+        {loading && activeDevices.length === 0 ? (
+          <div className="empty-state device-empty-state">
+            <h3>Loading devices...</h3>
+            <p className="muted">Refreshing the RMM inventory view.</p>
+          </div>
+        ) : null}
+
         {!loading && activeDevices.length === 0 ? (
-          <div className="empty-state">
+          <div className="empty-state device-empty-state">
             <h3>No devices found</h3>
             <p className="muted">
               {devices.length === 0
@@ -496,7 +508,7 @@ export function DevicesWorkspace() {
         ) : null}
 
         {view === "table" && pageDevices.length > 0 ? (
-          <div className="device-table-wrapper">
+          <div className="device-table-wrapper device-table-shell">
             <table className="device-table">
               <thead>
                 <tr>
@@ -637,6 +649,7 @@ function DeviceCard({
             <FavoriteButton device={device} busy={busy} onFavorite={onFavorite} />
           </div>
           <p>{device.client.name} - {device.deviceGroupId ?? "No site"}</p>
+          <p className="device-card-hostname">{device.hostname ?? device.remoteAccessId ?? device.type}</p>
         </div>
         <span className={`status-pill ${device.status === "ACTIVE" ? "success" : "muted"}`}>{device.status}</span>
       </div>
@@ -677,7 +690,10 @@ function DeviceTreeRow({
     <div className="device-tree-row">
       <span className={`device-type-icon ${statusClass}`}><DeviceIcon size={17} aria-hidden="true" /></span>
       <div className="device-title-row">
-        <Link href={`/devices/${device.id}`}><strong>{device.name}</strong></Link>
+        <div className="device-tree-title-stack">
+          <Link href={`/devices/${device.id}`}><strong>{device.name}</strong></Link>
+          <span>{device.hostname ?? device.remoteAccessId ?? device.type}</span>
+        </div>
         <FavoriteButton device={device} busy={busy} onFavorite={onFavorite} />
       </div>
       <div className="device-tree-network">
@@ -709,11 +725,11 @@ function FavoriteButton({ device, busy, onFavorite }: { device: DeviceRecord; bu
 function DeviceActions({ device, busy, onOpenRemote }: { device: DeviceRecord; busy: string | null; onOpenRemote: (device: DeviceRecord, mode: "control" | "system") => void }) {
   return (
     <div className="device-action-row">
-      <button className="button primary compact" type="button" onClick={() => onOpenRemote(device, "control")} disabled={busy === `control:${device.id}` || !device.actionUrls.controlUrl}>
+      <button className="button primary compact device-connect-button" type="button" onClick={() => onOpenRemote(device, "control")} disabled={busy === `control:${device.id}` || !device.actionUrls.controlUrl}>
         <ExternalLink size={14} aria-hidden="true" />
         <span>Connect</span>
       </button>
-      <button className="button secondary compact" type="button" onClick={() => onOpenRemote(device, "system")} disabled={busy === `system:${device.id}` || !device.actionUrls.systemInfoUrl}>
+      <button className="button secondary compact device-sysinfo-button" type="button" onClick={() => onOpenRemote(device, "system")} disabled={busy === `system:${device.id}` || !device.actionUrls.systemInfoUrl}>
         <HardDrive size={14} aria-hidden="true" />
         <span>SysInfo</span>
       </button>
