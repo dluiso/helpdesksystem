@@ -6075,18 +6075,75 @@ a.dashboard-list-row:hover {
 
 .reports-workspace {
   display: grid;
-  gap: 16px;
+  gap: 18px;
+}
+
+.reports-page-header {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-xs);
+}
+
+.reports-page-title-block {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.reports-page-eyebrow {
+  color: var(--brand-primary);
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .reports-filter-panel {
   display: grid;
-  gap: 14px;
+  gap: 16px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-xs);
+}
+
+.reports-filter-heading {
+  align-items: flex-start;
+  margin-bottom: 2px;
+}
+
+.reports-filter-heading p {
+  margin: 4px 0 0;
+}
+
+.reports-header-actions {
+  flex: 0 1 auto;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.reports-header-actions .button {
+  min-height: 38px;
 }
 
 .reports-filter-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(150px, 1fr));
   gap: 10px;
+}
+
+.report-filter-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.report-filter-field > span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .segmented-control {
@@ -6134,10 +6191,15 @@ a.dashboard-list-row:hover {
 .reports-advanced-panel {
   display: grid;
   gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
 }
 
 .reports-advanced-toggle {
   width: fit-content;
+  justify-self: start;
 }
 
 .reports-saved-row {
@@ -6147,8 +6209,8 @@ a.dashboard-list-row:hover {
   align-items: center;
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
 }
 
 .reports-delivery-grid,
@@ -6163,8 +6225,9 @@ a.dashboard-list-row:hover {
   gap: 10px;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-xs);
 }
 
 .reports-delivery-card h3,
@@ -6172,6 +6235,7 @@ a.dashboard-list-row:hover {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  margin: 0;
 }
 
 .reports-inline-controls {
@@ -6197,7 +6261,7 @@ a.dashboard-list-row:hover {
   align-items: center;
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   background: var(--surface-subtle);
 }
 
@@ -6216,8 +6280,8 @@ a.dashboard-list-row:hover {
   gap: 8px;
   padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
 }
 
 .reports-status-filter > span {
@@ -6236,6 +6300,26 @@ a.dashboard-list-row:hover {
 
 .report-kpi-card {
   cursor: default;
+  border-radius: var(--radius-lg);
+}
+
+.report-kpi-card strong {
+  overflow-wrap: anywhere;
+}
+
+.report-chart-card {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+}
+
+.report-card-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.report-card-heading h2,
+.report-card-heading p {
+  margin: 0;
 }
 
 .report-cell-stack {
@@ -6269,7 +6353,7 @@ a.dashboard-list-row:hover {
   grid-template-columns: repeat(auto-fit, minmax(18px, 1fr));
   gap: 4px;
   align-items: end;
-  padding: 12px 6px 0;
+  padding: 12px 8px 0;
   border-bottom: 1px solid var(--line);
   overflow-x: auto;
 }
@@ -6302,6 +6386,7 @@ a.dashboard-list-row:hover {
   width: 7px;
   min-height: 4px;
   border-radius: 999px 999px 0 0;
+  box-shadow: 0 -1px 0 color-mix(in srgb, #ffffff 28%, transparent);
 }
 
 .report-activity-bars .created,
@@ -6355,6 +6440,51 @@ a.dashboard-list-row:hover {
 
 .table tbody tr:hover td {
   background: var(--surface-hover);
+}
+
+.report-detail-panel {
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+}
+
+.report-detail-panel > .section-heading {
+  margin: 0;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.report-table-scroll {
+  overflow-x: auto;
+  background: var(--surface-raised);
+}
+
+.report-table-scroll .tickets-table {
+  min-width: 980px;
+}
+
+.report-table-scroll .tickets-table th {
+  background: var(--surface-subtle);
+}
+
+.report-table-scroll .tickets-table td {
+  vertical-align: middle;
+}
+
+.report-table-scroll .tickets-table tbody tr:hover td {
+  background: var(--surface-hover);
+}
+
+.report-pagination-bar {
+  margin: 0;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-subtle);
+}
+
+.reports-admin-panel {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
 }
 
 .tickets-toolbar-panel {
@@ -8493,6 +8623,45 @@ a.dashboard-list-row:hover {
     grid-template-columns: 1fr;
   }
 
+  .reports-page-header,
+  .reports-filter-panel {
+    padding: 14px;
+  }
+
+  .reports-filter-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .reports-header-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .reports-header-actions .button,
+  .reports-type-tabs,
+  .reports-advanced-toggle {
+    width: 100%;
+  }
+
+  .reports-type-tabs button {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+
+  .reports-tools-panel,
+  .reports-advanced-panel {
+    padding: 10px;
+  }
+
+  .report-detail-panel > .section-heading {
+    padding: 14px;
+  }
+
+  .report-admin-row {
+    align-items: stretch;
+  }
+
   .event-calendar-toolbar,
   .event-calendar-layout,
   .event-calendar-facts,
@@ -9481,6 +9650,28 @@ a.dashboard-list-row:hover {
 
   .tickets-header-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .reports-header-actions,
+  .reports-saved-row,
+  .reports-inline-controls,
+  .reports-delivery-card:nth-child(2) .reports-inline-controls,
+  .report-pagination-bar .form-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .reports-header-actions .segmented-control {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .reports-header-actions .button,
+  .reports-saved-row .button,
+  .reports-inline-controls .button,
+  .report-pagination-bar .button,
+  .report-pagination-bar .input {
+    width: 100%;
   }
 
   .device-header-actions,
