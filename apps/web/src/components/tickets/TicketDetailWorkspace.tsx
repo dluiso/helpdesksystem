@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookOpen, Download, ExternalLink, Eye, GitMerge, RefreshCcw, Save, Search, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowLeft, BookOpen, Download, ExternalLink, Eye, GitMerge, RefreshCcw, Save, Search, Sparkles, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
 import { TicketReplyEditor } from "./TicketReplyEditor";
@@ -115,6 +115,10 @@ function label(value: string) {
 
 function statusClass(value: string) {
   return `ticket-status-${value.toLowerCase().replace(/_/g, "-")}`;
+}
+
+function priorityClass(value: string) {
+  return `ticket-priority-${value.toLowerCase().replace(/_/g, "-")}`;
 }
 
 export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
@@ -380,7 +384,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   }, [showMergeModal, mergeSearch]);
 
   if (loading) {
-    return <div className="panel">Loading ticket...</div>;
+    return <div className="panel ticket-detail-loading">Loading ticket...</div>;
   }
 
   if (!ticket) {
@@ -391,17 +395,29 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const downloadableAttachmentCount = ticket.attachments.filter((attachment) => attachment.scanStatus !== "BLOCKED" && attachment.scanStatus !== "SUSPICIOUS").length;
   const ticketRef = ticket.ticketNumber;
   const downloadAllUrl = `${apiBaseUrl}/tickets/${ticketRef}/attachments/download-all`;
+  const clientLabel = ticket.client?.name ?? (ticket.senderDomain ? `Unmapped: ${ticket.senderDomain}` : "Unassigned");
 
   return (
     <>
-      <div className="page-header">
-        <div>
-          <h1>Ticket {ticket.ticketNumber}</h1>
-          <p className="muted">
-            {ticket.client?.name ?? (ticket.senderDomain ? `Unmapped: ${ticket.senderDomain}` : "Unassigned")} - {requester}
-          </p>
+      <div className="page-header ticket-detail-header">
+        <div className="ticket-detail-title-block">
+          <Link className="ticket-detail-back-link" href="/tickets">
+            <ArrowLeft size={15} aria-hidden="true" />
+            <span>Tickets</span>
+          </Link>
+          <div className="ticket-detail-title-row">
+            <h1>Ticket {ticket.ticketNumber}</h1>
+            <span className={`status-pill ${statusClass(ticket.status)}`}>{label(ticket.status)}</span>
+          </div>
+          <p className="ticket-detail-subject">{ticket.subject}</p>
+          <div className="ticket-detail-meta-row">
+            <span>{clientLabel}</span>
+            <span>{requester}</span>
+            <span>{label(ticket.source)}</span>
+            <span className={`status-pill ${priorityClass(ticket.priority)}`}>{label(ticket.priority)}</span>
+          </div>
         </div>
-        <div className="form-actions">
+        <div className="form-actions ticket-detail-actions">
           <button className="button secondary" type="button" onClick={load}>
             <RefreshCcw size={16} aria-hidden="true" />
             <span>Refresh</span>
@@ -433,20 +449,30 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       <section className="ticket-detail-layout">
         <div className="grid">
           {!isMergedTicket ? (
-            <div className="panel">
-              <h2>Reply Composer</h2>
+            <div className="panel ticket-composer-panel">
+              <div className="section-heading compact-heading ticket-panel-heading">
+                <div>
+                  <h2>Reply Composer</h2>
+                  <p className="muted">Send a customer reply or save an internal note.</p>
+                </div>
+              </div>
               <TicketReplyEditor ticketId={ticketRef} notifyUsers={users} ccUsers={users} ccContacts={ccContacts} onSaved={load} />
             </div>
           ) : null}
-          <div className="panel">
-            <h2>Conversation</h2>
-            <p className="muted">Newest messages appear first.</p>
-            <div className="timeline">
-              {ticket.messages.length === 0 ? <p className="muted">No messages yet.</p> : null}
+          <div className="panel ticket-conversation-panel">
+            <div className="section-heading compact-heading ticket-panel-heading">
+              <div>
+                <h2>Conversation</h2>
+                <p className="muted">Newest messages appear first.</p>
+              </div>
+              <span className="count-pill">{ticket.messages.length} message{ticket.messages.length === 1 ? "" : "s"}</span>
+            </div>
+            <div className="timeline ticket-timeline">
+              {ticket.messages.length === 0 ? <p className="ticket-detail-empty">No messages yet.</p> : null}
               {[...ticket.messages].reverse().map((message) => (
-                <article className={`message ${message.visibility === "INTERNAL" ? "internal" : ""}`} key={message.id}>
+                <article className={`message ${message.direction === "INBOUND" ? "inbound" : "outbound"} ${message.visibility === "INTERNAL" ? "internal" : ""}`} key={message.id}>
                   <header className="message-header">
-                    <div>
+                    <div className="message-author-block">
                       <strong>
                         {message.direction === "INBOUND"
                           ? message.authorContact
@@ -456,7 +482,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
                             ? `${message.authorUser.firstName} ${message.authorUser.lastName}`
                             : "Technician"}
                       </strong>
-                      <span className="muted"> {label(message.direction)} - {label(message.visibility)}</span>
+                      <span className="muted">{label(message.direction)} - {label(message.visibility)}</span>
                     </div>
                     <span className="muted">{new Date(message.createdAt).toLocaleString()}</span>
                   </header>
@@ -530,7 +556,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
             </dl>
           </div>
           {ticket.mergedTickets.length > 0 ? (
-            <div className="panel">
+            <div className="panel ticket-merged-panel">
               <h3>Merged Tickets</h3>
               <div className="merge-reference-list">
                 {ticket.mergedTickets.map((mergedTicket) => (
@@ -543,7 +569,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
               </div>
             </div>
           ) : null}
-          <form className="panel form" onSubmit={saveAssignment}>
+          <form className="panel form ticket-assignment-panel" onSubmit={saveAssignment}>
             <h3>Assignment</h3>
             <label className="field">
               <span>Specialists</span>
@@ -584,7 +610,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
             </button>
             {assignmentNotice ? <span className="status-pill success">{assignmentNotice}</span> : null}
           </form>
-          <div className="panel">
+          <div className="panel ticket-files-panel">
             <div className="section-heading compact-heading">
               <div>
                 <h3>Ticket Files</h3>

@@ -676,8 +676,8 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], cc
   }
 
   return (
-    <div className="editor">
-      <div className="editor-toolbar" aria-label="Reply tools">
+    <div className="editor ticket-reply-editor">
+      <div className="editor-toolbar editor-format-toolbar" aria-label="Reply tools">
         {toolbar.map((item) => {
           const Icon = item.icon;
           return (
@@ -729,10 +729,10 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], cc
           <span>Draft Reply</span>
         </button>
       </div>
-      <div>
+      <div className="reply-mode-toggle">
         <button className={`button ${mode === "public" ? "" : "secondary"}`} type="button" onClick={() => changeMode("public")}>
           Public Reply
-        </button>{" "}
+        </button>
         <button className={`button ${mode === "internal" ? "" : "secondary"}`} type="button" onClick={() => changeMode("internal")}>
           Internal Note
         </button>
@@ -820,14 +820,14 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], cc
           </div>
         </div>
       ) : null}
-      <div className="grid columns-2">
+      <div className="grid columns-2 ticket-editor-attachments">
         <AttachmentDropzone ticketId={ticketId} onUploaded={(attachment) => setAttachments((current) => [...current, attachment])} />
-        <div className="panel">
+        <div className="panel ticket-attachment-preview-panel">
           <h3>Attachments</h3>
           <AttachmentPreviewList attachments={attachments} onRemove={(attachmentId) => void removeAttachment(attachmentId)} />
         </div>
       </div>
-      <div className="editor-toolbar">
+      <div className="editor-toolbar editor-submit-toolbar">
         <SignatureInserter onInsert={insertHtml} />
         {notifyUsers.length ? (
           <div className="notify-picker">
