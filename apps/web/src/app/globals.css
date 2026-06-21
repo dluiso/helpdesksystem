@@ -2218,6 +2218,70 @@ select.compact-select {
 
 .clients-page-header {
   align-items: center;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--brand-primary) 8%, transparent), transparent 58%),
+    var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.page-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  margin-bottom: 6px;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 28%, var(--line));
+  border-radius: 999px;
+  color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 9%, var(--surface));
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.clients-page-title h1,
+.clients-page-title p {
+  margin: 0;
+}
+
+.clients-page-title p {
+  margin-top: 4px;
+}
+
+.clients-header-actions {
+  justify-content: flex-end;
+}
+
+.clients-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.client-summary-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.client-summary-card span,
+.client-summary-card small {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.client-summary-card strong {
+  color: var(--text);
+  font-size: 26px;
+  line-height: 1;
 }
 
 .clients-table-panel {
@@ -2236,6 +2300,7 @@ select.compact-select {
 }
 
 .client-table-wrap {
+  border-top: 1px solid var(--line);
   overflow-x: auto;
 }
 
@@ -2258,6 +2323,7 @@ select.compact-select {
   background: var(--surface-subtle);
   font-size: 12px;
   font-weight: 800;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -2267,6 +2333,26 @@ select.compact-select {
 
 .client-table tbody tr:hover td {
   background: var(--surface-subtle);
+}
+
+.client-table-state {
+  padding: 28px 18px !important;
+  color: var(--text-muted);
+  text-align: center !important;
+}
+
+.client-count-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  min-height: 28px;
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  background: var(--surface-raised);
+  font-weight: 800;
 }
 
 .client-name-button {
@@ -8151,6 +8237,25 @@ a.dashboard-list-row:hover {
   align-items: flex-start;
 }
 
+.knowledge-page-header {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--brand-secondary) 8%, transparent), transparent 58%),
+    var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.knowledge-page-header h1,
+.knowledge-page-header p {
+  margin: 0;
+}
+
+.knowledge-page-header p {
+  margin-top: 4px;
+}
+
 .knowledge-workspace {
   display: grid;
   gap: 14px;
@@ -8161,6 +8266,7 @@ a.dashboard-list-row:hover {
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
+  padding: 14px;
 }
 
 .knowledge-toolbar-main {
@@ -8270,6 +8376,54 @@ a.dashboard-list-row:hover {
 .knowledge-catalog-panel {
   display: grid;
   gap: 16px;
+  overflow: hidden;
+}
+
+.knowledge-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.knowledge-summary-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  box-shadow: var(--shadow-xs);
+}
+
+.knowledge-summary-card span,
+.knowledge-summary-card small {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.knowledge-summary-card strong {
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.knowledge-empty-state {
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  min-height: 160px;
+  padding: 24px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  text-align: center;
+}
+
+.knowledge-empty-state h3,
+.knowledge-empty-state p {
+  margin: 0;
 }
 
 .knowledge-search-results {
@@ -8347,6 +8501,7 @@ a.dashboard-list-row:hover {
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;
+  background: var(--surface);
 }
 
 .knowledge-table-row {
@@ -8404,6 +8559,9 @@ a.dashboard-list-row:hover {
   align-items: center;
   min-width: 0;
   font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .knowledge-title-cell i {
@@ -8430,6 +8588,7 @@ a.dashboard-list-row:hover {
   background: var(--surface);
   color: var(--text);
   text-align: left;
+  box-shadow: var(--shadow-xs);
 }
 
 .knowledge-card.active,
@@ -8461,11 +8620,26 @@ a.dashboard-list-row:hover {
 }
 
 .knowledge-card strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 18px;
 }
 
 .knowledge-card small {
   color: var(--muted);
+}
+
+.knowledge-source-badge {
+  justify-self: start;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--surface-raised);
+  font-size: 12px;
+  font-weight: 750;
 }
 
 .knowledge-detail-header {
@@ -8791,6 +8965,7 @@ a.dashboard-list-row:hover {
   .dashboard-performance-metrics,
   .dashboard-donut-layout,
   .dashboard-insight-row,
+  .clients-summary-grid,
   .reports-filter-grid,
   .reports-saved-row,
   .reports-delivery-grid,
@@ -8806,6 +8981,7 @@ a.dashboard-list-row:hover {
   .knowledge-editor-top,
   .knowledge-page-editor-layout,
   .knowledge-readable-layout,
+  .knowledge-summary-grid,
   .knowledge-card-grid,
   .knowledge-table-row,
   .knowledge-table-row.header,
@@ -9642,6 +9818,18 @@ a.dashboard-list-row:hover {
 
   .clients-page-header {
     align-items: flex-start;
+    flex-direction: column;
+    padding: 14px;
+  }
+
+  .clients-header-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .clients-header-actions .button {
+    flex: 1 1 150px;
+    justify-content: center;
   }
 
   .client-detail-grid {
