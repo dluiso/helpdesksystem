@@ -765,7 +765,6 @@ export function DashboardWorkspace() {
   const specialistPerformance = stats.specialistPerformance ?? [];
   const specialistTrend = stats.specialistTrend ?? [];
   const hiddenWidgets = new Set(preference.hiddenWidgets);
-  const activeEventCount = eventSummaryCards.find((card) => card.title === "Active Events")?.value ?? 0;
 
   const renderWidget = (id: DashboardWidgetId) => {
     switch (id) {
@@ -852,31 +851,10 @@ export function DashboardWorkspace() {
 
   return (
     <div className="dashboard-page">
-      <div className="dashboard-hero panel">
-        <div className="dashboard-hero-copy">
-          <span className="status-pill">Live overview</span>
-          <h2>Service operations at a glance</h2>
-          <p className="muted">Track ticket volume, event service demand, specialist workload, and queues that need action.</p>
-        </div>
-        <div className="dashboard-hero-metrics" aria-label="Dashboard summary">
-          <Link href={ticketHref({ statuses: activeStatuses })}>
-            <span>Open tickets</span>
-            <strong>{stats.summary.totalOpen}</strong>
-          </Link>
-          <Link href={eventHref({ status: "IN_PROGRESS" })}>
-            <span>Active events</span>
-            <strong>{activeEventCount}</strong>
-          </Link>
-          <Link href={ticketHref({ scope: "unassigned", statuses: activeStatuses })}>
-            <span>Unassigned</span>
-            <strong>{stats.summary.unassignedTickets}</strong>
-          </Link>
-        </div>
-        <div className="dashboard-toolbar">
-          <button className={`button ${customizing ? "primary" : "secondary"}`} type="button" onClick={() => setCustomizing((current) => !current)}>
-            <Settings2 size={16} /> {customizing ? "Done" : "Customize"}
-          </button>
-        </div>
+      <div className="dashboard-toolbar">
+        <button className={`button ${customizing ? "primary" : "secondary"}`} type="button" onClick={() => setCustomizing((current) => !current)}>
+          <Settings2 size={16} /> {customizing ? "Done" : "Customize"}
+        </button>
       </div>
       {preferenceNotice ? <div className={preferenceNotice.includes("Unable") ? "error-banner" : "success-banner"}>{preferenceNotice}</div> : null}
       {customizing ? (
