@@ -154,6 +154,7 @@ export function EventServicesCalendarView() {
   const [eventDraftOpen, setEventDraftOpen] = useState(false);
   const [assignedUserIds, setAssignedUserIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hydrated, setHydrated] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -175,6 +176,10 @@ export function EventServicesCalendarView() {
     return next;
   }, [requests]);
   const todayKey = localDateKey(new Date());
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   async function loadCalendar(nextFilters = filters) {
     setLoading(true);
@@ -359,11 +364,15 @@ export function EventServicesCalendarView() {
           <button className="icon-button" type="button" onClick={() => setAnchor((current) => shiftAnchor(current, mode, -1))} aria-label="Previous range">
             <ChevronLeft size={18} aria-hidden="true" />
           </button>
-          <strong>{rangeLabel(anchor, mode)}</strong>
+          <strong>{hydrated ? rangeLabel(anchor, mode) : "Calendar"}</strong>
           <button className="icon-button" type="button" onClick={() => setAnchor((current) => shiftAnchor(current, mode, 1))} aria-label="Next range">
             <ChevronRight size={18} aria-hidden="true" />
           </button>
           <button className="button secondary" type="button" onClick={() => setAnchor(new Date())}>Today</button>
+          <button className="button secondary event-calendar-new-button" type="button" onClick={() => openEventDraft(anchor)}>
+            <CalendarPlus size={16} aria-hidden="true" />
+            <span>New Event</span>
+          </button>
         </div>
         <div className="event-calendar-mode" role="tablist" aria-label="Calendar view">
           {(["month", "week", "day"] as const).map((item) => (
@@ -400,9 +409,9 @@ export function EventServicesCalendarView() {
                   <strong>{mode === "day" ? day.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }) : day.getDate()}</strong>
                   <span>{dayRequests.length ? `${dayRequests.length} event${dayRequests.length === 1 ? "" : "s"}` : ""}</span>
                 </header>
-                <button className="event-calendar-add-day" type="button" onClick={() => openEventDraft(day)}>
+                <button className="event-calendar-add-day" type="button" onClick={() => openEventDraft(day)} aria-label={`Add event on ${localDateKey(day)}`}>
                   <CalendarPlus size={14} aria-hidden="true" />
-                  <span>Add event</span>
+                  <span>New</span>
                 </button>
                 <div className="event-calendar-events">
                   {dayRequests.map((request) => (
