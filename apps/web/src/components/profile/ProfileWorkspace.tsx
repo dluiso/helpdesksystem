@@ -136,6 +136,57 @@ const THEME_OPTIONS: Array<{ value: ThemePreference; label: string; description:
   { value: "system", label: "System", description: "Follow your operating system setting." }
 ];
 
+function NotificationSwitch({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
+  return (
+    <button
+      className={`notification-switch ${checked ? "is-on" : ""}`}
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+    >
+      <span />
+    </button>
+  );
+}
+
+function ProfileNotificationPreferenceGroup({
+  title,
+  preference,
+  fields,
+  onChange
+}: {
+  title: string;
+  preference: NotificationPreference;
+  fields: Array<{ label: string; inAppKey: keyof NotificationPreference; emailKey: keyof NotificationPreference }>;
+  onChange: (key: keyof NotificationPreference, value: boolean) => void;
+}) {
+  return (
+    <div className="notification-preference-group">
+      <div className="notification-group-title">
+        <h3>{title}</h3>
+        <div>
+          <span>In-app</span>
+          <span>Email</span>
+        </div>
+      </div>
+      <div className="notification-preference-header">
+        <span>Notification</span>
+        <span>In-app</span>
+        <span>Email</span>
+      </div>
+      {fields.map((field) => (
+        <div className="notification-preference-row" key={field.label}>
+          <span>{field.label}</span>
+          <NotificationSwitch checked={Boolean(preference[field.inAppKey])} onChange={(value) => onChange(field.inAppKey, value)} label={`${field.label} in-app`} />
+          <NotificationSwitch checked={Boolean(preference[field.emailKey])} onChange={(value) => onChange(field.emailKey, value)} label={`${field.label} email`} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const SIGNATURE_TOOLBAR = [
   { label: "Undo", icon: Undo2, command: "undo" },
   { label: "Redo", icon: Redo2, command: "redo" },
@@ -622,70 +673,24 @@ export function ProfileWorkspace() {
                   <p className="muted">Choose which ticket and Event Services notifications can reach you.</p>
                 </div>
               </div>
-              <div className="profile-card-grid">
-                <label className="profile-toggle-card">
-                  <input type="checkbox" checked={notificationDraft.inAppEnabled} onChange={(event) => updateNotificationDraft("inAppEnabled", event.target.checked)} />
-                  <span>
-                    <strong>In-app notifications</strong>
-                    <small>Show alerts in the helpdesk UI.</small>
-                  </span>
-                </label>
-                <label className="profile-toggle-card">
-                  <input type="checkbox" checked={notificationDraft.emailEnabled} onChange={(event) => updateNotificationDraft("emailEnabled", event.target.checked)} />
-                  <span>
-                    <strong>Email notifications</strong>
-                    <small>Send matching ticket events by email.</small>
-                  </span>
-                </label>
-              </div>
-              <div className="notification-channel-grid settings-section">
-                <div className="notification-channel-card">
-                  <h3>Ticket Notifications</h3>
-                  <div className="profile-check-grid compact">
-                    {TICKET_NOTIFICATION_FIELDS.map((field) => (
-                      <label className="profile-check-card" key={field.inAppKey}>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(notificationDraft[field.inAppKey])}
-                          onChange={(event) => updateNotificationDraft(field.inAppKey, event.target.checked)}
-                        />
-                        <span>{field.label} <small className="muted">In-app</small></span>
-                      </label>
-                    ))}
-                    {TICKET_NOTIFICATION_FIELDS.map((field) => (
-                      <label className="profile-check-card" key={field.emailKey}>
-                        <input type="checkbox" checked={Boolean(notificationDraft[field.emailKey])} onChange={(event) => updateNotificationDraft(field.emailKey, event.target.checked)} />
-                        <span>{field.label} <small className="muted">Email</small></span>
-                      </label>
-                    ))}
-                  </div>
+              <div className="notification-channel-strip settings-section">
+                <div className="notification-channel-item">
+                  <span>In-app</span>
+                  <NotificationSwitch checked={notificationDraft.inAppEnabled} onChange={(value) => updateNotificationDraft("inAppEnabled", value)} label="In-app notification channel" />
                 </div>
-                <div className="notification-channel-card">
-                  <h3>Event Service Notifications</h3>
-                  <div className="profile-check-grid compact">
-                    {EVENT_NOTIFICATION_FIELDS.map((field) => (
-                      <label className="profile-check-card" key={field.emailKey}>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(notificationDraft[field.inAppKey])}
-                          onChange={(event) => updateNotificationDraft(field.inAppKey, event.target.checked)}
-                        />
-                        <span>{field.label} <small className="muted">In-app</small></span>
-                      </label>
-                    ))}
-                    {EVENT_NOTIFICATION_FIELDS.map((field) => (
-                      <label className="profile-check-card" key={field.emailKey}>
-                        <input type="checkbox" checked={Boolean(notificationDraft[field.emailKey])} onChange={(event) => updateNotificationDraft(field.emailKey, event.target.checked)} />
-                        <span>{field.label} <small className="muted">Email</small></span>
-                      </label>
-                    ))}
-                  </div>
+                <div className="notification-channel-item">
+                  <span>Email</span>
+                  <NotificationSwitch checked={notificationDraft.emailEnabled} onChange={(value) => updateNotificationDraft("emailEnabled", value)} label="Email notification channel" />
+                </div>
+                <div className="notification-channel-item">
+                  <span>Daily digest</span>
+                  <NotificationSwitch checked={notificationDraft.dailyDigestEnabled} onChange={(value) => updateNotificationDraft("dailyDigestEnabled", value)} label="Daily digest preference" />
                 </div>
               </div>
-              <label className="profile-check-card settings-section profile-digest-row">
-                <input type="checkbox" checked={notificationDraft.dailyDigestEnabled} onChange={(event) => updateNotificationDraft("dailyDigestEnabled", event.target.checked)} />
-                <span>Daily digest <small className="muted">Daily summary preference for scheduled digest emails.</small></span>
-              </label>
+              <div className="notification-user-grid">
+                <ProfileNotificationPreferenceGroup title="Ticket Notifications" preference={notificationDraft} fields={TICKET_NOTIFICATION_FIELDS} onChange={updateNotificationDraft} />
+                <ProfileNotificationPreferenceGroup title="Event Service Notifications" preference={notificationDraft} fields={EVENT_NOTIFICATION_FIELDS} onChange={updateNotificationDraft} />
+              </div>
               <div className="settings-actions">
                 <button className="button" type="button" onClick={saveNotifications} disabled={busy === "notifications"}>
                   <Save size={16} aria-hidden="true" />
