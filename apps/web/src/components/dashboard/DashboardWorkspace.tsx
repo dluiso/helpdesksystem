@@ -774,7 +774,7 @@ export function DashboardWorkspace() {
             <div className="dashboard-section-heading">
               <h2>Tickets</h2>
             </div>
-            <section className="dashboard-kpi-grid">
+            <section className="dashboard-kpi-grid dashboard-ticket-kpi-grid">
               {summaryCards.map((card) => (
                 <KpiCard key={card.title} {...card} />
               ))}

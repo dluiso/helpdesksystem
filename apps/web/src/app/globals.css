@@ -6789,6 +6789,31 @@ a.dashboard-list-row:hover {
   grid-template-columns: repeat(4, minmax(150px, 1fr));
 }
 
+.dashboard-ticket-kpi-grid {
+  grid-template-columns: repeat(8, minmax(104px, 1fr));
+  gap: 8px;
+}
+
+.dashboard-ticket-kpi-grid .dashboard-kpi-card {
+  min-height: 112px;
+  gap: 6px;
+  padding: 12px;
+}
+
+.dashboard-ticket-kpi-grid .dashboard-kpi-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.dashboard-ticket-kpi-grid .dashboard-kpi-card strong {
+  font-size: 26px;
+}
+
+.dashboard-ticket-kpi-grid .dashboard-kpi-label,
+.dashboard-ticket-kpi-grid .dashboard-kpi-card small {
+  font-size: 12px;
+}
+
 .dashboard-kpi-card {
   min-height: 132px;
   position: relative;
@@ -9834,6 +9859,10 @@ a.dashboard-list-row:hover {
     grid-template-columns: repeat(4, minmax(150px, 1fr));
   }
 
+  .dashboard-ticket-kpi-grid {
+    grid-template-columns: repeat(8, minmax(96px, 1fr));
+  }
+
   .event-calendar-toolbar {
     grid-template-columns: minmax(0, 1fr) auto repeat(3, minmax(140px, 0.45fr)) auto;
   }
@@ -9888,6 +9917,10 @@ a.dashboard-list-row:hover {
   .dashboard-kpi-grid,
   .dashboard-event-kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-ticket-kpi-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .reports-filter-grid,
@@ -9966,6 +9999,11 @@ a.dashboard-list-row:hover {
   .knowledge-search-result,
   .onenote-import-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-ticket-kpi-grid,
+  .dashboard-event-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .reports-page-header,
