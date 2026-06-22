@@ -3050,6 +3050,22 @@ select.compact-select {
   gap: 8px;
 }
 
+.system-health-history-summary,
+.system-health-history-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+}
+
+.system-health-history-pagination {
+  background: transparent;
+}
+
 .system-health-table td {
   vertical-align: top;
 }
@@ -3084,6 +3100,12 @@ select.compact-select {
 
   .system-health-badge {
     justify-content: center;
+  }
+
+  .system-health-history-summary,
+  .system-health-history-pagination {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

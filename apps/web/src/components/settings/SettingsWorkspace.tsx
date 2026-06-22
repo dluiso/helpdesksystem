@@ -397,6 +397,8 @@ interface SystemHealthTimeline {
   }>;
 }
 
+const SYSTEM_HEALTH_HISTORY_PAGE_SIZE = 10;
+
 type ActiveSection =
   | "general"
   | "users"
@@ -694,6 +696,8 @@ export function SettingsWorkspace() {
   const [systemHealthHistory, setSystemHealthHistory] = useState<SystemHealthHistory | null>(null);
   const [systemHealthTimeline, setSystemHealthTimeline] = useState<SystemHealthTimeline | null>(null);
   const [systemHealthRange, setSystemHealthRange] = useState<"daily" | "weekly" | "monthly" | "yearly">("daily");
+  const [systemHealthHistoryOpen, setSystemHealthHistoryOpen] = useState(false);
+  const [systemHealthHistoryPage, setSystemHealthHistoryPage] = useState(1);
   const [auditFilters, setAuditFilters] = useState({
     startDate: "",
     endDate: "",
@@ -783,6 +787,9 @@ export function SettingsWorkspace() {
   const activeTeamCount = ticketTeams.filter((team) => team.isActive).length;
   const enabledAiProviderCount = aiProviders.filter((provider) => provider.isEnabled).length;
   const healthStatusLabel = systemHealth?.status ? systemHealth.status.toUpperCase() : loading ? "LOADING" : "NOT CHECKED";
+  const systemHealthSnapshots = systemHealthHistory?.snapshots ?? [];
+  const systemHealthHistoryPageCount = Math.max(1, Math.ceil(systemHealthSnapshots.length / SYSTEM_HEALTH_HISTORY_PAGE_SIZE));
+  const visibleSystemHealthSnapshots = systemHealthSnapshots.slice((systemHealthHistoryPage - 1) * SYSTEM_HEALTH_HISTORY_PAGE_SIZE, systemHealthHistoryPage * SYSTEM_HEALTH_HISTORY_PAGE_SIZE);
   const bulkProvider = useMemo(() => aiProviders.find((provider) => provider.id === aiBulkDraft.providerConfigId), [aiBulkDraft.providerConfigId, aiProviders]);
   const filteredSpamEntries = useMemo(() => {
     const search = spamSearch.trim().toLowerCase();
@@ -1943,6 +1950,16 @@ export function SettingsWorkspace() {
     if (activeSection !== "systemHealth") return;
     loadSystemHealth(systemHealthRange).catch(() => setError("Unable to load system health information."));
   }, [activeSection, systemHealthRange]);
+
+  useEffect(() => {
+    setSystemHealthHistoryPage(1);
+  }, [systemHealthRange]);
+
+  useEffect(() => {
+    if (systemHealthHistoryPage > systemHealthHistoryPageCount) {
+      setSystemHealthHistoryPage(systemHealthHistoryPageCount);
+    }
+  }, [systemHealthHistoryPage, systemHealthHistoryPageCount]);
 
   return (
     <div className="settings-page">
@@ -3975,7 +3992,7 @@ export function SettingsWorkspace() {
                 <div className="section-heading">
                   <div>
                     <h2>System Health</h2>
-                    <p className="muted">Monitor the application services, portals, integrations, and recent health history.</p>
+                    <p className="muted">Monitor application services, portals, integrations, and automatic health snapshots.</p>
                   </div>
                   <div className="settings-actions compact-actions">
                     <span className={`system-health-badge ${systemHealth?.status ?? "warning"}`}>
@@ -4016,7 +4033,7 @@ export function SettingsWorkspace() {
                   <div className="section-heading compact-heading">
                     <div>
                       <h3>System Status Timeline</h3>
-                      <p className="muted">Component availability for the selected history range.</p>
+                      <p className="muted">Component availability from automatic and manual snapshots in the selected range.</p>
                     </div>
                     <span className="muted">
                       {systemHealthTimeline ? `${new Date(systemHealthTimeline.from).toLocaleDateString()} - ${new Date(systemHealthTimeline.to).toLocaleDateString()}` : "Loading"}
@@ -4068,57 +4085,84 @@ export function SettingsWorkspace() {
                 <div className="section-heading">
                   <div>
                     <h2>Health History</h2>
-                    <p className="muted">Manual checks are stored as snapshots for operational review.</p>
+                    <p className="muted">Automatic and manual checks are stored as snapshots for operational review.</p>
                   </div>
-                  <div className="segmented-control">
-                    {(["daily", "weekly", "monthly", "yearly"] as const).map((range) => (
-                      <button className={systemHealthRange === range ? "active" : ""} type="button" key={range} onClick={() => setSystemHealthRange(range)}>
-                        {range[0].toUpperCase() + range.slice(1)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="system-health-history-counts settings-section">
-                  <span className="status-pill success">OK {systemHealthHistory?.totals.ok ?? 0}</span>
-                  <span className="status-pill warning-pill">Warnings {systemHealthHistory?.totals.warning ?? 0}</span>
-                  <span className="status-pill danger-pill">Errors {systemHealthHistory?.totals.error ?? 0}</span>
-                </div>
-
-                <div className="table-scroll settings-section">
-                  <table className="tickets-table system-health-table">
-                    <thead>
-                      <tr>
-                        <th>Time</th>
-                        <th>Component</th>
-                        <th>Status</th>
-                        <th>Message</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {systemHealthHistory?.snapshots.length === 0 ? (
-                        <tr>
-                          <td colSpan={4}>
-                            <span className="muted">No health snapshots in this range. Run a check to record the current state.</span>
-                          </td>
-                        </tr>
-                      ) : null}
-                      {(systemHealthHistory?.snapshots ?? []).map((snapshot) => (
-                        <tr key={snapshot.id}>
-                          <td>{new Date(snapshot.checkedAt).toLocaleString()}</td>
-                          <td>{snapshot.component}</td>
-                          <td>
-                            <span className={`system-health-inline-status ${snapshot.status}`}>
-                              <span aria-hidden="true" />
-                              {snapshot.status}
-                            </span>
-                          </td>
-                          <td>{snapshot.message}</td>
-                        </tr>
+                  <div className="settings-actions compact-actions">
+                    <button className="button secondary" type="button" onClick={() => setSystemHealthHistoryOpen((current) => !current)}>
+                      <span>{systemHealthHistoryOpen ? "Hide Health History" : "View Health History"}</span>
+                    </button>
+                    <div className="segmented-control">
+                      {(["daily", "weekly", "monthly", "yearly"] as const).map((range) => (
+                        <button className={systemHealthRange === range ? "active" : ""} type="button" key={range} onClick={() => setSystemHealthRange(range)}>
+                          {range[0].toUpperCase() + range.slice(1)}
+                        </button>
                       ))}
-                    </tbody>
-                  </table>
+                    </div>
+                  </div>
                 </div>
+
+                <div className="system-health-history-summary settings-section">
+                  <div className="system-health-history-counts">
+                    <span className="status-pill success">OK {systemHealthHistory?.totals.ok ?? 0}</span>
+                    <span className="status-pill warning-pill">Warnings {systemHealthHistory?.totals.warning ?? 0}</span>
+                    <span className="status-pill danger-pill">Errors {systemHealthHistory?.totals.error ?? 0}</span>
+                  </div>
+                  <span className="muted">
+                    {systemHealthHistory ? `${systemHealthSnapshots.length} snapshots in ${systemHealthRange} range` : "Loading health history"}
+                  </span>
+                </div>
+
+                {systemHealthHistoryOpen ? (
+                  <>
+                    <div className="table-scroll settings-section">
+                      <table className="tickets-table system-health-table">
+                        <thead>
+                          <tr>
+                            <th>Time</th>
+                            <th>Component</th>
+                            <th>Status</th>
+                            <th>Message</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {systemHealthSnapshots.length === 0 ? (
+                            <tr>
+                              <td colSpan={4}>
+                                <span className="muted">No health snapshots in this range. Run a check to record the current state.</span>
+                              </td>
+                            </tr>
+                          ) : null}
+                          {visibleSystemHealthSnapshots.map((snapshot) => (
+                            <tr key={snapshot.id}>
+                              <td>{new Date(snapshot.checkedAt).toLocaleString()}</td>
+                              <td>{snapshot.component}</td>
+                              <td>
+                                <span className={`system-health-inline-status ${snapshot.status}`}>
+                                  <span aria-hidden="true" />
+                                  {snapshot.status}
+                                </span>
+                              </td>
+                              <td>{snapshot.message}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="system-health-history-pagination settings-section">
+                      <span className="muted">
+                        Page {systemHealthHistoryPage} of {systemHealthHistoryPageCount}
+                      </span>
+                      <div className="settings-actions compact-actions">
+                        <button className="button secondary" type="button" onClick={() => setSystemHealthHistoryPage((page) => Math.max(1, page - 1))} disabled={systemHealthHistoryPage <= 1}>
+                          Previous
+                        </button>
+                        <button className="button secondary" type="button" onClick={() => setSystemHealthHistoryPage((page) => Math.min(systemHealthHistoryPageCount, page + 1))} disabled={systemHealthHistoryPage >= systemHealthHistoryPageCount}>
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : null}
               </div>
             </section>
           ) : null}

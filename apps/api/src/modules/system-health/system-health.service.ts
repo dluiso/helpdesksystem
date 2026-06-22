@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -80,29 +80,50 @@ function buildComponent(
 }
 
 @Injectable()
-export class SystemHealthService {
+export class SystemHealthService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(SystemHealthService.name);
+  private automaticCheckTimer?: NodeJS.Timeout;
+  private automaticCheckRunning = false;
+
   constructor(private readonly prisma: PrismaService) {}
 
+  onModuleInit() {
+    const intervalMs = this.automaticCheckIntervalMs();
+    this.automaticCheckTimer = setInterval(() => {
+      void this.runAutomaticCheck();
+    }, intervalMs);
+  }
+
+  onModuleDestroy() {
+    if (this.automaticCheckTimer) {
+      clearInterval(this.automaticCheckTimer);
+    }
+  }
+
   async getSummary(user: AuthenticatedUser, record = false) {
+    return this.getSummaryForOrganization(user.organizationId, record);
+  }
+
+  private async getSummaryForOrganization(organizationId: string, record = false) {
     const database = await this.checkDatabase();
     if (database.status === "error") {
-      return this.aggregate(user, [database], null, record);
+      return this.aggregate(organizationId, [database], null, record);
     }
 
     const settings = await this.prisma.systemSetting.findUnique({
-      where: { organizationId: user.organizationId }
+      where: { organizationId }
     });
 
     const components = await Promise.all([
       this.checkStorage(),
-      this.checkMail(user.organizationId),
-      this.checkSupportPortal(user.organizationId, settings?.supportPortalEnabled ?? false),
-      this.checkEventServices(user.organizationId),
-      this.checkAi(user.organizationId, settings?.aiAssistantEnabled ?? false),
+      this.checkMail(organizationId),
+      this.checkSupportPortal(organizationId, settings?.supportPortalEnabled ?? false),
+      this.checkEventServices(organizationId),
+      this.checkAi(organizationId, settings?.aiAssistantEnabled ?? false),
       this.checkAuditLogs()
     ]);
 
-    return this.aggregate(user, [database, ...components], settings, record);
+    return this.aggregate(organizationId, [database, ...components], settings, record);
   }
 
   async getHistory(range: SystemHealthRange = "daily") {
@@ -212,7 +233,7 @@ export class SystemHealthService {
     };
   }
 
-  private async aggregate(user: AuthenticatedUser, components: SystemHealthComponent[], settings: { defaultTimezone: string; dateFormat: string; timeFormat: string } | null, record: boolean) {
+  private async aggregate(organizationId: string, components: SystemHealthComponent[], settings: { defaultTimezone: string; dateFormat: string; timeFormat: string } | null, record: boolean) {
     const aggregateStatus: SystemHealthStatus = components.some((component) => component.status === "error")
       ? "error"
       : components.some((component) => component.status === "warning")
@@ -241,8 +262,37 @@ export class SystemHealthService {
       timeFormat: settings?.timeFormat ?? "12h",
       components,
       recorded: record,
-      organizationId: user.organizationId
+      organizationId
     };
+  }
+
+  private automaticCheckIntervalMs() {
+    const configured = Number(process.env.SYSTEM_HEALTH_AUTO_CHECK_INTERVAL_MS);
+    if (Number.isFinite(configured) && configured >= 60_000) {
+      return configured;
+    }
+    return 15 * 60 * 1000;
+  }
+
+  private async runAutomaticCheck() {
+    if (this.automaticCheckRunning) {
+      return;
+    }
+    this.automaticCheckRunning = true;
+    try {
+      const organization = await this.prisma.organization.findFirst({
+        orderBy: { createdAt: "asc" },
+        select: { id: true }
+      });
+      if (!organization) {
+        return;
+      }
+      await this.getSummaryForOrganization(organization.id, true);
+    } catch (error) {
+      this.logger.warn(`Automatic system health check failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally {
+      this.automaticCheckRunning = false;
+    }
   }
 
   private async checkDatabase() {
