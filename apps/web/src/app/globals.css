@@ -6875,15 +6875,22 @@ a.dashboard-list-row:hover {
 
 .tickets-compact-header {
   display: grid;
-  grid-template-columns: max-content minmax(300px, 1fr) minmax(180px, 240px) max-content;
-  gap: 12px;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
   margin-bottom: 16px;
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface-raised);
   box-shadow: var(--shadow-xs);
+}
+
+.tickets-toolbar-row {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(180px, 240px) max-content;
+  gap: 12px;
+  align-items: center;
 }
 
 .tickets-compact-title {
@@ -9040,6 +9047,19 @@ a.dashboard-list-row:hover {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .tickets-toolbar-row {
+    grid-template-columns: minmax(280px, 1fr) minmax(180px, 240px);
+  }
+
+  .tickets-toolbar-row .tickets-header-actions {
+    grid-column: 1 / -1;
+  }
+
+  .tickets-header-actions,
+  .tickets-secondary-actions {
+    flex-wrap: wrap;
+  }
+
   .profile-summary-grid,
   .clients-summary-grid,
   .knowledge-summary-grid {
@@ -9767,6 +9787,10 @@ a.dashboard-list-row:hover {
 
   .tickets-compact-header {
     gap: 10px;
+  }
+
+  .tickets-toolbar-row {
+    grid-template-columns: 1fr;
   }
 
   .tickets-compact-title {

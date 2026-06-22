@@ -1192,69 +1192,71 @@ export function TicketsList() {
           </div>
           <span className="count-pill">{totalTickets} total</span>
         </div>
-        <label className="input-with-icon tickets-search-field">
-          <Search size={16} aria-hidden="true" />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search number, subject, body, client, domain, or requester" />
-        </label>
-        <select className="input tickets-view-select" value={selectedViewId} onChange={(event) => changeView(event.target.value)}>
-          <optgroup label="Standard views">
-            {builtInViews.map((view) => (
-              <option key={view.id} value={`built-in:${view.id}`}>
-                {view.name}
-              </option>
-            ))}
-          </optgroup>
-          {ticketViews.length ? (
-            <optgroup label="Saved views">
-              {ticketViews.map((view) => (
-                <option key={view.id} value={`saved:${view.id}`}>
-                  {view.isDefault ? "* " : ""}{view.name}
+        <div className="tickets-toolbar-row">
+          <label className="input-with-icon tickets-search-field">
+            <Search size={16} aria-hidden="true" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search number, subject, body, client, domain, or requester" />
+          </label>
+          <select className="input tickets-view-select" value={selectedViewId} onChange={(event) => changeView(event.target.value)}>
+            <optgroup label="Standard views">
+              {builtInViews.map((view) => (
+                <option key={view.id} value={`built-in:${view.id}`}>
+                  {view.name}
                 </option>
               ))}
             </optgroup>
-          ) : null}
-        </select>
-        <div className="form-actions tickets-header-actions">
-          <button className={`button ${hasActiveFilters ? "" : "secondary"}`} type="button" onClick={() => setShowAdvancedFilters((current) => !current)}>
-            <SlidersHorizontal size={16} aria-hidden="true" />
-            <span>{hasActiveFilters ? "Filters Active" : "Filters"}</span>
-          </button>
-          <button
-            className="button secondary tickets-mobile-actions-trigger"
-            type="button"
-            aria-expanded={showMobileActions}
-            onClick={() => setShowMobileActions((current) => !current)}
-          >
-            <MoreHorizontal size={16} aria-hidden="true" />
-            <span>Actions</span>
-          </button>
-          <div className={`tickets-secondary-actions ${showMobileActions ? "open" : ""}`}>
-            <button className="button" type="button" onClick={() => setShowNewTicketModal(true)}>
-              <Plus size={16} aria-hidden="true" />
-              <span>New Ticket</span>
-            </button>
-            <button className="button secondary" type="button" onClick={saveCurrentView}>
-              <Save size={16} aria-hidden="true" />
-              <span>Save View</span>
-            </button>
-            {selectedViewId.startsWith("saved:") ? (
-              <button className="button secondary" type="button" onClick={deleteCurrentView}>
-                <X size={16} aria-hidden="true" />
-                <span>Delete View</span>
-              </button>
+            {ticketViews.length ? (
+              <optgroup label="Saved views">
+                {ticketViews.map((view) => (
+                  <option key={view.id} value={`saved:${view.id}`}>
+                    {view.isDefault ? "* " : ""}{view.name}
+                  </option>
+                ))}
+              </optgroup>
             ) : null}
-            <button className="button secondary" type="button" onClick={() => void loadTickets()} disabled={loading}>
-              <RefreshCcw size={16} aria-hidden="true" />
-              <span>Refresh</span>
-            </button>
-            <button className="button secondary" type="button" onClick={() => setShowColumnsPanel((current) => !current)}>
+          </select>
+          <div className="form-actions tickets-header-actions">
+            <button className={`button ${hasActiveFilters ? "" : "secondary"}`} type="button" onClick={() => setShowAdvancedFilters((current) => !current)}>
               <SlidersHorizontal size={16} aria-hidden="true" />
-              <span>Columns</span>
+              <span>{hasActiveFilters ? "Filters Active" : "Filters"}</span>
             </button>
-            <button className={`button ${trashMode ? "" : "secondary"}`} type="button" onClick={() => setTrashMode((current) => !current)}>
-              {trashMode ? <RotateCcw size={16} aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
-              <span>{trashMode ? "Active Tickets" : "Recycle Bin"}</span>
+            <button
+              className="button secondary tickets-mobile-actions-trigger"
+              type="button"
+              aria-expanded={showMobileActions}
+              onClick={() => setShowMobileActions((current) => !current)}
+            >
+              <MoreHorizontal size={16} aria-hidden="true" />
+              <span>Actions</span>
             </button>
+            <div className={`tickets-secondary-actions ${showMobileActions ? "open" : ""}`}>
+              <button className="button" type="button" onClick={() => setShowNewTicketModal(true)}>
+                <Plus size={16} aria-hidden="true" />
+                <span>New Ticket</span>
+              </button>
+              <button className="button secondary" type="button" onClick={saveCurrentView}>
+                <Save size={16} aria-hidden="true" />
+                <span>Save View</span>
+              </button>
+              {selectedViewId.startsWith("saved:") ? (
+                <button className="button secondary" type="button" onClick={deleteCurrentView}>
+                  <X size={16} aria-hidden="true" />
+                  <span>Delete View</span>
+                </button>
+              ) : null}
+              <button className="button secondary" type="button" onClick={() => void loadTickets()} disabled={loading}>
+                <RefreshCcw size={16} aria-hidden="true" />
+                <span>Refresh</span>
+              </button>
+              <button className="button secondary" type="button" onClick={() => setShowColumnsPanel((current) => !current)}>
+                <SlidersHorizontal size={16} aria-hidden="true" />
+                <span>Columns</span>
+              </button>
+              <button className={`button ${trashMode ? "" : "secondary"}`} type="button" onClick={() => setTrashMode((current) => !current)}>
+                {trashMode ? <RotateCcw size={16} aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
+                <span>{trashMode ? "Active Tickets" : "Recycle Bin"}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
