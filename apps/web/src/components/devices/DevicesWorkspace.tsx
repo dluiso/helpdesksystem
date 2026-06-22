@@ -516,7 +516,6 @@ export function DevicesWorkspace() {
                   <th>Client / Site</th>
                   <th>OS</th>
                   <th>Status</th>
-                  <th>Last seen</th>
                   <th>Action</th>
                 </tr>
               </thead>
@@ -589,13 +588,13 @@ function DeviceTableRow({
   const network = getDeviceNetworkInfo(device);
   return (
     <tr>
-      <td>
+      <td className="device-table-device-cell">
         <div className="device-name-cell">
+          <FavoriteButton device={device} busy={busy} onFavorite={onFavorite} />
           <span className={`device-type-icon ${statusClass}`}><DeviceIcon size={18} aria-hidden="true" /></span>
           <div>
             <div className="device-title-row">
               <Link href={`/devices/${device.id}`}><strong>{device.name}</strong></Link>
-              <FavoriteButton device={device} busy={busy} onFavorite={onFavorite} />
             </div>
             <span>{device.hostname ?? device.remoteAccessId ?? device.type}</span>
           </div>
@@ -605,19 +604,22 @@ function DeviceTableRow({
         <strong>{device.client.name}</strong>
         <span>{device.deviceGroupId ?? "No site"}</span>
       </td>
-      <td>
+      <td className="device-table-os-cell">
         <div className="device-os-cell">
           <OsIcon size={16} aria-hidden="true" />
           <div>
             <strong>{device.operatingSystem ?? "Unknown"}</strong>
-            <span>{device.osVersion ?? device.primaryUser ?? ""}</span>
-            <span className="device-network-line">{formatNetworkSummary(network)}</span>
+            <span className="device-os-meta">
+              {device.osVersion ? <span>Agent {device.osVersion}</span> : null}
+              {network.localIp ? <span>IP {network.localIp}</span> : null}
+              {network.macAddress ? <span>MAC {network.macAddress}</span> : null}
+              {!device.osVersion && !network.localIp && !network.macAddress ? <span>{device.primaryUser ?? "-"}</span> : null}
+            </span>
           </div>
         </div>
       </td>
       <td><span className={`status-pill ${device.status === "ACTIVE" ? "success" : "muted"}`}>{device.status}</span></td>
-      <td>{formatDate(device.lastSeenAt)}</td>
-      <td>
+      <td className="device-table-action-cell">
         <DeviceActions device={device} busy={busy} onOpenRemote={onOpenRemote} />
       </td>
     </tr>
