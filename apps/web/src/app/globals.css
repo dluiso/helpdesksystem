@@ -1550,19 +1550,36 @@ select.compact-select {
 }
 
 .device-connect-button,
+.device-background-button,
 .device-sysinfo-button {
   justify-content: center;
 }
 
 .device-table-action-cell .device-connect-button,
+.device-table-action-cell .device-background-button,
 .device-table-action-cell .device-sysinfo-button {
   min-width: 86px;
   padding-inline: 9px;
 }
 
-.device-background-button,
 .device-sysinfo-button {
   border-color: var(--line-strong);
+}
+
+.device-action-row .button.device-background-button {
+  border-color: color-mix(in srgb, #f44604 46%, var(--line));
+  color: #ffffff;
+  background: #f44604;
+  box-shadow: 0 8px 18px color-mix(in srgb, #f44604 22%, transparent);
+}
+
+.device-action-row .button.device-background-button:hover:not(:disabled) {
+  filter: brightness(0.96);
+}
+
+.device-action-row .button.device-background-button:disabled {
+  color: color-mix(in srgb, #ffffff 78%, var(--text-muted));
+  background: color-mix(in srgb, #f44604 58%, var(--surface-muted));
 }
 
 .device-action-row .button.primary:disabled,
