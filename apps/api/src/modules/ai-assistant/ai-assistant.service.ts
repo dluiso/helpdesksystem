@@ -331,13 +331,15 @@ export class AiAssistantService {
   }
 
   private systemPromptForAction(action: AiTicketAction, configuredPrompt?: string | null) {
+    const replyBodyPrompt =
+      "Return only the technician draft body. Do not include or modify email signatures, signature blocks, closing contact details, markdown labels, or explanations.";
     if (action !== "complete_draft") {
-      return configuredPrompt;
+      return configuredPrompt ? `${configuredPrompt}\n\n${replyBodyPrompt}` : replyBodyPrompt;
     }
 
     const autocompletePrompt =
       "You are an inline autocomplete assistant for IT support ticket replies. Continue the technician draft with only the next short phrase or sentence. Do not repeat the draft. Do not add greetings, signatures, explanations, markdown, or quoted labels.";
-    return configuredPrompt ? `${configuredPrompt}\n\n${autocompletePrompt}` : autocompletePrompt;
+    return configuredPrompt ? `${configuredPrompt}\n\n${replyBodyPrompt}\n\n${autocompletePrompt}` : `${replyBodyPrompt}\n\n${autocompletePrompt}`;
   }
 
   private systemPromptForEventAction(action: AiTicketAction, configuredPrompt?: string | null) {
