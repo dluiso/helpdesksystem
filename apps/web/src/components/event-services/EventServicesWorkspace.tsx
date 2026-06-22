@@ -673,8 +673,8 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
               </div>
 
               {detailSection === "overview" ? (
-                <div className="nested-panel event-detail-section-panel">
-                  <div className="section-heading compact-heading">
+                <div className="nested-panel event-detail-section-panel event-request-management-panel">
+                  <div className="section-heading compact-heading event-request-management-heading">
                     <div>
                       <h3>Request Management</h3>
                       <p className="muted">Update status, priority, specialists, and internal request notes.</p>
@@ -698,7 +698,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                       </label>
                     ))}
                   </div>
-                  <label>Internal notes / additional info<textarea className="input" value={draft.additionalInfo} onChange={(event) => setDraft((current) => ({ ...current, additionalInfo: event.target.value }))} /></label>
+                  <label className="event-management-notes">Internal notes / additional info<textarea className="input" value={draft.additionalInfo} onChange={(event) => setDraft((current) => ({ ...current, additionalInfo: event.target.value }))} /></label>
                 </div>
               ) : null}
 

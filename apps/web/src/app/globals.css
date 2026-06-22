@@ -3125,6 +3125,60 @@ select.compact-select {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.event-request-management-panel {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-raised) 78%, var(--surface-subtle)), var(--surface-subtle));
+}
+
+.event-request-management-heading {
+  align-items: start;
+  gap: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.event-request-management-heading h3 {
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.event-request-management-heading p {
+  margin-top: 5px;
+  line-height: 1.35;
+}
+
+.event-request-management-heading .button {
+  min-height: 40px;
+  align-self: start;
+  white-space: nowrap;
+}
+
+.event-request-management-panel .event-management-grid {
+  gap: 12px;
+}
+
+.event-request-management-panel .event-management-grid label,
+.event-management-notes {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.event-request-management-panel .input {
+  min-width: 0;
+}
+
+.event-management-notes textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
 .event-workspace-tabs {
   display: inline-flex;
   width: fit-content;
@@ -3639,9 +3693,9 @@ select.compact-select {
 }
 
 .event-assignee-picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
@@ -3649,13 +3703,38 @@ select.compact-select {
 }
 
 .event-assignee-picker strong {
-  flex: 0 0 100%;
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 
 .event-assignee-picker label {
+  min-width: 0;
+  min-height: 34px;
   display: inline-flex;
-  gap: 6px;
   align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--surface-subtle);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.event-assignee-picker label:has(input:checked) {
+  border-color: color-mix(in srgb, var(--brand-primary) 42%, var(--line));
+  background: color-mix(in srgb, var(--brand-primary) 9%, var(--surface-raised));
+  color: var(--text-strong);
+}
+
+.event-assignee-picker input {
+  flex: 0 0 auto;
 }
 
 .event-detail-columns {
