@@ -251,7 +251,7 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], cc
   }
 
   function getAutocompleteDraft() {
-    if (!isCursorAtAutocompleteBoundary() || isCursorAfterSignature()) {
+    if (!isCursorAtAutocompleteBoundary() || isCursorAfterSignature() || !isCursorAtPhraseBoundary()) {
       return "";
     }
     return stripSignatureFromText(getTextBeforeCursor());
@@ -298,6 +298,16 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], cc
     return !textAfterCursor && textBeforeCursor.endsWith(normalizeEditorText(signatureText));
   }
 
+  function isCursorAtPhraseBoundary() {
+    const textBeforeCursor = getTextBeforeCursor();
+    if (!textBeforeCursor.trim()) {
+      return false;
+    }
+
+    const lastCharacter = textBeforeCursor.at(-1) ?? "";
+    return /[\s.,;:!?)]/.test(lastCharacter);
+  }
+
   function canInsertInlineAutocomplete() {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || !selection.isCollapsed || !editorRef.current?.contains(selection.anchorNode)) {
@@ -309,7 +319,7 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], cc
       return false;
     }
 
-    return isCursorAtAutocompleteBoundary() && !isCursorAfterSignature() && !anchorElement.closest("a, table, img, pre, blockquote");
+    return isCursorAtAutocompleteBoundary() && !isCursorAfterSignature() && isCursorAtPhraseBoundary() && !anchorElement.closest("a, table, img, pre, blockquote");
   }
 
   function showInlineAutocomplete(rawSuggestion: string) {
@@ -722,6 +732,7 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], cc
           autoCorrect="on"
           contentEditable={!preview}
           dir="ltr"
+          lang="en-US"
           spellCheck
           suppressContentEditableWarning
           ref={editorRef}
