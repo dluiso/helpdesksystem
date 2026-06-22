@@ -10,6 +10,7 @@ import { NotificationsService, NotificationEventType } from "../notifications/no
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateEventServiceCommentDto } from "./dto/create-event-service-comment.dto";
 import { CreateEventServiceMessageDto } from "./dto/create-event-service-message.dto";
+import { CreateEventServiceRequestDto } from "./dto/create-event-service-request.dto";
 import { CreateEventServiceTaskDto } from "./dto/create-event-service-task.dto";
 import { SyncEventServiceTaskCalendarDto } from "./dto/sync-event-service-task-calendar.dto";
 import { CreatePublicEventServiceRequestDto } from "./dto/create-public-event-service-request.dto";
@@ -136,6 +137,60 @@ export class EventServicesService {
     ]);
 
     return { trackingNumber: request.trackingNumber, request };
+  }
+
+  async create(user: AuthenticatedUser, input: CreateEventServiceRequestDto) {
+    this.validateTimeRange(input.startTime, input.endTime);
+
+    const services = await this.prisma.eventServiceService.findMany({
+      where: { id: { in: [...new Set(input.serviceIds)] }, organizationId: user.organizationId, isActive: true }
+    });
+    if (!services.length) {
+      throw new BadRequestException("Select at least one active service.");
+    }
+
+    const validUserIds = await this.validUserIds(user.organizationId, input.assignedUserIds ?? []);
+    const trackingNumber = await this.nextTrackingNumber(user.organizationId);
+    const clientMapping = await this.findClientMapping(input.requesterEmail, user.organizationId);
+
+    const request = await this.prisma.eventServiceRequest.create({
+      data: {
+        organizationId: user.organizationId,
+        trackingNumber,
+        clientId: clientMapping.clientId,
+        contactId: clientMapping.contactId,
+        eventName: input.eventName.trim(),
+        organizer: this.optionalTrim(input.organizer),
+        venue: this.optionalTrim(input.venue),
+        eventDate: input.eventDate ? new Date(input.eventDate) : null,
+        startTime: this.optionalTrim(input.startTime),
+        endTime: this.optionalTrim(input.endTime),
+        requesterFirstName: input.requesterFirstName.trim(),
+        requesterLastName: input.requesterLastName.trim(),
+        requesterEmail: input.requesterEmail.trim().toLowerCase(),
+        requesterPhone: this.optionalTrim(input.requesterPhone),
+        priority: input.priority ?? TicketPriority.NORMAL,
+        status: validUserIds.length ? EventServiceRequestStatus.ASSIGNED : EventServiceRequestStatus.NEW,
+        additionalInfo: this.optionalTrim(input.additionalInfo),
+        services: { create: services.map((service) => ({ serviceId: service.id })) },
+        assignees: { create: validUserIds.map((userId) => ({ userId, role: "Manual assignment" })) },
+        activity: {
+          create: {
+            userId: user.id,
+            action: "event_service_request.created_internal",
+            metadata: { serviceIds: services.map((service) => service.id), assignedUserIds: validUserIds }
+          }
+        }
+      },
+      include: this.requestInclude(true)
+    });
+
+    await Promise.all([
+      this.notifications.notifyNewEventRequestCreated({ requestId: request.id, organizationId: user.organizationId }),
+      this.notifyAssignedUsers(request.id, "New event request assigned", `${request.trackingNumber}: ${request.eventName}`, "eventAssignedToMe", user.id)
+    ]);
+
+    return request;
   }
 
   async list(user: AuthenticatedUser, query: ListEventServiceRequestsDto) {

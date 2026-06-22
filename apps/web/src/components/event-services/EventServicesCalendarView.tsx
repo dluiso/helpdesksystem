@@ -54,6 +54,21 @@ interface EventServiceCalendarRequest {
 
 const statuses: EventStatus[] = ["NEW", "UNDER_REVIEW", "SCHEDULED", "ASSIGNED", "IN_PROGRESS", "WAITING_ON_CLIENT", "WAITING_ON_INTERNAL_TEAM", "COMPLETED", "CANCELLED", "CONVERTED_TO_TICKET"];
 const taskStatuses: TaskStatus[] = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE", "CANCELLED"];
+const priorities: Priority[] = ["LOW", "NORMAL", "HIGH", "URGENT", "CRITICAL"];
+const emptyEventDraft = {
+  eventName: "",
+  requesterFirstName: "",
+  requesterLastName: "",
+  requesterEmail: "",
+  venue: "",
+  eventDate: "",
+  startTime: "09:00",
+  endTime: "10:00",
+  priority: "NORMAL" as Priority,
+  serviceIds: [] as string[],
+  assignedUserIds: [] as string[],
+  additionalInfo: ""
+};
 
 function label(value: string) {
   if (value === "TODO") return "To Do";
@@ -135,6 +150,8 @@ export function EventServicesCalendarView() {
   const [anchor, setAnchor] = useState(() => new Date());
   const [filters, setFilters] = useState({ status: "", assignedUserId: "", serviceId: "" });
   const [taskDraft, setTaskDraft] = useState({ title: "", assignedUserId: "", dueAt: "", description: "", syncCalendar: false });
+  const [eventDraft, setEventDraft] = useState(emptyEventDraft);
+  const [eventDraftOpen, setEventDraftOpen] = useState(false);
   const [assignedUserIds, setAssignedUserIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -255,6 +272,52 @@ export function EventServicesCalendarView() {
     }
   }
 
+  function openEventDraft(day: Date) {
+    setEventDraft({ ...emptyEventDraft, eventDate: localDateKey(day) });
+    setEventDraftOpen(true);
+  }
+
+  function toggleDraftService(serviceId: string, checked: boolean) {
+    setEventDraft((current) => ({
+      ...current,
+      serviceIds: checked ? [...new Set([...current.serviceIds, serviceId])] : current.serviceIds.filter((id) => id !== serviceId)
+    }));
+  }
+
+  function toggleDraftAssignee(userId: string, checked: boolean) {
+    setEventDraft((current) => ({
+      ...current,
+      assignedUserIds: checked ? [...new Set([...current.assignedUserIds, userId])] : current.assignedUserIds.filter((id) => id !== userId)
+    }));
+  }
+
+  async function createEventRequest() {
+    if (!eventDraft.eventName.trim() || !eventDraft.requesterFirstName.trim() || !eventDraft.requesterLastName.trim() || !eventDraft.requesterEmail.trim() || eventDraft.serviceIds.length === 0) {
+      return;
+    }
+    setBusy("create-event");
+    setError(null);
+    try {
+      const created = await apiFetch<EventServiceCalendarRequest>("/event-services", {
+        method: "POST",
+        body: JSON.stringify({
+          ...eventDraft,
+          venue: eventDraft.venue || undefined,
+          additionalInfo: eventDraft.additionalInfo || undefined
+        })
+      });
+      setNotice(`${created.trackingNumber} created.`);
+      setEventDraftOpen(false);
+      setEventDraft(emptyEventDraft);
+      await loadCalendar();
+      setSelectedId(created.id);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to create event request.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function updateTask(task: EventServiceTask, status: TaskStatus) {
     if (!selected) return;
     setBusy(`task-${task.id}`);
@@ -337,6 +400,10 @@ export function EventServicesCalendarView() {
                   <strong>{mode === "day" ? day.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }) : day.getDate()}</strong>
                   <span>{dayRequests.length ? `${dayRequests.length} event${dayRequests.length === 1 ? "" : "s"}` : ""}</span>
                 </header>
+                <button className="event-calendar-add-day" type="button" onClick={() => openEventDraft(day)}>
+                  <CalendarPlus size={14} aria-hidden="true" />
+                  <span>Add event</span>
+                </button>
                 <div className="event-calendar-events">
                   {dayRequests.map((request) => (
                     <button className={`event-calendar-card status-${request.status.toLowerCase()}${selectedId === request.id ? " active" : ""}`} type="button" key={request.id} onClick={() => setSelectedId(request.id)}>
@@ -437,6 +504,60 @@ export function EventServicesCalendarView() {
           )}
         </aside>
       </div>
+      {eventDraftOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-panel compact-modal event-create-modal" role="dialog" aria-modal="true" aria-labelledby="event-create-modal-title">
+            <div className="modal-header">
+              <div>
+                <h2 id="event-create-modal-title">Create Event Request</h2>
+                <p>Schedule a manual event request and optionally assign specialists.</p>
+              </div>
+              <button className="button secondary" type="button" onClick={() => setEventDraftOpen(false)}>Close</button>
+            </div>
+            <div className="event-create-grid">
+              <label className="span-2">Event name<input className="input" value={eventDraft.eventName} onChange={(event) => setEventDraft((current) => ({ ...current, eventName: event.target.value }))} /></label>
+              <label>Requester first name<input className="input" value={eventDraft.requesterFirstName} onChange={(event) => setEventDraft((current) => ({ ...current, requesterFirstName: event.target.value }))} /></label>
+              <label>Requester last name<input className="input" value={eventDraft.requesterLastName} onChange={(event) => setEventDraft((current) => ({ ...current, requesterLastName: event.target.value }))} /></label>
+              <label className="span-2">Requester email<input className="input" type="email" value={eventDraft.requesterEmail} onChange={(event) => setEventDraft((current) => ({ ...current, requesterEmail: event.target.value }))} /></label>
+              <label>Event date<input className="input" type="date" value={eventDraft.eventDate} onChange={(event) => setEventDraft((current) => ({ ...current, eventDate: event.target.value }))} /></label>
+              <label>Priority<select className="input" value={eventDraft.priority} onChange={(event) => setEventDraft((current) => ({ ...current, priority: event.target.value as Priority }))}>{priorities.map((priority) => <option key={priority} value={priority}>{label(priority)}</option>)}</select></label>
+              <label>Start time<input className="input" type="time" step="900" value={eventDraft.startTime} onChange={(event) => setEventDraft((current) => ({ ...current, startTime: event.target.value }))} /></label>
+              <label>End time<input className="input" type="time" step="900" value={eventDraft.endTime} onChange={(event) => setEventDraft((current) => ({ ...current, endTime: event.target.value }))} /></label>
+              <label className="span-2">Venue<input className="input" value={eventDraft.venue} onChange={(event) => setEventDraft((current) => ({ ...current, venue: event.target.value }))} /></label>
+              <label className="span-2">Notes<textarea className="input" value={eventDraft.additionalInfo} onChange={(event) => setEventDraft((current) => ({ ...current, additionalInfo: event.target.value }))} /></label>
+              <div className="event-create-picker span-2">
+                <span>Services</span>
+                <div>
+                  {services.map((service) => (
+                    <label key={service.id}>
+                      <input type="checkbox" checked={eventDraft.serviceIds.includes(service.id)} onChange={(event) => toggleDraftService(service.id, event.target.checked)} />
+                      {service.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="event-create-picker span-2">
+                <span>Specialists</span>
+                <div>
+                  {users.map((user) => (
+                    <label key={user.id}>
+                      <input type="checkbox" checked={eventDraft.assignedUserIds.includes(user.id)} onChange={(event) => toggleDraftAssignee(user.id, event.target.checked)} />
+                      {userName(user)}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button className="button secondary" type="button" onClick={() => setEventDraftOpen(false)}>Cancel</button>
+              <button className="button" type="button" onClick={() => void createEventRequest()} disabled={busy === "create-event" || !eventDraft.eventName.trim() || !eventDraft.requesterFirstName.trim() || !eventDraft.requesterLastName.trim() || !eventDraft.requesterEmail.trim() || eventDraft.serviceIds.length === 0}>
+                <CalendarPlus size={16} aria-hidden="true" />
+                <span>{busy === "create-event" ? "Creating..." : "Create Event"}</span>
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

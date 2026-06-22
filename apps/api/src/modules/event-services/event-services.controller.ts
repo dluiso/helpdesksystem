@@ -26,6 +26,7 @@ import { RequirePermissions } from "../permissions/decorators/require-permission
 import { PermissionsGuard } from "../permissions/guards/permissions.guard";
 import { CreateEventServiceCommentDto } from "./dto/create-event-service-comment.dto";
 import { CreateEventServiceMessageDto } from "./dto/create-event-service-message.dto";
+import { CreateEventServiceRequestDto } from "./dto/create-event-service-request.dto";
 import { CreateEventServiceTaskDto } from "./dto/create-event-service-task.dto";
 import { CreatePublicEventServiceRequestDto } from "./dto/create-public-event-service-request.dto";
 import { ListEventServiceCalendarDto } from "./dto/list-event-service-calendar.dto";
@@ -71,6 +72,13 @@ export class EventServicesController {
   @RequirePermissions("event_services.view")
   list(@CurrentUser() user: AuthenticatedUser, @Query() query: ListEventServiceRequestsDto) {
     return this.eventServices.list(user, query);
+  }
+
+  @Post("event-services")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.update")
+  create(@CurrentUser() user: AuthenticatedUser, @Body() body: CreateEventServiceRequestDto) {
+    return this.eventServices.create(user, body);
   }
 
   @Get("event-services/recycle-bin")
