@@ -3218,6 +3218,11 @@ select.compact-select {
   font-size: 12px;
 }
 
+.event-workspace-tabs button.active span {
+  color: var(--brand-primary);
+  background: #ffffff;
+}
+
 .event-services-layout {
   display: grid;
   gap: 14px;
@@ -3690,6 +3695,11 @@ select.compact-select {
   color: var(--text-strong);
   background: var(--surface-muted);
   font-size: 12px;
+}
+
+.event-detail-tabs button.active span {
+  color: var(--brand-primary);
+  background: #ffffff;
 }
 
 .event-assignee-picker {
