@@ -5691,15 +5691,48 @@ select.public-event-input[multiple] {
 
 .audit-pagination {
   flex-wrap: wrap;
+  gap: 8px;
   justify-content: flex-end;
 }
 
 .audit-pagination-top {
   justify-content: space-between;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface-subtle);
+}
+
+.audit-pagination > .muted {
+  margin-right: auto;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.audit-pagination .button {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.audit-pagination .button:disabled {
+  opacity: 1;
+  color: var(--text-muted);
+  background: var(--control-muted);
+  box-shadow: none;
+}
+
+.audit-pagination .status-pill {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 28%, var(--line));
+  color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 10%, var(--surface-raised));
+  font-size: 12px;
+  font-weight: 850;
 }
 
 .settings-page .stack-row > div,
