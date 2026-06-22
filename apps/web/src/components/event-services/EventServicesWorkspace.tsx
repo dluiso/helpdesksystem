@@ -588,7 +588,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                 ) : null}
                 {requests.map((request) => (
                   <tr className={selectedId === request.id && detailOpen ? "selected-row" : ""} key={request.id} onClick={() => openRequest(request)}>
-                    <td>
+                    <td className="event-request-select-cell">
                       <input
                         aria-label={`Select ${request.trackingNumber}`}
                         type="checkbox"
@@ -597,21 +597,21 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                         onClick={(event) => event.stopPropagation()}
                       />
                     </td>
-                    <td><strong className="event-tracking-number">{request.trackingNumber}</strong></td>
-                    <td>
-                      <strong>{request.eventName}</strong>
-                      <span className="muted">{request.venue ?? "No venue"}</span>
+                    <td className="event-request-tracking-cell"><strong className="event-tracking-number">{request.trackingNumber}</strong></td>
+                    <td className="event-request-info-cell">
+                      <strong className="event-request-title" title={request.eventName}>{request.eventName}</strong>
+                      <span className="event-request-muted" title={request.venue ?? "No venue"}>{request.venue ?? "No venue"}</span>
                     </td>
-                    <td>
-                      <strong>{request.requesterFirstName} {request.requesterLastName}</strong>
-                      <span className="muted">{request.requesterEmail}</span>
+                    <td className="event-request-info-cell">
+                      <strong className="event-request-title" title={`${request.requesterFirstName} ${request.requesterLastName}`}>{request.requesterFirstName} {request.requesterLastName}</strong>
+                      <span className="event-request-muted event-request-email" title={request.requesterEmail}>{request.requesterEmail}</span>
                     </td>
-                    <td>
+                    <td className="event-request-date-cell">
                       <strong>{formatDate(request.eventDate)}</strong>
-                      <span className="muted">{request.startTime ?? "--"} - {request.endTime ?? "--"}</span>
+                      <span className="event-request-muted">{request.startTime ?? "--"} - {request.endTime ?? "--"}</span>
                     </td>
-                    <td>{request.services.map((item) => item.service.name).join(", ") || "None"}</td>
-                    <td>
+                    <td className="event-request-services-cell" title={request.services.map((item) => item.service.name).join(", ") || "None"}>{request.services.map((item) => item.service.name).join(", ") || "None"}</td>
+                    <td className="event-request-status-cell">
                       <span className="event-select-wrap">
                         <select
                           className="input compact-select event-inline-select"
@@ -625,10 +625,10 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                         <ChevronDown className="event-select-chevron" size={15} aria-hidden="true" />
                       </span>
                     </td>
-                    <td><span className={`status-pill event-priority-${request.priority.toLowerCase()}`}>{label(request.priority)}</span></td>
-                    <td><span className="muted">{request.assignees.map((assignee) => userName(assignee.user)).join(", ") || "Unassigned"}</span></td>
-                    <td>{formatDateTime(request.updatedAt)}</td>
-                    <td>
+                    <td className="event-request-priority-cell"><span className={`status-pill event-priority-${request.priority.toLowerCase()}`}>{label(request.priority)}</span></td>
+                    <td className="event-request-specialists-cell"><span className="event-request-muted" title={request.assignees.map((assignee) => userName(assignee.user)).join(", ") || "Unassigned"}>{request.assignees.map((assignee) => userName(assignee.user)).join(", ") || "Unassigned"}</span></td>
+                    <td className="event-request-updated-cell">{formatDateTime(request.updatedAt)}</td>
+                    <td className="event-request-action-cell">
                       <button className="event-open-button" type="button" onClick={(event) => { event.stopPropagation(); openRequest(request); }}>
                         Open
                       </button>

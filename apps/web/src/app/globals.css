@@ -3205,6 +3205,11 @@ select.compact-select {
   background: var(--surface-raised);
 }
 
+.event-table-scroll .event-request-table {
+  min-width: 1420px;
+  table-layout: fixed;
+}
+
 .event-request-table tbody tr {
   cursor: pointer;
   transition: background 0.16s ease;
@@ -3219,11 +3224,20 @@ select.compact-select {
 }
 
 .event-request-table td {
-  vertical-align: middle;
+  padding: 12px 10px;
+  vertical-align: top;
 }
 
 .event-request-table th {
+  padding: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.02em;
   text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: var(--surface-subtle);
 }
 
 .event-request-table th:first-child,
@@ -3237,9 +3251,121 @@ select.compact-select {
   text-align: center;
 }
 
+.event-request-table th:nth-child(1),
+.event-request-table td:nth-child(1) {
+  width: 42px;
+}
+
+.event-request-table th:nth-child(2),
+.event-request-table td:nth-child(2) {
+  width: 118px;
+}
+
+.event-request-table th:nth-child(3),
+.event-request-table td:nth-child(3) {
+  width: 250px;
+}
+
+.event-request-table th:nth-child(4),
+.event-request-table td:nth-child(4) {
+  width: 210px;
+}
+
+.event-request-table th:nth-child(5),
+.event-request-table td:nth-child(5) {
+  width: 140px;
+}
+
+.event-request-table th:nth-child(6),
+.event-request-table td:nth-child(6) {
+  width: 190px;
+}
+
+.event-request-table th:nth-child(7),
+.event-request-table td:nth-child(7) {
+  width: 180px;
+}
+
+.event-request-table th:nth-child(8),
+.event-request-table td:nth-child(8) {
+  width: 118px;
+}
+
+.event-request-table th:nth-child(9),
+.event-request-table td:nth-child(9) {
+  width: 170px;
+}
+
+.event-request-table th:nth-child(10),
+.event-request-table td:nth-child(10) {
+  width: 128px;
+}
+
+.event-request-table th:nth-child(11),
+.event-request-table td:nth-child(11) {
+  width: 94px;
+}
+
 .event-request-table td strong,
 .event-request-table td span {
   display: block;
+}
+
+.event-request-info-cell,
+.event-request-date-cell {
+  min-width: 0;
+}
+
+.event-request-info-cell > * + *,
+.event-request-date-cell > * + * {
+  margin-top: 4px;
+}
+
+.event-request-title,
+.event-request-muted,
+.event-request-services-cell,
+.event-request-specialists-cell span,
+.event-request-updated-cell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.event-request-title,
+.event-request-muted,
+.event-request-services-cell,
+.event-request-specialists-cell span {
+  white-space: nowrap;
+}
+
+.event-request-updated-cell {
+  white-space: nowrap;
+}
+
+.event-request-muted {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.event-request-email {
+  font-size: 12px;
+}
+
+.event-request-services-cell {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.event-request-status-cell,
+.event-request-priority-cell,
+.event-request-action-cell {
+  vertical-align: middle;
+}
+
+.event-request-table .status-pill {
+  width: fit-content;
+  max-width: 100%;
+  display: inline-flex;
 }
 
 .event-tracking-number {
