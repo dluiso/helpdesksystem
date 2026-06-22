@@ -5463,25 +5463,188 @@ select.public-event-input[multiple] {
   cursor: pointer;
 }
 
-.audit-filter-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(150px, 1fr));
-  gap: 12px;
-  align-items: end;
+.audit-logs-panel {
+  overflow: hidden;
 }
 
-.audit-search-field {
+.audit-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+}
+
+.audit-filter-grid .field {
+  grid-column: span 3;
+  min-width: 0;
+}
+
+.audit-filter-grid .audit-date-field,
+.audit-filter-grid .audit-page-size-field {
   grid-column: span 2;
 }
 
-.audit-metadata summary {
-  cursor: pointer;
-  color: var(--brand-primary);
-  font-weight: 750;
+.audit-filter-grid .audit-search-field {
+  grid-column: span 5;
 }
 
-.audit-metadata pre {
-  max-width: 520px;
+.audit-filter-actions {
+  grid-column: span 5;
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(120px, 0.7fr);
+  gap: 10px;
+}
+
+.audit-log-table {
+  min-width: 1040px;
+  table-layout: fixed;
+}
+
+.audit-log-table th:nth-child(1),
+.audit-log-table td:nth-child(1) {
+  width: 150px;
+}
+
+.audit-log-table th:nth-child(2),
+.audit-log-table td:nth-child(2) {
+  width: 220px;
+}
+
+.audit-log-table th:nth-child(3),
+.audit-log-table td:nth-child(3) {
+  width: 240px;
+}
+
+.audit-log-table th:nth-child(4),
+.audit-log-table td:nth-child(4) {
+  width: 185px;
+}
+
+.audit-log-table th:nth-child(5),
+.audit-log-table td:nth-child(5) {
+  width: 150px;
+}
+
+.audit-log-table th:nth-child(6),
+.audit-log-table td:nth-child(6) {
+  width: 130px;
+}
+
+.audit-row.expanded td {
+  background: var(--surface-selected);
+}
+
+.audit-time-cell,
+.audit-user-cell,
+.audit-action-cell,
+.audit-entity-cell {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.audit-time-cell strong,
+.audit-user-cell strong,
+.audit-action-cell span,
+.audit-entity-cell strong,
+.audit-entity-cell span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-action-pill,
+.audit-ip-pill {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.audit-action-pill {
+  color: var(--brand-primary);
+  background: var(--surface-selected);
+}
+
+.audit-ip-pill {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
+.audit-details-cell .button {
+  width: 100%;
+  justify-content: center;
+}
+
+.audit-empty-cell {
+  text-align: center;
+}
+
+.audit-metadata-row td {
+  padding: 0 12px 12px;
+  background: var(--surface-selected);
+}
+
+.audit-metadata-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+
+.audit-metadata-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.audit-metadata-item {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+
+.audit-metadata-item span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.audit-metadata-item strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.audit-metadata-raw summary {
+  cursor: pointer;
+  color: var(--brand-primary);
+  font-weight: 800;
+}
+
+.audit-metadata-raw pre {
   max-height: 220px;
   margin-top: 8px;
   padding: 10px;
@@ -10506,6 +10669,19 @@ a.dashboard-list-row:hover {
     grid-template-columns: 1fr;
   }
 
+  .audit-filter-grid .field,
+  .audit-filter-grid .audit-date-field,
+  .audit-filter-grid .audit-page-size-field,
+  .audit-filter-grid .audit-search-field,
+  .audit-filter-actions {
+    grid-column: auto;
+  }
+
+  .audit-filter-actions,
+  .audit-metadata-grid {
+    grid-template-columns: 1fr;
+  }
+
   .notification-user-grid {
     grid-template-columns: 1fr;
   }
@@ -10517,10 +10693,6 @@ a.dashboard-list-row:hover {
 
   .notification-user-header .button {
     width: fit-content;
-  }
-
-  .audit-search-field {
-    grid-column: auto;
   }
 
   .branding-preview {

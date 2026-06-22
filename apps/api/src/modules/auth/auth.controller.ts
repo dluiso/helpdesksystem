@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Post, Req, Res, UseGuards } from "@nestjs/common";
 import { ThrottlerGuard } from "@nestjs/throttler";
 import { Request, Response } from "express";
+import { getRequestIp } from "../../common/request-ip";
 import { AuthService } from "./auth.service";
 import { CurrentUser } from "./decorators/current-user.decorator";
 import { ForgotPasswordDto } from "./dto/forgot-password.dto";
@@ -18,7 +19,7 @@ export class AuthController {
   @UseGuards(ThrottlerGuard)
   async login(@Body() body: LoginDto, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
     const result = await this.authService.login(body, {
-      ipAddress: request.ip,
+      ipAddress: getRequestIp(request),
       userAgent: request.header("user-agent") ?? null,
       trustedDeviceToken: request.cookies?.[this.authService.getTrustedDeviceCookieName()] as string | undefined
     });
@@ -36,7 +37,7 @@ export class AuthController {
   @UseGuards(ThrottlerGuard)
   async verifyMfaLogin(@Body() body: VerifyMfaLoginDto, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
     const result = await this.authService.verifyMfaLogin(body, {
-      ipAddress: request.ip,
+      ipAddress: getRequestIp(request),
       userAgent: request.header("user-agent") ?? null
     });
 
@@ -51,7 +52,7 @@ export class AuthController {
   @UseGuards(ThrottlerGuard)
   forgotPassword(@Body() body: ForgotPasswordDto, @Req() request: Request) {
     return this.authService.forgotPassword(body, {
-      ipAddress: request.ip,
+      ipAddress: getRequestIp(request),
       userAgent: request.header("user-agent") ?? null
     });
   }
@@ -60,7 +61,7 @@ export class AuthController {
   @UseGuards(ThrottlerGuard)
   resetPassword(@Body() body: ResetPasswordDto, @Req() request: Request) {
     return this.authService.resetPassword(body, {
-      ipAddress: request.ip,
+      ipAddress: getRequestIp(request),
       userAgent: request.header("user-agent") ?? null
     });
   }
@@ -69,7 +70,7 @@ export class AuthController {
   @UseGuards(SessionAuthGuard)
   async logout(@Req() request: AuthenticatedRequest, @Res({ passthrough: true }) response: Response) {
     await this.authService.logout(request.sessionToken, {
-      ipAddress: request.ip,
+      ipAddress: getRequestIp(request),
       userAgent: request.header("user-agent") ?? null
     });
 

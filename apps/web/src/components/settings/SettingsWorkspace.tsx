@@ -1,7 +1,7 @@
 "use client";
 
 import { Download, Plus, RefreshCcw, RotateCw, TestTube2, Upload, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { EventServicesConfigPanel } from "@/components/settings/EventServicesConfigPanel";
 import { KnowledgeConfigPanel } from "@/components/settings/KnowledgeConfigPanel";
 import { RmmConfigPanel } from "@/components/settings/RmmConfigPanel";
@@ -692,6 +692,7 @@ export function SettingsWorkspace() {
   const [securitySettings, setSecuritySettings] = useState<SecuritySettings | null>(null);
   const [securityDraft, setSecurityDraft] = useState<SecuritySettings>(DEFAULT_SECURITY_SETTINGS);
   const [auditLogs, setAuditLogs] = useState<AuditLogResult | null>(null);
+  const [expandedAuditLogId, setExpandedAuditLogId] = useState<string | null>(null);
   const [systemHealth, setSystemHealth] = useState<SystemHealthSummary | null>(null);
   const [systemHealthHistory, setSystemHealthHistory] = useState<SystemHealthHistory | null>(null);
   const [systemHealthTimeline, setSystemHealthTimeline] = useState<SystemHealthTimeline | null>(null);
@@ -787,6 +788,12 @@ export function SettingsWorkspace() {
   const activeTeamCount = ticketTeams.filter((team) => team.isActive).length;
   const enabledAiProviderCount = aiProviders.filter((provider) => provider.isEnabled).length;
   const healthStatusLabel = systemHealth?.status ? systemHealth.status.toUpperCase() : loading ? "LOADING" : "NOT CHECKED";
+  const auditPage = Number(auditLogs?.page ?? auditFilters.page);
+  const auditPageSize = Number(auditLogs?.pageSize ?? auditFilters.pageSize);
+  const auditTotal = auditLogs?.total ?? 0;
+  const auditFirstItem = auditTotal === 0 ? 0 : (auditPage - 1) * auditPageSize + 1;
+  const auditLastItem = auditTotal === 0 ? 0 : Math.min(auditTotal, auditPage * auditPageSize);
+  const auditPageCount = Math.max(1, Math.ceil(auditTotal / auditPageSize));
   const systemHealthSnapshots = systemHealthHistory?.snapshots ?? [];
   const systemHealthHistoryPageCount = Math.max(1, Math.ceil(systemHealthSnapshots.length / SYSTEM_HEALTH_HISTORY_PAGE_SIZE));
   const visibleSystemHealthSnapshots = systemHealthSnapshots.slice((systemHealthHistoryPage - 1) * SYSTEM_HEALTH_HISTORY_PAGE_SIZE, systemHealthHistoryPage * SYSTEM_HEALTH_HISTORY_PAGE_SIZE);
@@ -1156,6 +1163,41 @@ export function SettingsWorkspace() {
   function exportAuditLogs() {
     const query = auditQueryString(auditFilters);
     window.location.href = `${apiBaseUrl}/system-settings/audit-logs/export${query ? `?${query}` : ""}`;
+  }
+
+  function formatAuditLabel(value: string) {
+    return value
+      .replace(/[._-]+/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/\b\w/g, (character) => character.toUpperCase());
+  }
+
+  function shortAuditId(value: string | null) {
+    if (!value) {
+      return "No record id";
+    }
+    return value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-6)}` : value;
+  }
+
+  function metadataEntries(metadata: unknown) {
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+      return [];
+    }
+    return Object.entries(metadata as Record<string, unknown>);
+  }
+
+  function formatAuditMetadataValue(value: unknown) {
+    if (value === null || value === undefined || value === "") {
+      return "None";
+    }
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return String(value);
+    }
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
   }
 
   function formatAuditMetadata(metadata: unknown) {
@@ -3418,24 +3460,27 @@ export function SettingsWorkspace() {
           ) : null}
 
           {activeSection === "logs" ? (
-            <section className="panel settings-section">
+            <section className="panel settings-section audit-logs-panel">
               <div className="section-heading">
                 <div>
                   <h2>Event Logs</h2>
                   <p className="muted">Review administrative and system activity across the application.</p>
                 </div>
-                <button className="button secondary" type="button" onClick={exportAuditLogs} disabled={!auditLogs?.items.length}>
-                  <Download size={16} aria-hidden="true" />
-                  <span>Export CSV</span>
-                </button>
+                <div className="settings-actions compact-actions">
+                  <span className="status-pill">{auditTotal} events</span>
+                  <button className="button secondary" type="button" onClick={exportAuditLogs} disabled={!auditLogs?.items.length}>
+                    <Download size={16} aria-hidden="true" />
+                    <span>Export CSV</span>
+                  </button>
+                </div>
               </div>
 
               <div className="audit-filter-grid settings-section">
-                <label className="field">
+                <label className="field audit-date-field">
                   <span>Start date</span>
                   <input className="input" type="date" value={auditFilters.startDate} onChange={(event) => setAuditFilters((current) => ({ ...current, startDate: event.target.value, page: "1" }))} />
                 </label>
-                <label className="field">
+                <label className="field audit-date-field">
                   <span>End date</span>
                   <input className="input" type="date" value={auditFilters.endDate} onChange={(event) => setAuditFilters((current) => ({ ...current, endDate: event.target.value, page: "1" }))} />
                 </label>
@@ -3476,16 +3521,26 @@ export function SettingsWorkspace() {
                   <span>Search</span>
                   <input className="input" placeholder="Action, entity, IP, user agent..." value={auditFilters.search} onChange={(event) => setAuditFilters((current) => ({ ...current, search: event.target.value, page: "1" }))} />
                 </label>
-                <button className="button" type="button" onClick={() => void applyAuditFilters(auditFilters)} disabled={busy === "audit-logs"}>
-                  Apply Filters
-                </button>
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={() => void applyAuditFilters({ startDate: "", endDate: "", userId: "", action: "", entityType: "", search: "", page: "1", pageSize: auditFilters.pageSize })}
-                >
-                  Clear
-                </button>
+                <label className="field audit-page-size-field">
+                  <span>Rows</span>
+                  <select className="input" value={auditFilters.pageSize} onChange={(event) => void applyAuditFilters({ ...auditFilters, page: "1", pageSize: event.target.value })}>
+                    <option value="25">25 rows</option>
+                    <option value="50">50 rows</option>
+                    <option value="100">100 rows</option>
+                  </select>
+                </label>
+                <div className="audit-filter-actions">
+                  <button className="button" type="button" onClick={() => void applyAuditFilters(auditFilters)} disabled={busy === "audit-logs"}>
+                    Apply Filters
+                  </button>
+                  <button
+                    className="button secondary"
+                    type="button"
+                    onClick={() => void applyAuditFilters({ startDate: "", endDate: "", userId: "", action: "", entityType: "", search: "", page: "1", pageSize: auditFilters.pageSize })}
+                  >
+                    Clear
+                  </button>
+                </div>
               </div>
 
               <div className="table-scroll settings-section">
@@ -3503,58 +3558,94 @@ export function SettingsWorkspace() {
                   <tbody>
                     {auditLogs?.items.length === 0 ? (
                       <tr>
-                        <td colSpan={6}>
+                        <td colSpan={6} className="audit-empty-cell">
                           <span className="muted">No events match the current filters.</span>
                         </td>
                       </tr>
                     ) : null}
-                    {(auditLogs?.items ?? []).map((log) => (
-                      <tr key={log.id}>
-                        <td>{new Date(log.createdAt).toLocaleString()}</td>
-                        <td>
-                          <strong>{log.user ? `${log.user.firstName} ${log.user.lastName}`.trim() || log.user.email : "System"}</strong>
-                          <span className="muted">{log.user?.email ?? "No user context"}</span>
-                        </td>
-                        <td>{log.action}</td>
-                        <td>
-                          <strong>{log.entityType}</strong>
-                          <span className="muted">{log.entityId ?? "No record id"}</span>
-                        </td>
-                        <td>{log.ipAddress ?? "-"}</td>
-                        <td>
-                          {formatAuditMetadata(log.metadata) ? (
-                            <details className="audit-metadata">
-                              <summary>View metadata</summary>
-                              <pre>{formatAuditMetadata(log.metadata)}</pre>
-                            </details>
-                          ) : (
-                            <span className="muted">No metadata</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                    {(auditLogs?.items ?? []).map((log) => {
+                      const expanded = expandedAuditLogId === log.id;
+                      const metadata = formatAuditMetadata(log.metadata);
+                      const entries = metadataEntries(log.metadata);
+                      return (
+                        <Fragment key={log.id}>
+                          <tr className={expanded ? "audit-row expanded" : "audit-row"}>
+                            <td className="audit-time-cell">
+                              <strong>{new Date(log.createdAt).toLocaleDateString()}</strong>
+                              <span className="muted">{new Date(log.createdAt).toLocaleTimeString()}</span>
+                            </td>
+                            <td className="audit-user-cell">
+                              <strong>{log.user ? `${log.user.firstName} ${log.user.lastName}`.trim() || log.user.email : "System"}</strong>
+                              <span className="muted">{log.user?.email ?? "No user context"}</span>
+                            </td>
+                            <td className="audit-action-cell">
+                              <span className="audit-action-pill" title={log.action}>{formatAuditLabel(log.action)}</span>
+                              <span className="muted">{log.action}</span>
+                            </td>
+                            <td className="audit-entity-cell">
+                              <strong>{formatAuditLabel(log.entityType)}</strong>
+                              <span className="muted" title={log.entityId ?? undefined}>{shortAuditId(log.entityId)}</span>
+                            </td>
+                            <td className="audit-ip-cell">
+                              <span className={log.ipAddress ? "audit-ip-pill" : "muted"}>{log.ipAddress ?? "Unavailable"}</span>
+                            </td>
+                            <td className="audit-details-cell">
+                              {metadata ? (
+                                <button className="button secondary small-button" type="button" onClick={() => setExpandedAuditLogId(expanded ? null : log.id)}>
+                                  {expanded ? "Hide details" : "View details"}
+                                </button>
+                              ) : (
+                                <span className="muted">No metadata</span>
+                              )}
+                            </td>
+                          </tr>
+                          {expanded ? (
+                            <tr className="audit-metadata-row">
+                              <td colSpan={6}>
+                                <div className="audit-metadata-panel">
+                                  <div className="audit-metadata-grid">
+                                    {entries.length > 0
+                                      ? entries.map(([key, value]) => (
+                                          <div className="audit-metadata-item" key={key}>
+                                            <span>{formatAuditLabel(key)}</span>
+                                            <strong>{formatAuditMetadataValue(value)}</strong>
+                                          </div>
+                                        ))
+                                      : null}
+                                  </div>
+                                  <details className="audit-metadata-raw">
+                                    <summary>Raw JSON</summary>
+                                    <pre>{metadata}</pre>
+                                  </details>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
 
               <div className="settings-actions settings-section audit-pagination">
                 <span className="muted">
-                  Showing {auditLogs?.items.length ?? 0} of {auditLogs?.total ?? 0} events.
+                  Showing {auditFirstItem}-{auditLastItem} of {auditTotal} events.
                 </span>
                 <button
                   className="button secondary"
                   type="button"
-                  disabled={Number(auditFilters.page) <= 1 || busy === "audit-logs"}
-                  onClick={() => void applyAuditFilters({ ...auditFilters, page: String(Math.max(1, Number(auditFilters.page) - 1)) })}
+                  disabled={auditPage <= 1 || busy === "audit-logs"}
+                  onClick={() => void applyAuditFilters({ ...auditFilters, page: String(Math.max(1, auditPage - 1)) })}
                 >
                   Previous
                 </button>
-                <span className="status-pill">Page {auditLogs?.page ?? auditFilters.page}</span>
+                <span className="status-pill">Page {auditPage} of {auditPageCount}</span>
                 <button
                   className="button secondary"
                   type="button"
-                  disabled={!auditLogs || auditLogs.page * auditLogs.pageSize >= auditLogs.total || busy === "audit-logs"}
-                  onClick={() => void applyAuditFilters({ ...auditFilters, page: String(Number(auditFilters.page) + 1) })}
+                  disabled={!auditLogs || auditPage >= auditPageCount || busy === "audit-logs"}
+                  onClick={() => void applyAuditFilters({ ...auditFilters, page: String(auditPage + 1) })}
                 >
                   Next
                 </button>

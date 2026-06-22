@@ -19,6 +19,7 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Request } from "express";
 import { Response } from "express";
+import { getRequestIp } from "../../common/request-ip";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
@@ -62,7 +63,7 @@ export class EventServicesController {
   @Post("public/event-services/requests")
   createPublicRequest(@Body() body: CreatePublicEventServiceRequestDto, @Req() request: Request) {
     return this.eventServices.createPublicRequest(body, {
-      ipAddress: request.ip,
+      ipAddress: getRequestIp(request),
       userAgent: request.get("user-agent") ?? undefined
     });
   }

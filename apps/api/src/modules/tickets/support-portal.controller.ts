@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from "@nestjs/common";
 import { Request } from "express";
+import { getRequestIp } from "../../common/request-ip";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
@@ -24,7 +25,7 @@ export class SupportPortalController {
   @Post("public/support/tickets")
   createPublicTicket(@Body() body: CreatePublicSupportTicketDto, @Req() request: Request) {
     return this.supportPortal.createPublicTicket(body, {
-      ipAddress: request.ip,
+      ipAddress: getRequestIp(request),
       userAgent: request.get("user-agent") ?? undefined
     });
   }
