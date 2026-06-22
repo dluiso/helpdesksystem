@@ -1573,12 +1573,16 @@ select.compact-select {
   box-shadow: 0 8px 18px color-mix(in srgb, #f44604 22%, transparent);
 }
 
-.device-action-row .button.device-background-button:hover:not(:disabled) {
-  filter: brightness(0.96);
+.device-action-row .button.secondary.device-background-button:hover:not(:disabled),
+.device-action-row .button.secondary.device-background-button:focus-visible:not(:disabled) {
+  border-color: color-mix(in srgb, #f44604 58%, var(--line));
+  color: #ffffff;
+  background: color-mix(in srgb, #f44604 88%, #000000 12%);
+  filter: none;
 }
 
 .device-action-row .button.device-background-button:disabled {
-  color: color-mix(in srgb, #ffffff 78%, var(--text-muted));
+  color: #ffffff;
   background: color-mix(in srgb, #f44604 58%, var(--surface-muted));
 }
 
