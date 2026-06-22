@@ -1189,7 +1189,6 @@ export function TicketsList() {
         <div className="tickets-compact-title">
           <div className="tickets-title-copy">
             <h1>Tickets</h1>
-            <p className="muted">Manage queue triage, assignments, status, priority, saved views, and recycle bin recovery.</p>
           </div>
           <span className="count-pill">{totalTickets} total</span>
         </div>

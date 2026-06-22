@@ -6875,7 +6875,7 @@ a.dashboard-list-row:hover {
 
 .tickets-compact-header {
   display: grid;
-  grid-template-columns: minmax(260px, 0.85fr) minmax(300px, 1fr) minmax(180px, 240px) auto;
+  grid-template-columns: max-content minmax(300px, 1fr) minmax(180px, 240px) max-content;
   gap: 12px;
   align-items: center;
   margin-bottom: 16px;
@@ -6888,9 +6888,10 @@ a.dashboard-list-row:hover {
 
 .tickets-compact-title {
   display: inline-flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
   min-width: 0;
+  white-space: nowrap;
 }
 
 .tickets-title-copy {
@@ -6913,7 +6914,7 @@ a.dashboard-list-row:hover {
 
 .tickets-header-actions {
   justify-content: flex-end;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
 }
 
@@ -6935,7 +6936,7 @@ a.dashboard-list-row:hover {
 .tickets-secondary-actions {
   display: flex;
   justify-content: flex-end;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
 }
 
