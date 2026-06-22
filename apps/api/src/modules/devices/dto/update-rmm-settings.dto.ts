@@ -38,4 +38,9 @@ export class UpdateRmmSettingsDto {
   @IsString()
   @MaxLength(500)
   controlUrlTemplate?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  backgroundUrlTemplate?: string | null;
 }

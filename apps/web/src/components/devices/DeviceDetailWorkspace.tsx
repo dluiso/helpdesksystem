@@ -27,6 +27,7 @@ interface DeviceRecord {
   actionUrls: {
     systemInfoUrl: string | null;
     controlUrl: string | null;
+    remoteBackgroundUrl: string | null;
   };
   remoteAccessProfile: {
     id: string;
@@ -105,20 +106,29 @@ export function DeviceDetailWorkspace({ deviceId }: { deviceId: string }) {
     }
   }
 
-  async function openRemote(mode: "control" | "system") {
+  async function openRemote(mode: "control" | "background" | "system") {
     const device = data?.device;
     if (!device) return;
-    const url = mode === "control" ? device.actionUrls.controlUrl : device.actionUrls.systemInfoUrl;
+    const url = mode === "control" ? device.actionUrls.controlUrl : mode === "background" ? device.actionUrls.remoteBackgroundUrl : device.actionUrls.systemInfoUrl;
     if (!url) {
-      setError(mode === "control" ? "This device does not have a remote control URL configured." : "This device does not have a system info URL configured.");
+      setError(
+        mode === "control"
+          ? "This device does not have a remote control URL configured."
+          : mode === "background"
+            ? "This device does not have a remote background URL configured."
+            : "This device does not have a system info URL configured."
+      );
       return;
     }
 
     setBusy(mode);
     setError(null);
     try {
-      if (mode === "control") {
-        const response = await apiFetch<{ connectionUrl: string | null }>(`/devices/${device.id}/remote-access/connection-attempts`, { method: "POST" });
+      if (mode === "control" || mode === "background") {
+        const response = await apiFetch<{ connectionUrl: string | null }>(`/devices/${device.id}/remote-access/connection-attempts`, {
+          method: "POST",
+          body: JSON.stringify({ mode })
+        });
         window.open(response.connectionUrl ?? url, "_blank", "noopener,noreferrer");
       } else {
         window.open(url, "_blank", "noopener,noreferrer");
@@ -194,6 +204,10 @@ export function DeviceDetailWorkspace({ deviceId }: { deviceId: string }) {
               <button className="button primary device-connect-button" type="button" onClick={() => openRemote("control")} disabled={busy === "control" || !device.actionUrls.controlUrl}>
                 <ExternalLink size={16} aria-hidden="true" />
                 <span>{busy === "control" ? "Opening..." : "Connect"}</span>
+              </button>
+              <button className="button secondary device-background-button" type="button" onClick={() => openRemote("background")} disabled={busy === "background" || !device.actionUrls.remoteBackgroundUrl}>
+                <TerminalSquare size={16} aria-hidden="true" />
+                <span>{busy === "background" ? "Opening..." : "Remote BG"}</span>
               </button>
               <button className="button secondary device-sysinfo-button" type="button" onClick={() => openRemote("system")} disabled={busy === "system" || !device.actionUrls.systemInfoUrl}>
                 <HardDrive size={16} aria-hidden="true" />

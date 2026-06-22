@@ -1194,7 +1194,7 @@ select.compact-select {
 
 .device-table {
   width: 100%;
-  min-width: 880px;
+  min-width: 980px;
   border-collapse: collapse;
 }
 
@@ -1226,7 +1226,7 @@ select.compact-select {
 
 .device-table th:nth-child(3),
 .device-table td:nth-child(3) {
-  width: 42%;
+  width: 36%;
 }
 
 .device-table th:nth-child(4),
@@ -1236,7 +1236,7 @@ select.compact-select {
 
 .device-table th:nth-child(5),
 .device-table td:nth-child(5) {
-  width: 16%;
+  width: 22%;
 }
 
 .device-table tbody tr {
@@ -1560,6 +1560,7 @@ select.compact-select {
   padding-inline: 9px;
 }
 
+.device-background-button,
 .device-sysinfo-button {
   border-color: var(--line-strong);
 }

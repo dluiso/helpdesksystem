@@ -14,6 +14,7 @@ interface RmmSettings {
   dashboardUrl: string | null;
   deviceUrlTemplate: string | null;
   controlUrlTemplate: string | null;
+  backgroundUrlTemplate: string | null;
   lastSyncAt: string | null;
   lastSyncStatus: string | null;
   lastSyncMessage: string | null;
@@ -27,7 +28,8 @@ const defaultDraft = {
   agentsPath: "/agents/",
   dashboardUrl: "https://rmm.aviditytechnologies.com",
   deviceUrlTemplate: "https://rmm.aviditytechnologies.com/agents/{agentId}",
-  controlUrlTemplate: "https://rmm.aviditytechnologies.com/takecontrol/{agentId}"
+  controlUrlTemplate: "https://rmm.aviditytechnologies.com/takecontrol/{agentId}",
+  backgroundUrlTemplate: "https://rmm.aviditytechnologies.com/remotebackground/{agentId}?agentPlatform={agentPlatform}"
 };
 
 export function RmmConfigPanel() {
@@ -51,7 +53,8 @@ export function RmmConfigPanel() {
         agentsPath: response.agentsPath || defaultDraft.agentsPath,
         dashboardUrl: response.dashboardUrl || defaultDraft.dashboardUrl,
         deviceUrlTemplate: response.deviceUrlTemplate || defaultDraft.deviceUrlTemplate,
-        controlUrlTemplate: response.controlUrlTemplate || defaultDraft.controlUrlTemplate
+        controlUrlTemplate: response.controlUrlTemplate || defaultDraft.controlUrlTemplate,
+        backgroundUrlTemplate: response.backgroundUrlTemplate || defaultDraft.backgroundUrlTemplate
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load RMM settings.");
@@ -147,13 +150,17 @@ export function RmmConfigPanel() {
           <span>Remote control URL template</span>
           <input className="input" value={draft.controlUrlTemplate} onChange={(event) => setDraft((current) => ({ ...current, controlUrlTemplate: event.target.value }))} />
         </label>
+        <label className="field">
+          <span>Remote background URL template</span>
+          <input className="input" value={draft.backgroundUrlTemplate} onChange={(event) => setDraft((current) => ({ ...current, backgroundUrlTemplate: event.target.value }))} />
+        </label>
       </div>
 
       <div className="rmm-help-panel">
         <Monitor size={18} aria-hidden="true" />
         <div>
           <strong>Supported URL tokens</strong>
-          <p className="muted">Use {"{agentId}"}, {"{hostname}"}, {"{clientName}"}, {"{siteName}"}, or {"{meshNodeId}"} in URL templates. Secrets must stay in environment variables, not in the database.</p>
+          <p className="muted">Use {"{agentId}"}, {"{hostname}"}, {"{clientName}"}, {"{siteName}"}, {"{meshNodeId}"}, or {"{agentPlatform}"} in URL templates. Secrets must stay in environment variables, not in the database.</p>
           <p className="muted">API key resolved: {settings?.hasResolvedApiKey ? "Yes" : "No"}</p>
         </div>
       </div>

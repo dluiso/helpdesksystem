@@ -80,6 +80,7 @@ type RmmSettingsRecord = {
   remoteAccessDashboardUrl: string | null;
   remoteAccessDeviceUrlTemplate: string | null;
   remoteAccessControlUrlTemplate: string | null;
+  remoteAccessBackgroundUrlTemplate: string | null;
   remoteAccessLastSyncAt: Date | null;
   remoteAccessLastSyncStatus: string | null;
   remoteAccessLastSyncMessage: string | null;
@@ -96,6 +97,7 @@ type DeviceWithRemoteProfile = Prisma.DeviceGetPayload<{
 export interface DeviceActionUrls {
   systemInfoUrl: string | null;
   controlUrl: string | null;
+  remoteBackgroundUrl: string | null;
 }
 
 @Injectable()
@@ -339,7 +341,8 @@ export class DevicesService {
         remoteAccessAgentsPath: this.normalizePath(input.agentsPath) ?? "/agents/",
         remoteAccessDashboardUrl: this.optionalTrim(input.dashboardUrl),
         remoteAccessDeviceUrlTemplate: this.optionalTrim(input.deviceUrlTemplate),
-        remoteAccessControlUrlTemplate: this.optionalTrim(input.controlUrlTemplate)
+        remoteAccessControlUrlTemplate: this.optionalTrim(input.controlUrlTemplate),
+        remoteAccessBackgroundUrlTemplate: this.optionalTrim(input.backgroundUrlTemplate)
       }
     });
 
@@ -726,7 +729,8 @@ export class DevicesService {
       hostname: hostname ?? name,
       clientName,
       siteName: siteName ?? "",
-      meshNodeId: this.pickString(record, ["mesh_node_id", "meshNodeId"]) ?? remoteIdentifier
+      meshNodeId: this.pickString(record, ["mesh_node_id", "meshNodeId"]) ?? remoteIdentifier,
+      agentPlatform: this.inferAgentPlatform(operatingSystem)
     };
     const systemInfoUrl = this.buildConnectionUrl(settings.remoteAccessDeviceUrlTemplate, settings.remoteAccessDashboardUrl, urlTokens);
     const controlUrl = this.buildConnectionUrl(settings.remoteAccessControlUrlTemplate, null, urlTokens);
@@ -802,6 +806,7 @@ export class DevicesService {
       dashboardUrl: settings.remoteAccessDashboardUrl,
       deviceUrlTemplate: settings.remoteAccessDeviceUrlTemplate,
       controlUrlTemplate: settings.remoteAccessControlUrlTemplate,
+      backgroundUrlTemplate: settings.remoteAccessBackgroundUrlTemplate,
       lastSyncAt: settings.remoteAccessLastSyncAt,
       lastSyncStatus: settings.remoteAccessLastSyncStatus,
       lastSyncMessage: settings.remoteAccessLastSyncMessage
@@ -834,14 +839,17 @@ export class DevicesService {
       hostname: device.hostname ?? device.name,
       clientName: device.client.name,
       siteName: device.deviceGroupId ?? "",
-      meshNodeId: remoteIdentifier
+      meshNodeId: remoteIdentifier,
+      agentPlatform: this.inferAgentPlatform(device.operatingSystem)
     };
+    const backgroundTemplate = settings.remoteAccessBackgroundUrlTemplate ?? this.defaultBackgroundUrlTemplate(settings.remoteAccessDashboardUrl);
     return {
       systemInfoUrl: this.buildConnectionUrl(settings.remoteAccessDeviceUrlTemplate, settings.remoteAccessDashboardUrl, tokens),
       controlUrl:
         this.buildConnectionUrl(settings.remoteAccessControlUrlTemplate, null, tokens) ??
         device.remoteAccessProfile?.connectionUrl ??
-        null
+        null,
+      remoteBackgroundUrl: this.buildConnectionUrl(backgroundTemplate, null, tokens)
     };
   }
 
@@ -1036,6 +1044,21 @@ export class DevicesService {
     const source = template?.trim() || dashboardUrl?.trim();
     if (!source) return null;
     return Object.entries(tokens).reduce((url, [key, value]) => url.replaceAll(`{${key}}`, encodeURIComponent(value)), source);
+  }
+
+  private defaultBackgroundUrlTemplate(dashboardUrl: string | null | undefined) {
+    const base = dashboardUrl?.trim();
+    if (!base) return null;
+    return `${base.replace(/\/+$/, "")}/remotebackground/{agentId}?agentPlatform={agentPlatform}`;
+  }
+
+  private inferAgentPlatform(operatingSystem?: string | null) {
+    const source = (operatingSystem ?? "").toLowerCase();
+    if (source.includes("linux") || source.includes("ubuntu") || source.includes("debian") || source.includes("centos") || source.includes("rhel") || source.includes("rocky") || source.includes("alma")) {
+      return "linux";
+    }
+    if (source.includes("mac") || source.includes("darwin")) return "darwin";
+    return "windows";
   }
 
   private joinUrl(baseUrl: string, path: string) {

@@ -3,6 +3,8 @@ import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
 
+type RemoteAccessAttemptMode = "control" | "background";
+
 @Injectable()
 export class RemoteAccessService {
   constructor(
@@ -10,7 +12,7 @@ export class RemoteAccessService {
     private readonly auditLogs: AuditLogsService
   ) {}
 
-  async auditConnectionAttempt(deviceId: string, user: AuthenticatedUser) {
+  async auditConnectionAttempt(deviceId: string, user: AuthenticatedUser, mode: RemoteAccessAttemptMode = "control") {
     const profile = await this.prisma.remoteAccessProfile.findUnique({
       where: { deviceId },
       include: { device: { include: { client: true } } }
@@ -25,15 +27,19 @@ export class RemoteAccessService {
 
     const settings = await this.prisma.systemSetting.findUnique({ where: { organizationId: user.organizationId } });
     const attemptedAt = new Date();
+    const tokens = {
+      agentId: profile.remoteIdentifier,
+      deviceId: profile.remoteIdentifier,
+      hostname: profile.device.hostname ?? profile.device.name,
+      clientName: profile.device.client.name,
+      siteName: profile.device.deviceGroupId ?? "",
+      meshNodeId: profile.remoteIdentifier,
+      agentPlatform: this.inferAgentPlatform(profile.device.operatingSystem)
+    };
     const connectionUrl =
-      this.buildConnectionUrl(settings?.remoteAccessControlUrlTemplate, {
-        agentId: profile.remoteIdentifier,
-        deviceId: profile.remoteIdentifier,
-        hostname: profile.device.hostname ?? profile.device.name,
-        clientName: profile.device.client.name,
-        siteName: profile.device.deviceGroupId ?? "",
-        meshNodeId: profile.remoteIdentifier
-      }) ?? profile.connectionUrl;
+      mode === "background"
+        ? this.buildConnectionUrl(settings?.remoteAccessBackgroundUrlTemplate ?? this.defaultBackgroundUrlTemplate(settings?.remoteAccessDashboardUrl), tokens)
+        : this.buildConnectionUrl(settings?.remoteAccessControlUrlTemplate, tokens) ?? profile.connectionUrl;
 
     await this.prisma.remoteAccessProfile.update({
       where: { id: profile.id },
@@ -48,7 +54,8 @@ export class RemoteAccessService {
       metadata: {
         deviceId,
         provider: profile.provider,
-        remoteIdentifier: profile.remoteIdentifier
+        remoteIdentifier: profile.remoteIdentifier,
+        mode
       }
     });
 
@@ -66,5 +73,20 @@ export class RemoteAccessService {
     const source = template?.trim();
     if (!source) return null;
     return Object.entries(tokens).reduce((url, [key, value]) => url.replaceAll(`{${key}}`, encodeURIComponent(value)), source);
+  }
+
+  private defaultBackgroundUrlTemplate(dashboardUrl: string | null | undefined) {
+    const base = dashboardUrl?.trim();
+    if (!base) return null;
+    return `${base.replace(/\/+$/, "")}/remotebackground/{agentId}?agentPlatform={agentPlatform}`;
+  }
+
+  private inferAgentPlatform(operatingSystem?: string | null) {
+    const source = (operatingSystem ?? "").toLowerCase();
+    if (source.includes("linux") || source.includes("ubuntu") || source.includes("debian") || source.includes("centos") || source.includes("rhel") || source.includes("rocky") || source.includes("alma")) {
+      return "linux";
+    }
+    if (source.includes("mac") || source.includes("darwin")) return "darwin";
+    return "windows";
   }
 }

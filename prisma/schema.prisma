@@ -377,6 +377,7 @@ model SystemSetting {
   remoteAccessDashboardUrl   String?
   remoteAccessDeviceUrlTemplate String?
   remoteAccessControlUrlTemplate String?
+  remoteAccessBackgroundUrlTemplate String?
   remoteAccessLastSyncAt     DateTime?
   remoteAccessLastSyncStatus String?
   remoteAccessLastSyncMessage String?

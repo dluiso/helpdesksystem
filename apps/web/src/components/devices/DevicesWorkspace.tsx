@@ -54,6 +54,7 @@ interface DeviceRecord {
   actionUrls: {
     systemInfoUrl: string | null;
     controlUrl: string | null;
+    remoteBackgroundUrl: string | null;
   };
   remoteAccessProfile: {
     id: string;
@@ -260,18 +261,27 @@ export function DevicesWorkspace() {
     }
   }
 
-  async function openRemote(device: DeviceRecord, mode: "control" | "system") {
-    const url = mode === "control" ? device.actionUrls.controlUrl : device.actionUrls.systemInfoUrl;
+  async function openRemote(device: DeviceRecord, mode: "control" | "background" | "system") {
+    const url = mode === "control" ? device.actionUrls.controlUrl : mode === "background" ? device.actionUrls.remoteBackgroundUrl : device.actionUrls.systemInfoUrl;
     if (!url) {
-      setError(mode === "control" ? "This device does not have a remote control URL configured." : "This device does not have a system info URL configured.");
+      setError(
+        mode === "control"
+          ? "This device does not have a remote control URL configured."
+          : mode === "background"
+            ? "This device does not have a remote background URL configured."
+            : "This device does not have a system info URL configured."
+      );
       return;
     }
 
     setBusy(`${mode}:${device.id}`);
     setError(null);
     try {
-      if (mode === "control") {
-        const response = await apiFetch<{ connectionUrl: string | null }>(`/devices/${device.id}/remote-access/connection-attempts`, { method: "POST" });
+      if (mode === "control" || mode === "background") {
+        const response = await apiFetch<{ connectionUrl: string | null }>(`/devices/${device.id}/remote-access/connection-attempts`, {
+          method: "POST",
+          body: JSON.stringify({ mode })
+        });
         window.open(response.connectionUrl ?? url, "_blank", "noopener,noreferrer");
       } else {
         window.open(url, "_blank", "noopener,noreferrer");
@@ -580,7 +590,7 @@ function DeviceTableRow({
   device: DeviceRecord;
   busy: string | null;
   onFavorite: (device: DeviceRecord) => void;
-  onOpenRemote: (device: DeviceRecord, mode: "control" | "system") => void;
+  onOpenRemote: (device: DeviceRecord, mode: "control" | "background" | "system") => void;
 }) {
   const DeviceIcon = getDeviceIcon(device);
   const OsIcon = getOsIcon(device.operatingSystem);
@@ -635,7 +645,7 @@ function DeviceCard({
   device: DeviceRecord;
   busy: string | null;
   onFavorite: (device: DeviceRecord) => void;
-  onOpenRemote: (device: DeviceRecord, mode: "control" | "system") => void;
+  onOpenRemote: (device: DeviceRecord, mode: "control" | "background" | "system") => void;
 }) {
   const DeviceIcon = getDeviceIcon(device);
   const OsIcon = getOsIcon(device.operatingSystem);
@@ -683,7 +693,7 @@ function DeviceTreeRow({
   device: DeviceRecord;
   busy: string | null;
   onFavorite: (device: DeviceRecord) => void;
-  onOpenRemote: (device: DeviceRecord, mode: "control" | "system") => void;
+  onOpenRemote: (device: DeviceRecord, mode: "control" | "background" | "system") => void;
 }) {
   const DeviceIcon = getDeviceIcon(device);
   const statusClass = getDeviceStatusClass(device);
@@ -724,12 +734,16 @@ function FavoriteButton({ device, busy, onFavorite }: { device: DeviceRecord; bu
   );
 }
 
-function DeviceActions({ device, busy, onOpenRemote }: { device: DeviceRecord; busy: string | null; onOpenRemote: (device: DeviceRecord, mode: "control" | "system") => void }) {
+function DeviceActions({ device, busy, onOpenRemote }: { device: DeviceRecord; busy: string | null; onOpenRemote: (device: DeviceRecord, mode: "control" | "background" | "system") => void }) {
   return (
     <div className="device-action-row">
       <button className="button primary compact device-connect-button" type="button" onClick={() => onOpenRemote(device, "control")} disabled={busy === `control:${device.id}` || !device.actionUrls.controlUrl}>
         <ExternalLink size={14} aria-hidden="true" />
         <span>Connect</span>
+      </button>
+      <button className="button secondary compact device-background-button" type="button" onClick={() => onOpenRemote(device, "background")} disabled={busy === `background:${device.id}` || !device.actionUrls.remoteBackgroundUrl}>
+        <TerminalSquare size={14} aria-hidden="true" />
+        <span>Remote BG</span>
       </button>
       <button className="button secondary compact device-sysinfo-button" type="button" onClick={() => onOpenRemote(device, "system")} disabled={busy === `system:${device.id}` || !device.actionUrls.systemInfoUrl}>
         <HardDrive size={14} aria-hidden="true" />
