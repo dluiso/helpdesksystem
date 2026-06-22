@@ -7918,6 +7918,13 @@ a.dashboard-list-row:hover {
   font-weight: 650;
 }
 
+.detail-list .ticket-detail-email {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .timeline {
   display: grid;
   gap: 12px;

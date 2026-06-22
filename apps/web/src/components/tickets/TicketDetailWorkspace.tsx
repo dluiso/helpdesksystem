@@ -549,7 +549,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
               <div><dt>Status</dt><dd><span className={`status-pill ${statusClass(ticket.status)}`}>{label(ticket.status)}</span></dd></div>
               <div><dt>Priority</dt><dd>{label(ticket.priority)}</dd></div>
               <div><dt>Source</dt><dd>{label(ticket.source)}</dd></div>
-              <div><dt>Sender</dt><dd>{ticket.senderEmail ?? "Not set"}</dd></div>
+              <div><dt>Sender</dt><dd className="ticket-detail-email" title={ticket.senderEmail ?? undefined}>{ticket.senderEmail ?? "Not set"}</dd></div>
               <div><dt>Inline images</dt><dd>{inlineAttachments.length}</dd></div>
               <div><dt>Files</dt><dd>{realAttachments.length}</dd></div>
               {ticket.mergedAt ? <div><dt>Merged</dt><dd>{new Date(ticket.mergedAt).toLocaleString()}</dd></div> : null}
