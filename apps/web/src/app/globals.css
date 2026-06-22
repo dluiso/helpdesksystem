@@ -5500,38 +5500,49 @@ select.public-event-input[multiple] {
 }
 
 .audit-log-table {
-  min-width: 1040px;
+  min-width: 980px;
   table-layout: fixed;
+  font-size: 12px;
 }
 
 .audit-log-table th:nth-child(1),
 .audit-log-table td:nth-child(1) {
-  width: 150px;
+  width: 128px;
 }
 
 .audit-log-table th:nth-child(2),
 .audit-log-table td:nth-child(2) {
-  width: 220px;
+  width: 190px;
 }
 
 .audit-log-table th:nth-child(3),
 .audit-log-table td:nth-child(3) {
-  width: 240px;
+  width: 230px;
 }
 
 .audit-log-table th:nth-child(4),
 .audit-log-table td:nth-child(4) {
-  width: 185px;
+  width: 170px;
 }
 
 .audit-log-table th:nth-child(5),
 .audit-log-table td:nth-child(5) {
-  width: 150px;
+  width: 126px;
 }
 
 .audit-log-table th:nth-child(6),
 .audit-log-table td:nth-child(6) {
-  width: 130px;
+  width: 118px;
+}
+
+.audit-log-table th,
+.audit-log-table td {
+  padding: 7px 9px;
+  vertical-align: middle;
+}
+
+.audit-log-table tbody tr.audit-row td {
+  border-bottom-color: color-mix(in srgb, var(--line) 72%, transparent);
 }
 
 .audit-row.expanded td {
@@ -5542,19 +5553,34 @@ select.public-event-input[multiple] {
 .audit-user-cell,
 .audit-action-cell,
 .audit-entity-cell {
-  display: grid;
-  gap: 3px;
   min-width: 0;
 }
 
 .audit-time-cell strong,
+.audit-time-cell span,
 .audit-user-cell strong,
+.audit-user-cell span,
 .audit-action-cell span,
 .audit-entity-cell strong,
 .audit-entity-cell span {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.audit-time-cell strong,
+.audit-user-cell strong,
+.audit-entity-cell strong {
+  font-size: 12px;
+}
+
+.audit-time-cell .muted,
+.audit-user-cell .muted,
+.audit-action-cell .muted,
+.audit-entity-cell .muted {
+  margin-top: 2px;
+  font-size: 11px;
 }
 
 .audit-action-pill,
@@ -5563,12 +5589,12 @@ select.public-event-input[multiple] {
   width: fit-content;
   max-width: 100%;
   align-items: center;
-  min-height: 24px;
-  padding: 2px 8px;
+  min-height: 22px;
+  padding: 1px 7px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface-raised);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 850;
 }
 
@@ -5585,6 +5611,9 @@ select.public-event-input[multiple] {
 .audit-details-cell .button {
   width: 100%;
   justify-content: center;
+  min-height: 30px;
+  padding: 0 8px;
+  font-size: 12px;
 }
 
 .audit-empty-cell {
@@ -5592,14 +5621,16 @@ select.public-event-input[multiple] {
 }
 
 .audit-metadata-row td {
-  padding: 0 12px 12px;
+  padding: 0 9px 9px;
   background: var(--surface-selected);
 }
 
 .audit-metadata-panel {
   display: grid;
-  gap: 12px;
-  padding: 14px;
+  gap: 8px;
+  max-height: 260px;
+  padding: 10px;
+  overflow: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface-raised);
@@ -5607,23 +5638,23 @@ select.public-event-input[multiple] {
 
 .audit-metadata-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .audit-metadata-item {
   display: grid;
-  gap: 5px;
+  gap: 3px;
   min-width: 0;
-  padding: 10px;
+  padding: 8px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--surface-subtle);
 }
 
 .audit-metadata-item span {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 850;
   text-transform: uppercase;
 }
@@ -5632,9 +5663,9 @@ select.public-event-input[multiple] {
   min-width: 0;
   overflow-wrap: anywhere;
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  line-height: 1.45;
+  line-height: 1.35;
   white-space: pre-wrap;
 }
 
@@ -5645,21 +5676,30 @@ select.public-event-input[multiple] {
 }
 
 .audit-metadata-raw pre {
-  max-height: 220px;
-  margin-top: 8px;
-  padding: 10px;
+  max-height: 160px;
+  margin-top: 6px;
+  padding: 8px;
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--control-bg);
   color: var(--text);
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: 11px;
+  line-height: 1.35;
   white-space: pre-wrap;
 }
 
 .audit-pagination {
+  flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.audit-pagination-top {
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
 }
 
 .settings-page .stack-row > div,
@@ -5687,6 +5727,13 @@ select.public-event-input[multiple] {
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
+  vertical-align: middle;
+}
+
+.settings-page .audit-log-table th,
+.settings-page .audit-log-table td {
+  padding: 7px 9px;
+  overflow: hidden;
   vertical-align: middle;
 }
 

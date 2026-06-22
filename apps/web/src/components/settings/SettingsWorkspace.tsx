@@ -707,7 +707,7 @@ export function SettingsWorkspace() {
     entityType: "",
     search: "",
     page: "1",
-    pageSize: "50"
+    pageSize: "25"
   });
   const [spamSearch, setSpamSearch] = useState("");
   const [spamTypeFilter, setSpamTypeFilter] = useState("");
@@ -3541,6 +3541,29 @@ export function SettingsWorkspace() {
                     Clear
                   </button>
                 </div>
+              </div>
+
+              <div className="settings-actions settings-section audit-pagination audit-pagination-top">
+                <span className="muted">
+                  Showing {auditFirstItem}-{auditLastItem} of {auditTotal} events.
+                </span>
+                <button
+                  className="button secondary"
+                  type="button"
+                  disabled={auditPage <= 1 || busy === "audit-logs"}
+                  onClick={() => void applyAuditFilters({ ...auditFilters, page: String(Math.max(1, auditPage - 1)) })}
+                >
+                  Previous
+                </button>
+                <span className="status-pill">Page {auditPage} of {auditPageCount}</span>
+                <button
+                  className="button secondary"
+                  type="button"
+                  disabled={!auditLogs || auditPage >= auditPageCount || busy === "audit-logs"}
+                  onClick={() => void applyAuditFilters({ ...auditFilters, page: String(auditPage + 1) })}
+                >
+                  Next
+                </button>
               </div>
 
               <div className="table-scroll settings-section">
