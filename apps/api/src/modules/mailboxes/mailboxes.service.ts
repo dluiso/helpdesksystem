@@ -32,6 +32,7 @@ interface SyncMailboxOptions {
 export class MailboxesService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MailboxesService.name);
   private readonly runningAutoSyncs = new Set<string>();
+  private readonly runningAttachmentBackfills = new Set<string>();
   private autoSyncTimer?: NodeJS.Timeout;
 
   constructor(
@@ -103,7 +104,9 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
 
   async syncInbound(mailboxId: string, user: AuthenticatedUser): Promise<SyncMailboxResult> {
     const mailbox = await this.getMailboxForUser(mailboxId, user);
-    return this.syncMailbox(mailbox, { broadAttachmentBackfill: true });
+    const result = await this.syncMailbox(mailbox);
+    this.scheduleBroadAttachmentBackfill(mailbox);
+    return result;
   }
 
   private async runDueAutoSyncs() {
@@ -317,6 +320,38 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
       attachmentBackfillErrors: attachmentBackfillErrors.slice(0, 10),
       nextSyncCursor: syncResult.nextSyncCursor
     };
+  }
+
+  private scheduleBroadAttachmentBackfill(mailbox: Mailbox) {
+    const { providerName } = this.resolveProvider(mailbox);
+    if (providerName !== "microsoft365" || this.runningAttachmentBackfills.has(mailbox.id)) {
+      return;
+    }
+
+    this.runningAttachmentBackfills.add(mailbox.id);
+    void this.runBroadAttachmentBackfill(mailbox).finally(() => {
+      this.runningAttachmentBackfills.delete(mailbox.id);
+    });
+  }
+
+  private async runBroadAttachmentBackfill(mailbox: Mailbox) {
+    try {
+      const { providerName, provider } = this.resolveProvider(mailbox);
+      if (providerName !== "microsoft365") {
+        return;
+      }
+
+      const result = await this.backfillExistingMessageAttachments(provider, mailbox, { broad: true });
+      if (result.failed > 0) {
+        this.logger.warn(
+          `Mailbox attachment backfill completed for ${mailbox.emailAddress} with ${result.failed} failure${result.failed === 1 ? "" : "s"}.`
+        );
+      } else if (result.stored > 0) {
+        this.logger.log(`Mailbox attachment backfill stored ${result.stored} attachment${result.stored === 1 ? "" : "s"} for ${mailbox.emailAddress}.`);
+      }
+    } catch (error) {
+      this.logger.warn(`Mailbox attachment backfill failed for ${mailbox.emailAddress}: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
   }
 
   private async findEventRequestForMessage(organizationId: string, subject: string, conversationId: string | null) {

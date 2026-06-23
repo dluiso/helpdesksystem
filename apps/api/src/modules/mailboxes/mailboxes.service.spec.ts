@@ -295,7 +295,7 @@ describe("MailboxesService", () => {
     });
   });
 
-  it("recovers attachments for existing Microsoft 365 messages during manual sync", async () => {
+  it("runs broad attachment recovery for existing Microsoft 365 messages after manual sync returns", async () => {
     const prisma = {
       mailbox: {
         findFirst: jest.fn().mockResolvedValue({
@@ -316,13 +316,16 @@ describe("MailboxesService", () => {
       },
       ticketMessage: {
         findFirst: jest.fn(),
-        findMany: jest.fn().mockResolvedValue([
-          {
-            id: "message-existing",
-            ticketId: "ticket-1",
-            emailMessageId: "graph-message-existing"
-          }
-        ]),
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([
+            {
+              id: "message-existing",
+              ticketId: "ticket-1",
+              emailMessageId: "graph-message-existing"
+            }
+          ]),
         update: jest.fn()
       },
       eventServiceMessage: {
@@ -370,12 +373,14 @@ describe("MailboxesService", () => {
       expect.objectContaining({
         receivedMessages: 0,
         createdTickets: 0,
-        attachmentBackfilled: 1,
+        attachmentBackfilled: 0,
         attachmentBackfillFailures: 0
       })
     );
 
-    expect(prisma.ticketMessage.findMany).toHaveBeenCalledWith(
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(prisma.ticketMessage.findMany).toHaveBeenLastCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           direction: "INBOUND"
