@@ -3890,64 +3890,58 @@ export function SettingsWorkspace() {
                   </div>
                 ) : null}
 
-                <div className="table-scroll settings-section">
-                  <table className="tickets-table ai-providers-table">
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Provider</th>
-                        <th>Default Model</th>
-                        <th>Status</th>
-                        <th>Models</th>
-                        <th>Connection</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {aiProviders.length === 0 ? (
-                        <tr>
-                          <td colSpan={6}>
-                            <span className="muted">No AI providers configured. The backend falls back to mock AI until a provider is registered.</span>
-                          </td>
-                        </tr>
-                      ) : null}
-                      {aiProviders.map((provider) => (
-                        <tr key={provider.id}>
-                          <td>
+                <div className="ai-provider-grid settings-section">
+                  {aiProviders.length === 0 ? (
+                    <div className="empty-state compact-empty-state">
+                      <strong>No AI providers configured.</strong>
+                      <span className="muted">The backend falls back to mock AI until a provider is registered.</span>
+                    </div>
+                  ) : null}
+                  {aiProviders.map((provider) => (
+                    <article className="ai-provider-card" key={provider.id}>
+                      <div className="ai-provider-main">
+                        <div>
+                          <div className="ai-provider-title-row">
                             <strong>{provider.name}</strong>
-                            <span className="muted">{provider.baseUrl ?? "Default provider endpoint"}</span>
-                          </td>
-                          <td>{AI_PROVIDER_LABELS[provider.provider] ?? provider.provider}</td>
-                          <td>{provider.defaultModel ?? "No default model"}</td>
-                          <td>
                             <span className={`status-pill ${provider.isEnabled ? "success" : "muted-pill"}`}>{provider.isEnabled ? "Enabled" : "Disabled"}</span>
-                          </td>
-                          <td>
-                            <div className="ai-model-cell">
-                              <span className="muted">{provider.models.length ? provider.models.map((model) => `${model.name}${model.isDefault ? " (default)" : ""}`).join(", ") : "No extra models"}</span>
-                              <div className="form-actions">
-                                <input
-                                  className="input compact-select"
-                                  placeholder="Add model"
-                                  value={aiModelDrafts[provider.id] ?? ""}
-                                  onChange={(event) => setAiModelDrafts((current) => ({ ...current, [provider.id]: event.target.value }))}
-                                />
-                                <button className="button secondary" type="button" onClick={() => addAiModel(provider.id)} disabled={busy === `ai-model-${provider.id}` || Boolean(aiConfigError)}>
-                                  Add
-                                </button>
-                              </div>
-                            </div>
-                          </td>
-                          <td>
-                            <button className="button secondary" type="button" onClick={() => testAiProvider(provider.id)} disabled={busy === `ai-test-${provider.id}` || Boolean(aiConfigError)}>
-                              <TestTube2 size={16} aria-hidden="true" />
-                              <span>{busy === `ai-test-${provider.id}` ? "Testing" : "Test"}</span>
-                            </button>
-                            {aiTestResults[provider.id] ? <span className={`ai-test-result ${aiTestResults[provider.id].status}`}>{aiTestResults[provider.id].message}</span> : null}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                          </div>
+                          <span className="muted ai-provider-url">{provider.baseUrl ?? "Default provider endpoint"}</span>
+                        </div>
+                        <div className="ai-provider-meta-grid">
+                          <div>
+                            <span className="muted">Provider</span>
+                            <strong>{AI_PROVIDER_LABELS[provider.provider] ?? provider.provider}</strong>
+                          </div>
+                          <div>
+                            <span className="muted">Default model</span>
+                            <strong>{provider.defaultModel ?? "No default model"}</strong>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="ai-provider-models">
+                        <span className="muted">Models</span>
+                        <strong>{provider.models.length ? provider.models.map((model) => `${model.name}${model.isDefault ? " (default)" : ""}`).join(", ") : "No extra models"}</strong>
+                        <div className="ai-model-add-row">
+                          <input
+                            className="input compact-select"
+                            placeholder="Add model"
+                            value={aiModelDrafts[provider.id] ?? ""}
+                            onChange={(event) => setAiModelDrafts((current) => ({ ...current, [provider.id]: event.target.value }))}
+                          />
+                          <button className="button secondary" type="button" onClick={() => addAiModel(provider.id)} disabled={busy === `ai-model-${provider.id}` || Boolean(aiConfigError)}>
+                            Add
+                          </button>
+                        </div>
+                      </div>
+                      <div className="ai-provider-connection">
+                        <button className="button secondary" type="button" onClick={() => testAiProvider(provider.id)} disabled={busy === `ai-test-${provider.id}` || Boolean(aiConfigError)}>
+                          <TestTube2 size={16} aria-hidden="true" />
+                          <span>{busy === `ai-test-${provider.id}` ? "Testing" : "Test Connection"}</span>
+                        </button>
+                        {aiTestResults[provider.id] ? <span className={`ai-test-result ${aiTestResults[provider.id].status}`}>{aiTestResults[provider.id].message}</span> : null}
+                      </div>
+                    </article>
+                  ))}
                 </div>
               </div>
 
@@ -3998,36 +3992,23 @@ export function SettingsWorkspace() {
                     Save Bulk Changes
                   </button>
                 </div>
-                <div className="table-scroll settings-section">
-                  <table className="tickets-table ai-actions-table">
-                    <thead>
-                      <tr>
-                        <th>
-                          <span className="sr-only">Select</span>
-                        </th>
-                        <th>Action</th>
-                        <th>Provider</th>
-                        <th>Model</th>
-                        <th>Enabled</th>
-                        <th>Save</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                <div className="ai-actions-list settings-section">
                   {AI_ACTIONS.map((action) => {
                     const actionType = action.type;
                     const draft = aiActionDrafts[actionType] ?? { providerConfigId: "", modelConfigId: "", isEnabled: true };
                     const selectedProvider = aiProviders.find((provider) => provider.id === draft.providerConfigId);
                     const availableModels = selectedProvider?.models ?? [];
                     return (
-                      <tr key={actionType}>
-                        <td>
+                      <div className="ai-action-row" key={actionType}>
+                        <label className="ai-action-select">
                           <input type="checkbox" checked={selectedAiActions.includes(actionType)} onChange={(event) => toggleAiAction(actionType, event.target.checked)} aria-label={`Select ${action.label}`} />
-                        </td>
-                        <td>
+                        </label>
+                        <div className="ai-action-name">
                           <strong>{action.label}</strong>
                           <span className="muted">Ticket writing assistance</span>
-                        </td>
-                        <td>
+                        </div>
+                        <label>
+                          <span>Provider</span>
                           <select
                             className="input compact-select"
                             value={draft.providerConfigId}
@@ -4045,8 +4026,9 @@ export function SettingsWorkspace() {
                               </option>
                             ))}
                           </select>
-                        </td>
-                        <td>
+                        </label>
+                        <label>
+                          <span>Model</span>
                           <select
                             className="input compact-select"
                             value={draft.modelConfigId}
@@ -4064,9 +4046,9 @@ export function SettingsWorkspace() {
                               </option>
                             ))}
                           </select>
-                        </td>
-                        <td>
-                          <label className="checkbox-row">
+                        </label>
+                        <div className="ai-action-enabled">
+                          <label className="toggle-row compact-toggle-row">
                             <input
                               type="checkbox"
                               checked={draft.isEnabled}
@@ -4077,25 +4059,30 @@ export function SettingsWorkspace() {
                                 }))
                               }
                             />
-                            Enabled
+                            <span>Enabled</span>
                           </label>
-                        </td>
-                        <td>
+                        </div>
+                        <div className="ai-action-save">
                           <button className="button secondary" type="button" onClick={() => saveAiAction(actionType)} disabled={busy === `ai-action-${actionType}` || Boolean(aiConfigError)}>
                             Save
                           </button>
-                        </td>
-                      </tr>
+                        </div>
+                      </div>
                     );
                   })}
-                    </tbody>
-                  </table>
                 </div>
               </div>
 
-              <div className="panel">
-                <h2>AI Safety</h2>
-                <p className="muted">AI suggestions require human approval before sending. Attachment contents are not included by default; prompts use ticket context and the current draft only.</p>
+              <div className="panel ai-safety-panel">
+                <div>
+                  <h2>AI Safety</h2>
+                  <p className="muted">AI suggestions require human approval before sending. Attachment contents are not included by default; prompts use ticket context and the current draft only.</p>
+                </div>
+                <div className="ai-safety-grid">
+                  <span>Human approval required</span>
+                  <span>No attachment contents by default</span>
+                  <span>Uses ticket context and current draft</span>
+                </div>
               </div>
             </section>
           ) : null}
