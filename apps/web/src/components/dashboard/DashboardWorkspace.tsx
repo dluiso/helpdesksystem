@@ -102,6 +102,20 @@ interface DashboardDeviceStats {
   }>;
   byOperatingSystem: Array<{ name: string; count: number }>;
   byType: Array<{ type: string; total: number; active: number; inactive: number }>;
+  signals: {
+    errors: number;
+    warnings: number;
+    info: number;
+    items: Array<{
+      deviceId: string;
+      hostname: string;
+      clientName: string;
+      severity: "ERROR" | "WARNING" | "INFO";
+      message: string;
+      checkedAt: string;
+      status: string;
+    }>;
+  };
 }
 
 type EventStatus = "NEW" | "UNDER_REVIEW" | "SCHEDULED" | "ASSIGNED" | "IN_PROGRESS" | "WAITING_ON_CLIENT" | "WAITING_ON_INTERNAL_TEAM" | "COMPLETED" | "CANCELLED" | "CONVERTED_TO_TICKET";
@@ -126,6 +140,7 @@ type DashboardWidgetId =
   | "specialistPerformance"
   | "ticketsByClient"
   | "ticketsBySource"
+  | "deviceSignals"
   | "criticalTickets"
   | "unassignedTickets"
   | "staleTickets";
@@ -138,7 +153,7 @@ interface DashboardPreference {
 interface DashboardWidgetDefinition {
   id: DashboardWidgetId;
   label: string;
-  group: "summary" | "primary" | "compact" | "insight";
+  group: "summary" | "analytics" | "insight";
   wide?: boolean;
 }
 
@@ -148,18 +163,19 @@ const chartColors = ["#155eef", "#16a34a", "#f59e0b", "#ef4444", "#8b5cf6", "#06
 const defaultDashboardWidgets: DashboardWidgetDefinition[] = [
   { id: "ticketKpis", label: "Ticket summary cards", group: "summary" },
   { id: "eventKpis", label: "Event service summary cards", group: "summary" },
-  { id: "ticketActivity", label: "Ticket Activity", group: "primary", wide: true },
-  { id: "specialistTrend", label: "Specialist Trend", group: "primary", wide: true },
-  { id: "specialistPerformance", label: "Specialist Performance", group: "primary", wide: true },
-  { id: "deviceOverview", label: "Devices / RMM overview", group: "primary", wide: true },
-  { id: "technicianWorkload", label: "Technician Workload", group: "compact" },
-  { id: "ticketsByClient", label: "Tickets by Client", group: "compact" },
-  { id: "ticketAging", label: "Ticket Aging", group: "compact" },
-  { id: "staleBySpecialist", label: "Stale by Specialist", group: "compact" },
-  { id: "createdByHour", label: "Created by Hour", group: "compact" },
-  { id: "ticketsByStatus", label: "Tickets by Status", group: "compact" },
-  { id: "ticketsByPriority", label: "Tickets by Priority", group: "compact" },
-  { id: "ticketsBySource", label: "Tickets by Source", group: "compact" },
+  { id: "ticketActivity", label: "Ticket Activity", group: "analytics", wide: true },
+  { id: "specialistTrend", label: "Specialist Trend", group: "analytics", wide: true },
+  { id: "specialistPerformance", label: "Specialist Performance", group: "analytics", wide: true },
+  { id: "deviceOverview", label: "Devices / RMM overview", group: "analytics", wide: true },
+  { id: "deviceSignals", label: "Device Signals", group: "analytics", wide: true },
+  { id: "technicianWorkload", label: "Technician Workload", group: "analytics" },
+  { id: "ticketsByClient", label: "Tickets by Client", group: "analytics" },
+  { id: "ticketAging", label: "Ticket Aging", group: "analytics" },
+  { id: "staleBySpecialist", label: "Stale by Specialist", group: "analytics" },
+  { id: "createdByHour", label: "Created by Hour", group: "analytics" },
+  { id: "ticketsByStatus", label: "Tickets by Status", group: "analytics" },
+  { id: "ticketsByPriority", label: "Tickets by Priority", group: "analytics" },
+  { id: "ticketsBySource", label: "Tickets by Source", group: "analytics" },
   { id: "criticalTickets", label: "Critical and High Priority", group: "insight" },
   { id: "unassignedTickets", label: "Unassigned Tickets", group: "insight" },
   { id: "staleTickets", label: "No Recent Update", group: "insight" }
@@ -550,6 +566,60 @@ function DeviceOverviewCard({ stats }: { stats: DashboardDeviceStats | null }) {
             )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function DeviceSignalsCard({ stats }: { stats: DashboardDeviceStats | null }) {
+  if (!stats) {
+    return (
+      <div className="panel dashboard-chart-card dashboard-wide-card">
+        <div className="section-heading compact-heading">
+          <div>
+            <h2>Device Signals</h2>
+            <p className="muted">RMM checks and device status signals are unavailable for this user.</p>
+          </div>
+        </div>
+        <p className="dashboard-empty">No device signals available.</p>
+      </div>
+    );
+  }
+
+  const signals = stats.signals;
+
+  return (
+    <div className="panel dashboard-chart-card dashboard-wide-card dashboard-device-signals">
+      <div className="section-heading compact-heading">
+        <div>
+          <h2>Device Signals</h2>
+          <p className="muted">Tactical check status, warnings, and inactive device indicators.</p>
+        </div>
+        <div className="dashboard-signal-summary" aria-label="Device signal summary">
+          <span className="error">{signals.errors} errors</span>
+          <span className="warning">{signals.warnings} warnings</span>
+          <span className="info">{signals.info} info</span>
+        </div>
+      </div>
+
+      <div className="dashboard-device-signal-list">
+        {signals.items.length ? (
+          signals.items.map((item) => (
+            <Link className={`dashboard-device-signal-row ${item.severity.toLowerCase()}`} href={`/devices/${item.deviceId}`} key={`${item.deviceId}:${item.message}`}>
+              <span className="dashboard-signal-severity">{label(item.severity)}</span>
+              <span>
+                <strong>{item.hostname}</strong>
+                <small>{item.clientName} - {item.status}</small>
+              </span>
+              <span>
+                <strong>{item.message}</strong>
+                <small>{item.checkedAt ? `Checked ${formatDate(item.checkedAt)}` : "No check timestamp"}</small>
+              </span>
+            </Link>
+          ))
+        ) : (
+          <p className="dashboard-empty">No active RMM warnings or errors.</p>
+        )}
       </div>
     </div>
   );
@@ -952,6 +1022,8 @@ export function DashboardWorkspace() {
         );
       case "deviceOverview":
         return <DeviceOverviewCard stats={deviceStats} />;
+      case "deviceSignals":
+        return <DeviceSignalsCard stats={deviceStats} />;
       case "ticketActivity":
         return <ActivityChart items={stats.activityByDay} />;
       case "ticketsByStatus":
@@ -1008,8 +1080,7 @@ export function DashboardWorkspace() {
     );
   };
   const summaryWidgets = preference.layout.filter((id): id is DashboardWidgetId => widgetDefinitionById.get(id as DashboardWidgetId)?.group === "summary");
-  const primaryWidgets = preference.layout.filter((id): id is DashboardWidgetId => widgetDefinitionById.get(id as DashboardWidgetId)?.group === "primary");
-  const compactWidgets = preference.layout.filter((id): id is DashboardWidgetId => widgetDefinitionById.get(id as DashboardWidgetId)?.group === "compact");
+  const analyticsWidgets = preference.layout.filter((id): id is DashboardWidgetId => widgetDefinitionById.get(id as DashboardWidgetId)?.group === "analytics");
   const insightWidgets = preference.layout.filter((id): id is DashboardWidgetId => widgetDefinitionById.get(id as DashboardWidgetId)?.group === "insight");
 
   return (
@@ -1033,9 +1104,7 @@ export function DashboardWorkspace() {
 
       {summaryWidgets.map(renderShell)}
 
-      <section className="dashboard-main-grid">{primaryWidgets.map(renderShell)}</section>
-
-      <section className="dashboard-compact-grid">{compactWidgets.map(renderShell)}</section>
+      <section className="dashboard-main-grid">{analyticsWidgets.map(renderShell)}</section>
 
       <section className="dashboard-insight-grid">{insightWidgets.map(renderShell)}</section>
     </div>

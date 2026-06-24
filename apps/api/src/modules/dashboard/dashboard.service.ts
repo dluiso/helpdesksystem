@@ -46,11 +46,16 @@ export class DashboardService {
         client: { organizationId: user.organizationId }
       },
       select: {
+        id: true,
         clientId: true,
+        hostname: true,
+        lastSeenAt: true,
+        name: true,
         operatingSystem: true,
         status: true,
         type: true,
-        client: { select: { id: true, name: true } }
+        client: { select: { id: true, name: true } },
+        remoteAccessProfile: { select: { detailSnapshot: true, detailSyncedAt: true } }
       }
     });
 
@@ -74,6 +79,7 @@ export class DashboardService {
     let retired = 0;
     let servers = 0;
     let workstations = 0;
+    const signals = devices.map((device) => this.toDeviceSignal(device));
 
     for (const device of devices) {
       if (device.status === DeviceStatus.ACTIVE) active += 1;
@@ -125,7 +131,16 @@ export class DashboardService {
         .map(([name, count]) => ({ name, count }))
         .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name))
         .slice(0, 8),
-      byType: Array.from(byType.values()).sort((left, right) => right.total - left.total || left.type.localeCompare(right.type))
+      byType: Array.from(byType.values()).sort((left, right) => right.total - left.total || left.type.localeCompare(right.type)),
+      signals: {
+        errors: signals.filter((signal) => signal.severity === "ERROR").length,
+        warnings: signals.filter((signal) => signal.severity === "WARNING").length,
+        info: signals.filter((signal) => signal.severity === "INFO").length,
+        items: signals
+          .filter((signal) => signal.severity !== "INFO" || signal.message !== "No current RMM check message")
+          .sort((left, right) => this.signalSeverityRank(left.severity) - this.signalSeverityRank(right.severity) || right.checkedAt.localeCompare(left.checkedAt))
+          .slice(0, 8)
+      }
     };
   }
 
@@ -149,5 +164,62 @@ export class DashboardService {
     if (lower.includes("android")) return "Android";
 
     return source.length > 48 ? `${source.slice(0, 45)}...` : source;
+  }
+
+  private toDeviceSignal(device: {
+    id: string;
+    name: string;
+    hostname: string | null;
+    lastSeenAt: Date | null;
+    status: DeviceStatus;
+    client: { name: string };
+    remoteAccessProfile: { detailSnapshot: Prisma.JsonValue | null; detailSyncedAt: Date | null } | null;
+  }) {
+    const snapshot = this.asRecord(device.remoteAccessProfile?.detailSnapshot);
+    const checks = this.asRecord(snapshot?.checks);
+    const statusText = this.pickString(checks, "status") ?? "";
+    const summaryText = this.pickString(checks, "summary") ?? "";
+    const combined = `${statusText} ${summaryText}`.trim();
+    const lastSeenText = device.lastSeenAt ? device.lastSeenAt.toISOString() : "";
+    const stale = device.lastSeenAt ? Date.now() - device.lastSeenAt.getTime() > 24 * 60 * 60 * 1000 : true;
+    const severity = this.deviceSignalSeverity(device.status, combined, stale);
+    const message =
+      summaryText ||
+      statusText ||
+      (device.status === DeviceStatus.INACTIVE ? "Tactical RMM reports this device as inactive" : stale ? "Device has not checked in recently" : "No current RMM check message");
+
+    return {
+      deviceId: device.id,
+      hostname: device.hostname ?? device.name,
+      clientName: device.client.name,
+      severity,
+      message: message.length > 140 ? `${message.slice(0, 137)}...` : message,
+      checkedAt: device.remoteAccessProfile?.detailSyncedAt?.toISOString() ?? lastSeenText,
+      status: device.status
+    };
+  }
+
+  private deviceSignalSeverity(status: DeviceStatus, text: string, stale: boolean): "ERROR" | "WARNING" | "INFO" {
+    const normalized = text.toLowerCase();
+    if (/critical|error|failed|failure|alert|offline|down|unhealthy/.test(normalized)) return "ERROR";
+    if (status === DeviceStatus.INACTIVE) return "WARNING";
+    if (/warn|warning|degraded|unknown|stale|pending/.test(normalized)) return "WARNING";
+    if (stale) return "WARNING";
+    return "INFO";
+  }
+
+  private signalSeverityRank(severity: "ERROR" | "WARNING" | "INFO") {
+    if (severity === "ERROR") return 0;
+    if (severity === "WARNING") return 1;
+    return 2;
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> | null {
+    return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+  }
+
+  private pickString(record: Record<string, unknown> | null | undefined, key: string) {
+    const value = record?.[key];
+    return typeof value === "string" && value.trim() ? value.trim() : null;
   }
 }

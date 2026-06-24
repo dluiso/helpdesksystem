@@ -7302,6 +7302,111 @@ a.dashboard-list-row:hover {
   grid-column: span 2;
 }
 
+.dashboard-device-signals {
+  min-height: 300px;
+}
+
+.dashboard-signal-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.dashboard-signal-summary span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.dashboard-signal-summary .error,
+.dashboard-device-signal-row.error .dashboard-signal-severity {
+  color: var(--danger);
+  background: var(--danger-surface);
+}
+
+.dashboard-signal-summary .warning,
+.dashboard-device-signal-row.warning .dashboard-signal-severity {
+  color: var(--warning);
+  background: var(--warning-surface);
+}
+
+.dashboard-signal-summary .info,
+.dashboard-device-signal-row.info .dashboard-signal-severity {
+  color: var(--brand-primary);
+  background: var(--surface-selected);
+}
+
+.dashboard-device-signal-list {
+  display: grid;
+  gap: 8px;
+}
+
+.dashboard-device-signal-row {
+  display: grid;
+  grid-template-columns: auto minmax(130px, 0.45fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 58px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--surface-subtle);
+  text-decoration: none;
+}
+
+.dashboard-device-signal-row:hover {
+  border-color: var(--hover-ring);
+  background: var(--surface-hover);
+}
+
+.dashboard-device-signal-row > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.dashboard-device-signal-row strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-device-signal-row small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-signal-severity {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: max-content;
+  min-width: 64px;
+  min-height: 24px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 850;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
 .dashboard-donut-layout {
   display: grid;
   grid-template-columns: 180px minmax(0, 1fr);
@@ -10365,6 +10470,7 @@ a.dashboard-list-row:hover {
   .dashboard-performance-metrics,
   .dashboard-donut-layout,
   .dashboard-insight-row,
+  .dashboard-device-signal-row,
   .clients-summary-grid,
   .settings-summary-grid,
   .profile-summary-grid,
@@ -10391,6 +10497,11 @@ a.dashboard-list-row:hover {
   .knowledge-search-result,
   .onenote-import-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-widget-wide,
+  .dashboard-wide-card {
+    grid-column: auto;
   }
 
   .dashboard-ticket-kpi-grid,
