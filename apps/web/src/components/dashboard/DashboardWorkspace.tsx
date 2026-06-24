@@ -54,6 +54,8 @@ interface DashboardStats {
   bySource: Array<{ source: string; count: number; filter: { source: string } }>;
   byClient: Array<{ clientId: string | null; name: string; count: number; filter: { clientId?: string } }>;
   workload: Array<{ userId: string; name: string; count: number; filter: { assignedUserId: string } }>;
+  agingBuckets?: Array<{ label: string; count: number }>;
+  staleBySpecialist?: Array<{ userId: string; name: string; count: number; filter: { assignedUserId: string; statuses: string[]; sortBy: string; sortDirection: string } }>;
   specialistPerformance?: Array<{
     userId: string;
     name: string;
@@ -119,6 +121,8 @@ type DashboardWidgetId =
   | "specialistTrend"
   | "createdByHour"
   | "technicianWorkload"
+  | "ticketAging"
+  | "staleBySpecialist"
   | "specialistPerformance"
   | "ticketsByClient"
   | "ticketsBySource"
@@ -134,7 +138,7 @@ interface DashboardPreference {
 interface DashboardWidgetDefinition {
   id: DashboardWidgetId;
   label: string;
-  group: "summary" | "main" | "insight";
+  group: "summary" | "primary" | "compact" | "insight";
   wide?: boolean;
 }
 
@@ -144,16 +148,18 @@ const chartColors = ["#155eef", "#16a34a", "#f59e0b", "#ef4444", "#8b5cf6", "#06
 const defaultDashboardWidgets: DashboardWidgetDefinition[] = [
   { id: "ticketKpis", label: "Ticket summary cards", group: "summary" },
   { id: "eventKpis", label: "Event service summary cards", group: "summary" },
-  { id: "deviceOverview", label: "Devices / RMM overview", group: "main", wide: true },
-  { id: "ticketActivity", label: "Ticket Activity", group: "main", wide: true },
-  { id: "ticketsByStatus", label: "Tickets by Status", group: "main" },
-  { id: "ticketsByPriority", label: "Tickets by Priority", group: "main" },
-  { id: "specialistTrend", label: "Specialist Trend", group: "main", wide: true },
-  { id: "createdByHour", label: "Created by Hour", group: "main" },
-  { id: "technicianWorkload", label: "Technician Workload", group: "main" },
-  { id: "specialistPerformance", label: "Specialist Performance", group: "main", wide: true },
-  { id: "ticketsByClient", label: "Tickets by Client", group: "main" },
-  { id: "ticketsBySource", label: "Tickets by Source", group: "main" },
+  { id: "ticketActivity", label: "Ticket Activity", group: "primary", wide: true },
+  { id: "specialistTrend", label: "Specialist Trend", group: "primary", wide: true },
+  { id: "specialistPerformance", label: "Specialist Performance", group: "primary", wide: true },
+  { id: "deviceOverview", label: "Devices / RMM overview", group: "primary", wide: true },
+  { id: "technicianWorkload", label: "Technician Workload", group: "compact" },
+  { id: "ticketsByClient", label: "Tickets by Client", group: "compact" },
+  { id: "ticketAging", label: "Ticket Aging", group: "compact" },
+  { id: "staleBySpecialist", label: "Stale by Specialist", group: "compact" },
+  { id: "createdByHour", label: "Created by Hour", group: "compact" },
+  { id: "ticketsByStatus", label: "Tickets by Status", group: "compact" },
+  { id: "ticketsByPriority", label: "Tickets by Priority", group: "compact" },
+  { id: "ticketsBySource", label: "Tickets by Source", group: "compact" },
   { id: "criticalTickets", label: "Critical and High Priority", group: "insight" },
   { id: "unassignedTickets", label: "Unassigned Tickets", group: "insight" },
   { id: "staleTickets", label: "No Recent Update", group: "insight" }
@@ -906,6 +912,12 @@ export function DashboardWorkspace() {
   const sourceItems = stats.bySource.map((item) => ({ label: label(item.source), count: item.count, href: ticketHref({ source: item.filter.source }) }));
   const clientItems = stats.byClient.map((item) => ({ label: item.name, count: item.count, href: item.clientId ? ticketHref({ clientId: item.clientId }) : undefined }));
   const workloadItems = stats.workload.map((item) => ({ label: item.name, count: item.count, href: ticketHref({ assignedUserId: item.filter.assignedUserId, statuses: activeStatuses }) }));
+  const agingItems = (stats.agingBuckets ?? []).map((item) => ({ label: item.label, count: item.count }));
+  const staleSpecialistItems = (stats.staleBySpecialist ?? []).map((item) => ({
+    label: item.name,
+    count: item.count,
+    href: ticketHref(item.filter)
+  }));
   const specialistPerformance = stats.specialistPerformance ?? [];
   const specialistTrend = stats.specialistTrend ?? [];
   const hiddenWidgets = new Set(preference.hiddenWidgets);
@@ -952,6 +964,10 @@ export function DashboardWorkspace() {
         return <HourChart items={stats.createdByHour} />;
       case "technicianWorkload":
         return <HorizontalBarList title="Technician Workload" subtitle="Active tickets by assigned technician." items={workloadItems} />;
+      case "ticketAging":
+        return <HorizontalBarList title="Ticket Aging" subtitle="Active tickets grouped by time open." items={agingItems} />;
+      case "staleBySpecialist":
+        return <HorizontalBarList title="Stale by Specialist" subtitle="Assigned tickets idle for more than 7 days." items={staleSpecialistItems} />;
       case "specialistPerformance":
         return <SpecialistPerformanceCard items={specialistPerformance} />;
       case "ticketsByClient":
@@ -992,7 +1008,8 @@ export function DashboardWorkspace() {
     );
   };
   const summaryWidgets = preference.layout.filter((id): id is DashboardWidgetId => widgetDefinitionById.get(id as DashboardWidgetId)?.group === "summary");
-  const mainWidgets = preference.layout.filter((id): id is DashboardWidgetId => widgetDefinitionById.get(id as DashboardWidgetId)?.group === "main");
+  const primaryWidgets = preference.layout.filter((id): id is DashboardWidgetId => widgetDefinitionById.get(id as DashboardWidgetId)?.group === "primary");
+  const compactWidgets = preference.layout.filter((id): id is DashboardWidgetId => widgetDefinitionById.get(id as DashboardWidgetId)?.group === "compact");
   const insightWidgets = preference.layout.filter((id): id is DashboardWidgetId => widgetDefinitionById.get(id as DashboardWidgetId)?.group === "insight");
 
   return (
@@ -1016,7 +1033,9 @@ export function DashboardWorkspace() {
 
       {summaryWidgets.map(renderShell)}
 
-      <section className="dashboard-main-grid">{mainWidgets.map(renderShell)}</section>
+      <section className="dashboard-main-grid">{primaryWidgets.map(renderShell)}</section>
+
+      <section className="dashboard-compact-grid">{compactWidgets.map(renderShell)}</section>
 
       <section className="dashboard-insight-grid">{insightWidgets.map(renderShell)}</section>
     </div>

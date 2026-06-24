@@ -7225,6 +7225,13 @@ a.dashboard-list-row:hover {
   align-items: stretch;
 }
 
+.dashboard-compact-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+  align-items: stretch;
+}
+
 .dashboard-widget-shell {
   min-width: 0;
   position: relative;
@@ -7267,6 +7274,28 @@ a.dashboard-list-row:hover {
   gap: 16px;
   align-content: start;
   min-height: 280px;
+}
+
+.dashboard-compact-grid .dashboard-chart-card {
+  min-height: 300px;
+}
+
+.dashboard-compact-grid .dashboard-donut-layout {
+  grid-template-columns: 118px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.dashboard-compact-grid .dashboard-donut {
+  width: 118px;
+  height: 118px;
+}
+
+.dashboard-compact-grid .dashboard-hour-chart {
+  height: 170px;
+}
+
+.dashboard-compact-grid .dashboard-horizontal-bars {
+  gap: 8px;
 }
 
 .dashboard-wide-card {
@@ -10205,7 +10234,8 @@ a.dashboard-list-row:hover {
     grid-template-columns: minmax(0, 1fr) minmax(300px, 0.42fr);
   }
 
-  .dashboard-main-grid {
+  .dashboard-main-grid,
+  .dashboard-compact-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -10263,6 +10293,10 @@ a.dashboard-list-row:hover {
 @media (max-width: 1024px) {
   .dashboard-kpi-grid,
   .dashboard-event-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-compact-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -10324,6 +10358,7 @@ a.dashboard-list-row:hover {
   .dashboard-hero,
   .dashboard-hero-metrics,
   .dashboard-main-grid,
+  .dashboard-compact-grid,
   .dashboard-insight-grid,
   .dashboard-customizer-list,
   .dashboard-performance-row,

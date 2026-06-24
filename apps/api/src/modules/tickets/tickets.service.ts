@@ -157,6 +157,7 @@ export class TicketsService {
     };
     const recentSince = this.daysAgo(29);
     const staleCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const now = new Date();
 
     const [
       totalOpen,
@@ -288,6 +289,10 @@ export class TicketsService {
     );
     const specialistPerformance = await this.buildSpecialistPerformance(activeUsers, activeWhere, baseWhere, recentSince);
     const specialistTrend = await this.buildSpecialistTrend(specialistPerformance.slice(0, 5), baseWhere, recentSince);
+    const [agingBuckets, staleBySpecialist] = await Promise.all([
+      this.buildTicketAgingBuckets(activeWhere, now),
+      this.buildStaleBySpecialist(activeUsers, activeWhere, staleCutoff)
+    ]);
 
     return {
       summary: {
@@ -312,6 +317,8 @@ export class TicketsService {
         filter: item.clientId ? { clientId: item.clientId } : {}
       })),
       workload: workload.filter((item) => item.count > 0).sort((a, b) => b.count - a.count).slice(0, 8),
+      agingBuckets,
+      staleBySpecialist,
       specialistPerformance,
       specialistTrend,
       activityByDay: this.buildActivityByDay(recentCreatedTickets, recentClosedTickets),
@@ -378,6 +385,74 @@ export class TicketsService {
       buckets[ticket.createdAt.getHours()].count += 1;
     });
     return buckets;
+  }
+
+  private async buildTicketAgingBuckets(activeWhere: Prisma.TicketWhereInput, now: Date) {
+    const buckets = [
+      {
+        label: "0-1 days",
+        count: 0
+      },
+      {
+        label: "2-3 days",
+        count: 0
+      },
+      {
+        label: "4-7 days",
+        count: 0
+      },
+      {
+        label: "8+ days",
+        count: 0
+      }
+    ];
+    const [zeroToOne, twoToThree, fourToSeven, eightPlus] = await Promise.all([
+      this.prisma.ticket.count({ where: { ...activeWhere, createdAt: { gte: this.daysAgoFrom(now, 1) } } }),
+      this.prisma.ticket.count({ where: { ...activeWhere, createdAt: { lt: this.daysAgoFrom(now, 1), gte: this.daysAgoFrom(now, 3) } } }),
+      this.prisma.ticket.count({ where: { ...activeWhere, createdAt: { lt: this.daysAgoFrom(now, 3), gte: this.daysAgoFrom(now, 7) } } }),
+      this.prisma.ticket.count({ where: { ...activeWhere, createdAt: { lt: this.daysAgoFrom(now, 7) } } })
+    ]);
+
+    buckets[0].count = zeroToOne;
+    buckets[1].count = twoToThree;
+    buckets[2].count = fourToSeven;
+    buckets[3].count = eightPlus;
+    return buckets;
+  }
+
+  private async buildStaleBySpecialist(activeUsers: Array<{ id: string; firstName: string; lastName: string }>, activeWhere: Prisma.TicketWhereInput, staleCutoff: Date) {
+    const staleBySpecialist = await Promise.all(
+      activeUsers.map(async (technician) => ({
+        userId: technician.id,
+        name: `${technician.firstName} ${technician.lastName}`,
+        count: await this.prisma.ticket.count({
+          where: {
+            ...activeWhere,
+            updatedAt: { lt: staleCutoff },
+            OR: [{ assignedUserId: technician.id }, { assignees: { some: { userId: technician.id } } }]
+          }
+        }),
+        filter: { assignedUserId: technician.id, statuses: this.activeStatusFilter(), sortBy: "updatedAt", sortDirection: "asc" }
+      }))
+    );
+
+    return staleBySpecialist.filter((item) => item.count > 0).sort((left, right) => right.count - left.count || left.name.localeCompare(right.name)).slice(0, 8);
+  }
+
+  private activeStatusFilter() {
+    return [
+      TicketStatus.NEW,
+      TicketStatus.OPEN,
+      TicketStatus.IN_PROGRESS,
+      TicketStatus.WAITING_ON_CUSTOMER,
+      TicketStatus.WAITING_ON_TECHNICIAN,
+      TicketStatus.WAITING_ON_THIRD_PARTY,
+      TicketStatus.REOPENED
+    ];
+  }
+
+  private daysAgoFrom(date: Date, days: number) {
+    return new Date(date.getTime() - days * 24 * 60 * 60 * 1000);
   }
 
   private async buildSpecialistPerformance(
