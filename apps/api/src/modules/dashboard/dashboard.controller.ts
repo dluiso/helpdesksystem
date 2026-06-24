@@ -18,6 +18,12 @@ export class DashboardController {
     return this.dashboardService.preferences(user);
   }
 
+  @Get("device-statistics")
+  @RequirePermissions("devices.view")
+  deviceStatistics(@CurrentUser() user: AuthenticatedUser) {
+    return this.dashboardService.deviceStatistics(user);
+  }
+
   @Put("preferences")
   @RequirePermissions("tickets.view")
   updatePreferences(@CurrentUser() user: AuthenticatedUser, @Body() body: UpdateDashboardPreferencesDto) {

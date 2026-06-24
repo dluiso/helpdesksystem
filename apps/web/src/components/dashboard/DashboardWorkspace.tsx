@@ -6,11 +6,15 @@ import {
   CheckCircle2,
   Clock3,
   ClipboardList,
+  Database,
   EyeOff,
   GripVertical,
+  HardDrive,
   Inbox,
+  Monitor,
   RotateCcw,
   Save,
+  Server,
   Settings2,
   Ticket,
   UsersRound,
@@ -75,6 +79,29 @@ interface DashboardStats {
   };
 }
 
+interface DashboardDeviceStats {
+  summary: {
+    total: number;
+    active: number;
+    inactive: number;
+    retired: number;
+    servers: number;
+    workstations: number;
+    otherTypes: number;
+  };
+  byClient: Array<{
+    clientId: string;
+    name: string;
+    total: number;
+    active: number;
+    inactive: number;
+    servers: number;
+    workstations: number;
+  }>;
+  byOperatingSystem: Array<{ name: string; count: number }>;
+  byType: Array<{ type: string; total: number; active: number; inactive: number }>;
+}
+
 type EventStatus = "NEW" | "UNDER_REVIEW" | "SCHEDULED" | "ASSIGNED" | "IN_PROGRESS" | "WAITING_ON_CLIENT" | "WAITING_ON_INTERNAL_TEAM" | "COMPLETED" | "CANCELLED" | "CONVERTED_TO_TICKET";
 
 interface DashboardEventRequest {
@@ -85,6 +112,7 @@ interface DashboardEventRequest {
 type DashboardWidgetId =
   | "ticketKpis"
   | "eventKpis"
+  | "deviceOverview"
   | "ticketActivity"
   | "ticketsByStatus"
   | "ticketsByPriority"
@@ -116,6 +144,7 @@ const chartColors = ["#155eef", "#16a34a", "#f59e0b", "#ef4444", "#8b5cf6", "#06
 const defaultDashboardWidgets: DashboardWidgetDefinition[] = [
   { id: "ticketKpis", label: "Ticket summary cards", group: "summary" },
   { id: "eventKpis", label: "Event service summary cards", group: "summary" },
+  { id: "deviceOverview", label: "Devices / RMM overview", group: "main", wide: true },
   { id: "ticketActivity", label: "Ticket Activity", group: "main", wide: true },
   { id: "ticketsByStatus", label: "Tickets by Status", group: "main" },
   { id: "ticketsByPriority", label: "Tickets by Priority", group: "main" },
@@ -160,6 +189,15 @@ function eventHref(filter: Record<string, string | undefined>) {
   }
   const query = params.toString();
   return query ? `/event-services?${query}` : "/event-services";
+}
+
+function deviceHref(filter: Record<string, string | undefined>) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filter)) {
+    if (value) params.set(key, value);
+  }
+  const query = params.toString();
+  return query ? `/devices?${query}` : "/devices";
 }
 
 function formatDate(value: string) {
@@ -408,6 +446,109 @@ function HorizontalBarList({ title, subtitle, items }: { title: string; subtitle
   );
 }
 
+function DeviceOverviewCard({ stats }: { stats: DashboardDeviceStats | null }) {
+  if (!stats) {
+    return (
+      <div className="panel dashboard-chart-card dashboard-wide-card">
+        <div className="section-heading compact-heading">
+          <div>
+            <h2>Devices / RMM</h2>
+            <p className="muted">Tactical RMM inventory visibility is unavailable for this user.</p>
+          </div>
+        </div>
+        <p className="dashboard-empty">No device statistics available.</p>
+      </div>
+    );
+  }
+
+  const maxClient = Math.max(1, ...stats.byClient.map((item) => item.total));
+  const maxOs = Math.max(1, ...stats.byOperatingSystem.map((item) => item.count));
+  const deviceCards = [
+    { title: "Total Devices", value: stats.summary.total, tone: "primary", icon: Monitor, note: "Managed assets", href: deviceHref({}) },
+    { title: "Tactical Active", value: stats.summary.active, tone: "success", icon: CheckCircle2, note: "RMM active", href: deviceHref({}) },
+    { title: "Tactical Inactive", value: stats.summary.inactive, tone: "muted", icon: Clock3, note: "RMM inactive", href: deviceHref({}) },
+    { title: "Servers", value: stats.summary.servers, tone: "info", icon: Server, note: "Server assets", href: deviceHref({}) },
+    { title: "Workstations", value: stats.summary.workstations, tone: "neutral", icon: HardDrive, note: "Desktop/laptop", href: deviceHref({}) }
+  ];
+
+  return (
+    <div className="panel dashboard-chart-card dashboard-wide-card dashboard-device-overview">
+      <div className="section-heading compact-heading">
+        <div>
+          <h2>Devices / RMM</h2>
+          <p className="muted">Tactical status, client distribution, device type, and operating system mix.</p>
+        </div>
+        <span className="count-pill">{stats.summary.total} total</span>
+      </div>
+
+      <section className="dashboard-device-kpi-grid" aria-label="Device summary">
+        {deviceCards.map((card) => (
+          <KpiCard key={card.title} {...card} />
+        ))}
+      </section>
+
+      <div className="dashboard-device-breakdown-grid">
+        <div className="dashboard-device-breakdown">
+          <div className="dashboard-breakdown-heading">
+            <h3>Devices by Client</h3>
+            <span>Active / inactive</span>
+          </div>
+          <div className="dashboard-device-client-list">
+            {stats.byClient.length ? (
+              stats.byClient.map((client) => {
+                const activeWidth = Math.max(0, (client.active / maxClient) * 100);
+                const inactiveWidth = Math.max(0, (client.inactive / maxClient) * 100);
+                return (
+                  <Link className="dashboard-device-client-row" href={deviceHref({})} key={client.clientId}>
+                    <span>
+                      <strong>{client.name}</strong>
+                      <small>{client.servers} servers - {client.workstations} workstations</small>
+                    </span>
+                    <span className="dashboard-device-client-counts">
+                      <small>{client.active} active</small>
+                      <small>{client.inactive} inactive</small>
+                      <strong>{client.total}</strong>
+                    </span>
+                    <i className="dashboard-device-stack" aria-hidden="true">
+                      <b className="active" style={{ width: `${activeWidth}%` }} />
+                      <b className="inactive" style={{ width: `${inactiveWidth}%` }} />
+                    </i>
+                  </Link>
+                );
+              })
+            ) : (
+              <p className="dashboard-empty">No devices synced yet.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="dashboard-device-breakdown">
+          <div className="dashboard-breakdown-heading">
+            <h3>Operating Systems</h3>
+            <span>Top platforms</span>
+          </div>
+          <div className="dashboard-device-os-list">
+            {stats.byOperatingSystem.length ? (
+              stats.byOperatingSystem.map((item, index) => (
+                <div className="dashboard-device-os-row" key={item.name}>
+                  <span>
+                    <Database size={14} aria-hidden="true" />
+                    {item.name}
+                  </span>
+                  <strong>{item.count}</strong>
+                  <i style={{ width: `${Math.max(8, (item.count / maxOs) * 100)}%`, backgroundColor: chartColors[index % chartColors.length] }} />
+                </div>
+              ))
+            ) : (
+              <p className="dashboard-empty">No operating system data yet.</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SpecialistPerformanceCard({ items }: { items: NonNullable<DashboardStats["specialistPerformance"]> }) {
   const maxValue = Math.max(1, ...items.flatMap((item) => [item.assignedActive, item.closedLast30Days, item.awaitingTechnician]));
   const teamAverage = items[0]?.teamAverageActive ?? 0;
@@ -618,6 +759,7 @@ function DashboardCustomizer({
 
 export function DashboardWorkspace() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [deviceStats, setDeviceStats] = useState<DashboardDeviceStats | null>(null);
   const [eventRequests, setEventRequests] = useState<DashboardEventRequest[]>([]);
   const [preference, setPreference] = useState<DashboardPreference>(() => normalizeDashboardPreference());
   const [customizing, setCustomizing] = useState(false);
@@ -633,12 +775,14 @@ export function DashboardWorkspace() {
     Promise.all([
       apiFetch<DashboardStats>("/tickets/statistics"),
       apiFetch<DashboardEventRequest[]>("/event-services").catch(() => []),
+      apiFetch<DashboardDeviceStats>("/dashboard/device-statistics").catch(() => null),
       apiFetch<DashboardPreference>("/dashboard/preferences").catch(() => normalizeDashboardPreference())
     ])
-      .then(([data, events, dashboardPreference]) => {
+      .then(([data, events, devices, dashboardPreference]) => {
         if (mounted) {
           setStats(data);
           setEventRequests(events);
+          setDeviceStats(devices);
           setPreference(normalizeDashboardPreference(dashboardPreference));
           setError("");
         }
@@ -794,6 +938,8 @@ export function DashboardWorkspace() {
             </section>
           </>
         );
+      case "deviceOverview":
+        return <DeviceOverviewCard stats={deviceStats} />;
       case "ticketActivity":
         return <ActivityChart items={stats.activityByDay} />;
       case "ticketsByStatus":
