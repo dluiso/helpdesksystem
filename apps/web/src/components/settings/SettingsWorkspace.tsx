@@ -261,6 +261,27 @@ interface AttachmentQuarantineResult {
   };
 }
 
+interface AttachmentBulkRescanResult {
+  requested: number;
+  processed: number;
+  passed: number;
+  blocked: number;
+  skipped: number;
+  failed: number;
+  remainingPending: number;
+  counts: {
+    quarantined: number;
+    pending: number;
+    restored: number;
+  };
+  failures: Array<{
+    id: string;
+    type: "ticket" | "event";
+    filename: string;
+    error: string;
+  }>;
+}
+
 interface GeneralSettings {
   applicationName: string;
   companyName: string;
@@ -1789,6 +1810,54 @@ export function SettingsWorkspace() {
       await Promise.all([loadSettingsData(), loadAttachmentQuarantine(quarantineFilters)]);
     } catch {
       setError("Unable to rescan attachment.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function rescanPendingAttachments() {
+    const pendingCount = attachmentQuarantine?.counts.pending ?? maintenanceSummary?.quarantine?.pending ?? 0;
+    if (pendingCount <= 0) {
+      setNotice("There are no pending attachments to scan.");
+      return;
+    }
+
+    setBusy("rescan-pending");
+    setNotice(null);
+    setError(null);
+    try {
+      let totalProcessed = 0;
+      let totalPassed = 0;
+      let totalBlocked = 0;
+      let totalSkipped = 0;
+      let totalFailed = 0;
+      let previousRemaining = pendingCount;
+      let remaining = pendingCount;
+
+      for (let batch = 0; batch < 25 && remaining > 0; batch += 1) {
+        const result = await apiFetch<AttachmentBulkRescanResult>("/maintenance/attachment-quarantine/rescan-pending", {
+          method: "POST",
+          body: JSON.stringify({ type: "all", limit: 25 })
+        });
+        totalProcessed += result.processed;
+        totalPassed += result.passed;
+        totalBlocked += result.blocked;
+        totalSkipped += result.skipped;
+        totalFailed += result.failed;
+        remaining = result.remainingPending;
+
+        if (result.requested === 0 || result.processed === 0 || remaining >= previousRemaining) {
+          break;
+        }
+        previousRemaining = remaining;
+      }
+
+      setNotice(`Pending rescan processed ${totalProcessed} attachments: ${totalPassed} clean, ${totalBlocked} blocked, ${totalSkipped} still pending/skipped, ${totalFailed} failed. ${remaining} pending remain.`);
+      const nextFilters = { ...quarantineFilters, status: remaining > 0 ? "pending" : quarantineFilters.status, page: "1" };
+      setQuarantineFilters(nextFilters);
+      await Promise.all([loadSettingsData(), loadAttachmentQuarantine(nextFilters)]);
+    } catch {
+      setError("Unable to rescan pending attachments.");
     } finally {
       setBusy(null);
     }
@@ -3711,6 +3780,14 @@ export function SettingsWorkspace() {
                       <span className="status-pill warning-pill">{attachmentQuarantine?.counts.quarantined ?? maintenanceSummary?.quarantine?.quarantined ?? 0} quarantined</span>
                       <span className="status-pill">{attachmentQuarantine?.counts.pending ?? maintenanceSummary?.quarantine?.pending ?? 0} pending</span>
                       <span className="status-pill success">{attachmentQuarantine?.counts.restored ?? maintenanceSummary?.quarantine?.restored ?? 0} restored</span>
+                      <button
+                        className="button small-button"
+                        type="button"
+                        onClick={() => void rescanPendingAttachments()}
+                        disabled={busy === "rescan-pending" || (attachmentQuarantine?.counts.pending ?? maintenanceSummary?.quarantine?.pending ?? 0) <= 0}
+                      >
+                        {busy === "rescan-pending" ? "Scanning..." : "Rescan Pending"}
+                      </button>
                     </div>
                   </div>
 

@@ -6,6 +6,15 @@ import { FileScanService } from "../file-storage/file-scan.service";
 import { FileStorageService } from "../file-storage/file-storage.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AttachmentQuarantineQueryDto } from "./dto/attachment-quarantine-query.dto";
+import { BulkRescanPendingAttachmentsDto } from "./dto/bulk-rescan-pending-attachments.dto";
+
+type PendingAttachmentScanTarget = {
+  id: string;
+  type: "ticket" | "event";
+  storageKey: string;
+  originalFilename: string;
+  createdAt: Date;
+};
 
 @Injectable()
 export class MaintenanceService implements OnModuleInit, OnModuleDestroy {
@@ -176,6 +185,75 @@ export class MaintenanceService implements OnModuleInit, OnModuleDestroy {
     });
 
     return { id: updated.id, scanStatus: updated.scanStatus, scanResult: updated.scanResult };
+  }
+
+  async bulkRescanPendingAttachments(user: AuthenticatedUser, input: BulkRescanPendingAttachmentsDto) {
+    const type = input.type ?? "all";
+    const limit = Math.min(Math.max(input.limit ?? 25, 1), 50);
+    const pendingBefore = await this.getQuarantineCounts(user.organizationId);
+    const targets = await this.findPendingScanTargets(user.organizationId, type, limit);
+    const result = {
+      requested: targets.length,
+      processed: 0,
+      passed: 0,
+      blocked: 0,
+      skipped: 0,
+      failed: 0,
+      failures: [] as Array<{ id: string; type: "ticket" | "event"; filename: string; error: string }>
+    };
+
+    for (const target of targets) {
+      try {
+        const buffer = await this.streamToBuffer(await this.fileStorage.getFileStream(target.storageKey));
+        const scan = await this.fileScan.scanBuffer(buffer);
+        const data = {
+          scanStatus: scan.scanStatus,
+          scanResult: scan.scanResult,
+          scanOverriddenAt: null,
+          scanOverrideReason: null,
+          scanOverriddenById: null
+        };
+        if (target.type === "ticket") {
+          await this.prisma.ticketAttachment.update({ where: { id: target.id }, data });
+        } else {
+          await this.prisma.eventServiceAttachment.update({ where: { id: target.id }, data });
+        }
+
+        result.processed += 1;
+        if (scan.scanStatus === AttachmentScanStatus.CLEAN && scan.scanResult === AttachmentScanResult.PASSED) result.passed += 1;
+        else if (scan.scanStatus === AttachmentScanStatus.BLOCKED || scan.scanStatus === AttachmentScanStatus.SUSPICIOUS) result.blocked += 1;
+        else result.skipped += 1;
+      } catch (error) {
+        result.failed += 1;
+        result.failures.push({
+          id: target.id,
+          type: target.type,
+          filename: target.originalFilename,
+          error: error instanceof Error ? error.message : "Unable to rescan attachment."
+        });
+      }
+    }
+
+    const pendingAfter = await this.getQuarantineCounts(user.organizationId);
+    await this.auditLogs.create({
+      organizationId: user.organizationId,
+      userId: user.id,
+      entityType: "Maintenance",
+      action: "attachment.antivirus_bulk_rescan",
+      metadata: {
+        type,
+        limit,
+        pendingBefore: pendingBefore.pending,
+        pendingAfter: pendingAfter.pending,
+        ...result
+      }
+    });
+
+    return {
+      ...result,
+      remainingPending: pendingAfter.pending,
+      counts: pendingAfter
+    };
   }
 
   async restoreQuarantinedAttachment(user: AuthenticatedUser, type: "ticket" | "event", attachmentId: string, reason: string) {
@@ -374,6 +452,42 @@ export class MaintenanceService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException("Attachment was not found in this organization.");
     }
     return attachment;
+  }
+
+  private async findPendingScanTargets(organizationId: string, type: "all" | "ticket" | "event", limit: number): Promise<PendingAttachmentScanTarget[]> {
+    const [ticketTargets, eventTargets] = await Promise.all([
+      type === "event"
+        ? Promise.resolve([])
+        : this.prisma.ticketAttachment.findMany({
+            where: {
+              ticket: { organizationId },
+              deletedAt: null,
+              OR: [{ scanStatus: AttachmentScanStatus.PENDING }, { scanResult: AttachmentScanResult.SKIPPED }]
+            },
+            select: { id: true, storageKey: true, originalFilename: true, createdAt: true },
+            orderBy: { createdAt: "asc" },
+            take: limit
+          }),
+      type === "ticket"
+        ? Promise.resolve([])
+        : this.prisma.eventServiceAttachment.findMany({
+            where: {
+              request: { organizationId },
+              deletedAt: null,
+              OR: [{ scanStatus: AttachmentScanStatus.PENDING }, { scanResult: AttachmentScanResult.SKIPPED }]
+            },
+            select: { id: true, storageKey: true, originalFilename: true, createdAt: true },
+            orderBy: { createdAt: "asc" },
+            take: limit
+          })
+    ]);
+
+    return [
+      ...ticketTargets.map((attachment) => ({ ...attachment, type: "ticket" as const })),
+      ...eventTargets.map((attachment) => ({ ...attachment, type: "event" as const }))
+    ]
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .slice(0, limit);
   }
 
   private toTicketQuarantineItem(

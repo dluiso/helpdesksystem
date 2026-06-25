@@ -5,6 +5,7 @@ import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
 import { RequirePermissions } from "../permissions/decorators/require-permissions.decorator";
 import { PermissionsGuard } from "../permissions/guards/permissions.guard";
 import { AttachmentQuarantineQueryDto } from "./dto/attachment-quarantine-query.dto";
+import { BulkRescanPendingAttachmentsDto } from "./dto/bulk-rescan-pending-attachments.dto";
 import { CleanupRecycleBinDto } from "./dto/cleanup-recycle-bin.dto";
 import { RestoreQuarantinedAttachmentDto } from "./dto/restore-quarantined-attachment.dto";
 import { UpdateMaintenanceSettingsDto } from "./dto/update-maintenance-settings.dto";
@@ -37,6 +38,12 @@ export class MaintenanceController {
   @RequirePermissions("maintenance.view")
   attachmentQuarantine(@CurrentUser() user: AuthenticatedUser, @Query() query: AttachmentQuarantineQueryDto) {
     return this.maintenance.listAttachmentQuarantine(user, query);
+  }
+
+  @Post("attachment-quarantine/rescan-pending")
+  @RequirePermissions("maintenance.manage")
+  rescanPendingAttachments(@CurrentUser() user: AuthenticatedUser, @Body() body: BulkRescanPendingAttachmentsDto) {
+    return this.maintenance.bulkRescanPendingAttachments(user, body);
   }
 
   @Post("attachment-quarantine/:type/:attachmentId/rescan")
