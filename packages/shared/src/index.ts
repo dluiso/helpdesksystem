@@ -81,6 +81,8 @@ export const INITIAL_PERMISSIONS = [
   "knowledge_base.publish",
   "reports.view",
   "reports.export",
+  "reports.manage",
+  "reports.send",
   "devices.view",
   "devices.create",
   "devices.update",

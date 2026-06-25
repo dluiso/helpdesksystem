@@ -45,19 +45,19 @@ export class ReportsController {
   }
 
   @Post("definitions")
-  @RequirePermissions("reports.view")
+  @RequirePermissions("reports.manage")
   createDefinition(@Body() body: CreateReportDefinitionDto, @CurrentUser() user: AuthenticatedUser) {
     return this.reportsService.createDefinition(user, body);
   }
 
   @Patch("definitions/:definitionId")
-  @RequirePermissions("reports.view")
+  @RequirePermissions("reports.manage")
   updateDefinition(@Param("definitionId") definitionId: string, @Body() body: UpdateReportDefinitionDto, @CurrentUser() user: AuthenticatedUser) {
     return this.reportsService.updateDefinition(user, definitionId, body);
   }
 
   @Delete("definitions/:definitionId")
-  @RequirePermissions("reports.view")
+  @RequirePermissions("reports.manage")
   deleteDefinition(@Param("definitionId") definitionId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.reportsService.deleteDefinition(user, definitionId);
   }
@@ -69,25 +69,25 @@ export class ReportsController {
   }
 
   @Post("schedules")
-  @RequirePermissions("reports.view")
+  @RequirePermissions("reports.manage")
   createSchedule(@Body() body: CreateReportScheduleDto, @CurrentUser() user: AuthenticatedUser) {
     return this.reportsService.createSchedule(user, body);
   }
 
   @Patch("schedules/:scheduleId")
-  @RequirePermissions("reports.view")
+  @RequirePermissions("reports.manage")
   updateSchedule(@Param("scheduleId") scheduleId: string, @Body() body: UpdateReportScheduleDto, @CurrentUser() user: AuthenticatedUser) {
     return this.reportsService.updateSchedule(user, scheduleId, body);
   }
 
   @Delete("schedules/:scheduleId")
-  @RequirePermissions("reports.view")
+  @RequirePermissions("reports.manage")
   deleteSchedule(@Param("scheduleId") scheduleId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.reportsService.deleteSchedule(user, scheduleId);
   }
 
   @Get("tickets/export")
-  @RequirePermissions("reports.view")
+  @RequirePermissions("reports.export")
   async exportTickets(@Query() query: TicketReportExportQueryDto, @CurrentUser() user: AuthenticatedUser, @Res() response: Response) {
     const exportResult = await this.reportsService.exportTickets(user, query);
     response.setHeader("Content-Type", exportResult.contentType);
@@ -96,13 +96,13 @@ export class ReportsController {
   }
 
   @Post("tickets/send")
-  @RequirePermissions("reports.view")
+  @RequirePermissions("reports.send")
   sendTicketsReport(@Query() query: TicketReportExportQueryDto, @Body() body: SendReportDto, @CurrentUser() user: AuthenticatedUser) {
     return this.reportsService.sendTicketsReport(user, query, body);
   }
 
   @Get("event-services/export")
-  @RequirePermissions("reports.view")
+  @RequirePermissions("reports.export")
   async exportEventServices(@Query() query: EventServiceReportExportQueryDto, @CurrentUser() user: AuthenticatedUser, @Res() response: Response) {
     const exportResult = await this.reportsService.exportEventServices(user, query);
     response.setHeader("Content-Type", exportResult.contentType);
@@ -111,7 +111,7 @@ export class ReportsController {
   }
 
   @Post("event-services/send")
-  @RequirePermissions("reports.view")
+  @RequirePermissions("reports.send")
   sendEventServicesReport(@Query() query: EventServiceReportExportQueryDto, @Body() body: SendReportDto, @CurrentUser() user: AuthenticatedUser) {
     return this.reportsService.sendEventServicesReport(user, query, body);
   }
