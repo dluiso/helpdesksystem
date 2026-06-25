@@ -5,8 +5,8 @@ export function singleFileUploadOptions(fileSize: number): MulterOptions {
     limits: {
       fileSize,
       files: 1,
-      fields: 8,
-      parts: 12,
+      fields: 0,
+      parts: 2,
       fieldNameSize: 100,
       fieldSize: 64 * 1024
     }
