@@ -348,6 +348,8 @@ export class SystemSettingsService {
     const rmmAllowedHosts = this.csvEnv("RMM_ALLOWED_HOSTS");
     const clamavEnabled = this.booleanEnv("CLAMAV_ENABLED", false);
     const clamavFailClosed = this.booleanEnv("CLAMAV_FAIL_CLOSED", false);
+    const clamavSocketPath = this.config.get<string>("CLAMAV_SOCKET_PATH")?.trim();
+    const clamavEndpoint = clamavSocketPath || `${this.config.get<string>("CLAMAV_HOST") ?? "127.0.0.1"}:${this.config.get<string>("CLAMAV_PORT") ?? "3310"}`;
     const allowInsecureIntegrationUrls = this.booleanEnv("ALLOW_INSECURE_INTEGRATION_URLS", false);
     const allowPrivateIntegrationHosts = this.booleanEnv("ALLOW_PRIVATE_INTEGRATION_HOSTS", false);
     const nonMockAiProviders = aiProviders.filter((provider) => provider.provider !== "MOCK");
@@ -387,7 +389,7 @@ export class SystemSettingsService {
           this.securityCheck("upload-limits", "Multipart limits", "ok", "File count, field count, field size, and part count limits are enforced.", "Active"),
           this.securityCheck("svg-branding", "SVG branding uploads", "ok", "SVG is blocked for uploaded branding assets.", "Blocked"),
           this.securityCheck("pdf-header", "PDF import validation", "ok", "Knowledge Base imports require a real PDF header.", "Active"),
-          this.securityCheck("clamav", "Antivirus scanner", clamavEnabled ? "ok" : "warning", clamavEnabled ? "Enabled" : "Not enabled", clamavEnabled ? `${this.config.get<string>("CLAMAV_HOST") ?? "127.0.0.1"}:${this.config.get<string>("CLAMAV_PORT") ?? "3310"}` : "Install and enable ClamAV on the server"),
+          this.securityCheck("clamav", "Antivirus scanner", clamavEnabled ? "ok" : "warning", clamavEnabled ? "Enabled" : "Not enabled", clamavEnabled ? clamavEndpoint : "Install and enable ClamAV on the server"),
           this.securityCheck("clamav-fail-mode", "Scanner failure mode", clamavEnabled && clamavFailClosed ? "ok" : "warning", clamavFailClosed ? "Fail closed" : "Fail open", "Use fail closed after server validation")
         ]
       },
