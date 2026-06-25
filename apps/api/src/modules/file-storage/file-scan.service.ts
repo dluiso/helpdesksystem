@@ -39,16 +39,23 @@ export class FileScanService {
   }
 
   private scanWithClamd(buffer: Buffer): Promise<string> {
-    const host = this.config.get<string>("CLAMAV_HOST") ?? "127.0.0.1";
-    const port = Number(this.config.get<string>("CLAMAV_PORT") ?? 3310);
+    const connectionOptions = this.clamdConnectionOptions();
     const timeoutMs = Number(this.config.get<string>("CLAMAV_TIMEOUT_MS") ?? 15_000);
 
     return new Promise((resolve, reject) => {
-      const socket = net.createConnection({ host, port });
+      const socket = net.createConnection(connectionOptions);
       const chunks: Buffer[] = [];
+      let settled = false;
       const timer = setTimeout(() => {
         socket.destroy(new Error("ClamAV scan timed out."));
       }, timeoutMs);
+
+      const settle = (callback: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        callback();
+      };
 
       socket.on("connect", () => {
         const size = Buffer.alloc(4);
@@ -60,13 +67,23 @@ export class FileScanService {
       });
       socket.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
       socket.on("error", (error) => {
-        clearTimeout(timer);
-        reject(error);
+        settle(() => reject(error));
       });
       socket.on("close", () => {
-        clearTimeout(timer);
-        resolve(Buffer.concat(chunks).toString("utf8"));
+        settle(() => resolve(Buffer.concat(chunks).toString("utf8")));
       });
     });
+  }
+
+  private clamdConnectionOptions(): net.NetConnectOpts {
+    const socketPath = this.config.get<string>("CLAMAV_SOCKET_PATH")?.trim();
+    if (socketPath) {
+      return { path: socketPath };
+    }
+
+    return {
+      host: this.config.get<string>("CLAMAV_HOST") ?? "127.0.0.1",
+      port: Number(this.config.get<string>("CLAMAV_PORT") ?? 3310)
+    };
   }
 }
