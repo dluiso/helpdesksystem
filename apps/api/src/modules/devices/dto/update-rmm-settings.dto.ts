@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional, IsString, MaxLength } from "class-validator";
+import { IsBoolean, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 
 export class UpdateRmmSettingsDto {
   @IsBoolean()
@@ -43,4 +43,14 @@ export class UpdateRmmSettingsDto {
   @IsString()
   @MaxLength(500)
   backgroundUrlTemplate?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  autoSyncEnabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(15)
+  @Max(1440)
+  autoSyncIntervalMinutes?: number | null;
 }

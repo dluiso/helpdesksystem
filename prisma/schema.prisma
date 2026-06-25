@@ -382,6 +382,10 @@ model SystemSetting {
   remoteAccessLastSyncAt     DateTime?
   remoteAccessLastSyncStatus String?
   remoteAccessLastSyncMessage String?
+  remoteAccessAutoSyncEnabled Boolean @default(false)
+  remoteAccessAutoSyncIntervalMinutes Int?
+  remoteAccessNextAutoSyncAt DateTime?
+  remoteAccessAutoSyncLockedAt DateTime?
   attachmentStorageProvider  FileStorageProvider @default(LOCAL)
   maximumUploadSizeMb        Int      @default(25)
   allowedAttachmentFileTypes String[] @default([])

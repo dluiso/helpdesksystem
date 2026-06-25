@@ -18,6 +18,9 @@ interface RmmSettings {
   lastSyncAt: string | null;
   lastSyncStatus: string | null;
   lastSyncMessage: string | null;
+  autoSyncEnabled: boolean;
+  autoSyncIntervalMinutes: number | null;
+  nextAutoSyncAt: string | null;
 }
 
 const defaultDraft = {
@@ -29,7 +32,9 @@ const defaultDraft = {
   dashboardUrl: "https://rmm.aviditytechnologies.com",
   deviceUrlTemplate: "https://rmm.aviditytechnologies.com/agents/{agentId}",
   controlUrlTemplate: "https://rmm.aviditytechnologies.com/takecontrol/{agentId}",
-  backgroundUrlTemplate: "https://rmm.aviditytechnologies.com/remotebackground/{agentId}?agentPlatform={agentPlatform}"
+  backgroundUrlTemplate: "https://rmm.aviditytechnologies.com/remotebackground/{agentId}?agentPlatform={agentPlatform}",
+  autoSyncEnabled: false,
+  autoSyncIntervalMinutes: 60
 };
 
 export function RmmConfigPanel() {
@@ -54,7 +59,9 @@ export function RmmConfigPanel() {
         dashboardUrl: response.dashboardUrl || defaultDraft.dashboardUrl,
         deviceUrlTemplate: response.deviceUrlTemplate || defaultDraft.deviceUrlTemplate,
         controlUrlTemplate: response.controlUrlTemplate || defaultDraft.controlUrlTemplate,
-        backgroundUrlTemplate: response.backgroundUrlTemplate || defaultDraft.backgroundUrlTemplate
+        backgroundUrlTemplate: response.backgroundUrlTemplate || defaultDraft.backgroundUrlTemplate,
+        autoSyncEnabled: response.autoSyncEnabled,
+        autoSyncIntervalMinutes: response.autoSyncIntervalMinutes ?? defaultDraft.autoSyncIntervalMinutes
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load RMM settings.");
@@ -68,9 +75,14 @@ export function RmmConfigPanel() {
     setError(null);
     setNotice(null);
     try {
+      const autoSyncIntervalMinutes = Math.min(1440, Math.max(15, draft.autoSyncIntervalMinutes));
       const response = await apiFetch<RmmSettings>("/devices/rmm-settings", {
         method: "PATCH",
-        body: JSON.stringify(draft)
+        body: JSON.stringify({
+          ...draft,
+          autoSyncEnabled: draft.enabled && draft.autoSyncEnabled,
+          autoSyncIntervalMinutes: draft.enabled && draft.autoSyncEnabled ? autoSyncIntervalMinutes : null
+        })
       });
       setSettings(response);
       setNotice("RMM integration settings saved.");
@@ -119,7 +131,17 @@ export function RmmConfigPanel() {
 
       <div className="rmm-settings-grid">
         <label className="checkbox-row full-span">
-          <input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft((current) => ({ ...current, enabled: event.target.checked }))} />
+          <input
+            type="checkbox"
+            checked={draft.enabled}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                enabled: event.target.checked,
+                autoSyncEnabled: event.target.checked ? current.autoSyncEnabled : false
+              }))
+            }
+          />
           Enable Tactical RMM integration
         </label>
         <label className="field">
@@ -154,6 +176,34 @@ export function RmmConfigPanel() {
           <span>Remote background URL template</span>
           <input className="input" value={draft.backgroundUrlTemplate} onChange={(event) => setDraft((current) => ({ ...current, backgroundUrlTemplate: event.target.value }))} />
         </label>
+        <label className="checkbox-row full-span">
+          <input
+            type="checkbox"
+            checked={draft.autoSyncEnabled}
+            disabled={!draft.enabled}
+            onChange={(event) => setDraft((current) => ({ ...current, autoSyncEnabled: event.target.checked }))}
+          />
+          Enable automatic RMM sync
+        </label>
+        <label className="field">
+          <span>Auto-sync interval (minutes)</span>
+          <input
+            className="input"
+            min={15}
+            max={1440}
+            step={5}
+            type="number"
+            value={draft.autoSyncIntervalMinutes}
+            disabled={!draft.enabled || !draft.autoSyncEnabled}
+            onChange={(event) => {
+              const nextValue = Number(event.target.value);
+              setDraft((current) => ({
+                ...current,
+                autoSyncIntervalMinutes: Number.isFinite(nextValue) ? nextValue : defaultDraft.autoSyncIntervalMinutes
+              }));
+            }}
+          />
+        </label>
       </div>
 
       <div className="rmm-help-panel">
@@ -162,6 +212,7 @@ export function RmmConfigPanel() {
           <strong>Supported URL tokens</strong>
           <p className="muted">Use {"{agentId}"}, {"{hostname}"}, {"{clientName}"}, {"{siteName}"}, {"{meshNodeId}"}, or {"{agentPlatform}"} in URL templates. Secrets must stay in environment variables, not in the database.</p>
           <p className="muted">API key resolved: {settings?.hasResolvedApiKey ? "Yes" : "No"}</p>
+          <p className="muted">Automatic sync is intentionally deferred when email sync or scheduled reports are due, so ticket ingestion keeps priority.</p>
         </div>
       </div>
 
@@ -173,6 +224,18 @@ export function RmmConfigPanel() {
         <div>
           <span className="muted">Status</span>
           <strong>{settings?.lastSyncStatus ?? "Not synced"}</strong>
+        </div>
+        <div>
+          <span className="muted">Auto sync</span>
+          <strong>
+            {settings?.autoSyncEnabled
+              ? `Every ${settings.autoSyncIntervalMinutes ?? defaultDraft.autoSyncIntervalMinutes} min`
+              : "Off"}
+          </strong>
+        </div>
+        <div>
+          <span className="muted">Next auto sync</span>
+          <strong>{settings?.nextAutoSyncAt ? new Date(settings.nextAutoSyncAt).toLocaleString() : "Not scheduled"}</strong>
         </div>
         <div className="full-span">
           <span className="muted">Message</span>

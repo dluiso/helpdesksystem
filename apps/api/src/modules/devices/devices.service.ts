@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { DeviceStatus, DeviceType, DeviceViewScope, Prisma, RemoteAccessProvider } from "@prisma/client";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
@@ -73,6 +73,8 @@ interface RemoteAccessDetailSnapshot {
 }
 
 type RmmSettingsRecord = {
+  id: string;
+  organizationId: string;
   remoteAccessProviderEnabled: boolean;
   remoteAccessProviderName: string;
   remoteAccessApiBaseUrl: string | null;
@@ -85,6 +87,10 @@ type RmmSettingsRecord = {
   remoteAccessLastSyncAt: Date | null;
   remoteAccessLastSyncStatus: string | null;
   remoteAccessLastSyncMessage: string | null;
+  remoteAccessAutoSyncEnabled: boolean;
+  remoteAccessAutoSyncIntervalMinutes: number | null;
+  remoteAccessNextAutoSyncAt: Date | null;
+  remoteAccessAutoSyncLockedAt: Date | null;
 };
 
 type DeviceWithRemoteProfile = Prisma.DeviceGetPayload<{
@@ -101,13 +107,42 @@ export interface DeviceActionUrls {
   remoteBackgroundUrl: string | null;
 }
 
+type RemoteAccessSyncContext = {
+  organizationId: string;
+  userId: string | null;
+  refreshDetails: boolean;
+  trigger: "manual" | "auto";
+};
+
+const RMM_AUTO_SYNC_SCAN_INTERVAL_MS = 60_000;
+const RMM_AUTO_SYNC_DEFER_MINUTES = 5;
+const RMM_AUTO_SYNC_LOCK_STALE_MINUTES = 30;
+const RMM_AUTO_SYNC_DEFAULT_INTERVAL_MINUTES = 60;
+const RMM_SYNC_PRIORITY_WINDOW_MS = 2 * 60 * 1000;
+
 @Injectable()
-export class DevicesService {
+export class DevicesService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(DevicesService.name);
+  private readonly runningAutoSyncs = new Set<string>();
+  private autoSyncTimer?: NodeJS.Timeout;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly auditLogs: AuditLogsService
   ) {}
+
+  onModuleInit() {
+    this.autoSyncTimer = setInterval(() => {
+      void this.runDueRemoteAccessAutoSyncs();
+    }, RMM_AUTO_SYNC_SCAN_INTERVAL_MS);
+  }
+
+  onModuleDestroy() {
+    if (this.autoSyncTimer) {
+      clearInterval(this.autoSyncTimer);
+    }
+  }
 
   async list(user: AuthenticatedUser, query: DeviceQueryDto) {
     const where: Prisma.DeviceWhereInput = {
@@ -332,6 +367,7 @@ export class DevicesService {
       throw new BadRequestException("Use an environment variable reference such as env:TACTICAL_RMM_API_KEY.");
     }
 
+    const currentSettings = await this.getSettingsRecord(user.organizationId);
     const apiBaseUrl = validateIntegrationUrl(input.apiBaseUrl, this.config, {
       label: "RMM API base URL",
       allowedHostsEnv: "RMM_ALLOWED_HOSTS"
@@ -352,6 +388,13 @@ export class DevicesService {
       label: "RMM remote background URL template",
       allowedHostsEnv: "RMM_ALLOWED_HOSTS"
     });
+    const autoSyncEnabled = input.enabled && Boolean(input.autoSyncEnabled);
+    const autoSyncIntervalMinutes = autoSyncEnabled
+      ? (input.autoSyncIntervalMinutes ?? currentSettings.remoteAccessAutoSyncIntervalMinutes ?? RMM_AUTO_SYNC_DEFAULT_INTERVAL_MINUTES)
+      : null;
+    const autoSyncScheduleChanged =
+      autoSyncEnabled !== currentSettings.remoteAccessAutoSyncEnabled ||
+      autoSyncIntervalMinutes !== currentSettings.remoteAccessAutoSyncIntervalMinutes;
 
     const settings = await this.prisma.systemSetting.update({
       where: { organizationId: user.organizationId },
@@ -364,7 +407,15 @@ export class DevicesService {
         remoteAccessDashboardUrl: dashboardUrl,
         remoteAccessDeviceUrlTemplate: deviceUrlTemplate,
         remoteAccessControlUrlTemplate: controlUrlTemplate,
-        remoteAccessBackgroundUrlTemplate: backgroundUrlTemplate
+        remoteAccessBackgroundUrlTemplate: backgroundUrlTemplate,
+        remoteAccessAutoSyncEnabled: autoSyncEnabled,
+        remoteAccessAutoSyncIntervalMinutes: autoSyncIntervalMinutes,
+        remoteAccessNextAutoSyncAt: autoSyncEnabled
+          ? autoSyncScheduleChanged || !currentSettings.remoteAccessNextAutoSyncAt
+            ? this.nextAutoSyncAt(autoSyncIntervalMinutes)
+            : currentSettings.remoteAccessNextAutoSyncAt
+          : null,
+        remoteAccessAutoSyncLockedAt: null
       }
     });
 
@@ -378,7 +429,9 @@ export class DevicesService {
         providerName: settings.remoteAccessProviderName,
         apiBaseUrl: settings.remoteAccessApiBaseUrl,
         agentsPath: settings.remoteAccessAgentsPath,
-        hasApiKeyReference: Boolean(settings.remoteAccessApiKeyReference)
+        hasApiKeyReference: Boolean(settings.remoteAccessApiKeyReference),
+        autoSyncEnabled: settings.remoteAccessAutoSyncEnabled,
+        autoSyncIntervalMinutes: settings.remoteAccessAutoSyncIntervalMinutes
       }
     });
 
@@ -386,7 +439,16 @@ export class DevicesService {
   }
 
   async syncFromRemoteAccessProvider(user: AuthenticatedUser) {
-    const settings = await this.getSettingsRecord(user.organizationId);
+    return this.syncRemoteAccessForOrganization({
+      organizationId: user.organizationId,
+      userId: user.id,
+      refreshDetails: true,
+      trigger: "manual"
+    });
+  }
+
+  private async syncRemoteAccessForOrganization(context: RemoteAccessSyncContext) {
+    const settings = await this.getSettingsRecord(context.organizationId);
     if (!settings.remoteAccessProviderEnabled) {
       throw new BadRequestException("RMM integration is disabled.");
     }
@@ -407,7 +469,9 @@ export class DevicesService {
         const normalized = this.normalizeAgent(record, settings);
         if (!normalized) continue;
 
-        const enriched = await this.enrichRemoteAccessAgentDetails(normalized, record, settings, apiBaseUrl, apiKey);
+        const enriched = context.refreshDetails
+          ? await this.enrichRemoteAccessAgentDetails(normalized, record, settings, apiBaseUrl, apiKey)
+          : { agent: normalized, refreshed: false, failed: false };
         agents.push(enriched.agent);
         if (enriched.refreshed) detailsRefreshed += 1;
         if (enriched.failed) detailFailures += 1;
@@ -417,7 +481,7 @@ export class DevicesService {
       let updated = 0;
 
       for (const agent of agents) {
-        const client = await this.findOrCreateClient(user, agent.clientName);
+        const client = await this.findOrCreateClient(context, agent.clientName);
         const identifierMatches: Prisma.DeviceWhereInput[] = [
           { remoteAccessId: { in: agent.remoteIdentifiers } },
           { remoteAccessProfile: { is: { provider: RemoteAccessProvider.TACTICAL_RMM, remoteIdentifier: { in: agent.remoteIdentifiers } } } }
@@ -431,7 +495,7 @@ export class DevicesService {
 
         const existingDevice = await this.prisma.device.findFirst({
           where: {
-            client: { organizationId: user.organizationId },
+            client: { organizationId: context.organizationId },
             remoteAccessProvider: RemoteAccessProvider.TACTICAL_RMM,
             deletedAt: null,
             OR: identifierMatches
@@ -500,30 +564,49 @@ export class DevicesService {
           : "";
       const message = `Synced ${agents.length} RMM device${agents.length === 1 ? "" : "s"} (${created} created, ${updated} updated).${detailMessage}`;
       const updatedSettings = await this.prisma.systemSetting.update({
-        where: { organizationId: user.organizationId },
+        where: { organizationId: context.organizationId },
         data: {
           remoteAccessLastSyncAt: new Date(),
           remoteAccessLastSyncStatus: detailFailures > 0 ? "warning" : "success",
-          remoteAccessLastSyncMessage: message
+          remoteAccessLastSyncMessage: message,
+          ...(context.trigger === "auto"
+            ? {
+                remoteAccessNextAutoSyncAt:
+                  settings.remoteAccessAutoSyncEnabled && settings.remoteAccessAutoSyncIntervalMinutes
+                    ? this.nextAutoSyncAt(settings.remoteAccessAutoSyncIntervalMinutes)
+                    : null,
+                remoteAccessAutoSyncLockedAt: null
+              }
+            : {})
         }
       });
 
       await this.auditLogs.create({
-        userId: user.id,
+        organizationId: context.organizationId,
+        userId: context.userId,
         entityType: "Device",
         action: "remote_access.devices_synced",
-        metadata: { provider: "TACTICAL_RMM", total: agents.length, created, updated, detailsRefreshed, detailFailures }
+        metadata: { provider: "TACTICAL_RMM", trigger: context.trigger, total: agents.length, created, updated, detailsRefreshed, detailFailures }
       });
 
       return { created, updated, total: agents.length, settings: this.toRmmSettingsResponse(updatedSettings) };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown RMM sync failure.";
       await this.prisma.systemSetting.update({
-        where: { organizationId: user.organizationId },
+        where: { organizationId: context.organizationId },
         data: {
           remoteAccessLastSyncAt: new Date(),
           remoteAccessLastSyncStatus: "error",
-          remoteAccessLastSyncMessage: message.slice(0, 500)
+          remoteAccessLastSyncMessage: message.slice(0, 500),
+          ...(context.trigger === "auto"
+            ? {
+                remoteAccessNextAutoSyncAt:
+                  settings.remoteAccessAutoSyncEnabled && settings.remoteAccessAutoSyncIntervalMinutes
+                    ? this.nextAutoSyncAt(settings.remoteAccessAutoSyncIntervalMinutes)
+                    : null,
+                remoteAccessAutoSyncLockedAt: null
+              }
+            : {})
         }
       });
       throw new BadRequestException(`RMM sync failed: ${message}`);
@@ -778,11 +861,11 @@ export class DevicesService {
     };
   }
 
-  private async findOrCreateClient(user: AuthenticatedUser, clientName: string) {
+  private async findOrCreateClient(context: Pick<RemoteAccessSyncContext, "organizationId" | "userId">, clientName: string) {
     const normalizedName = clientName.trim() || "Unmapped RMM Devices";
     const existing = await this.prisma.client.findFirst({
       where: {
-        organizationId: user.organizationId,
+        organizationId: context.organizationId,
         deletedAt: null,
         name: { equals: normalizedName, mode: "insensitive" }
       }
@@ -791,7 +874,7 @@ export class DevicesService {
 
     const created = await this.prisma.client.create({
       data: {
-        organizationId: user.organizationId,
+        organizationId: context.organizationId,
         name: normalizedName,
         shortName: normalizedName.slice(0, 24),
         notes: "Created from Tactical RMM sync."
@@ -799,7 +882,8 @@ export class DevicesService {
     });
 
     await this.auditLogs.create({
-      userId: user.id,
+      organizationId: context.organizationId,
+      userId: context.userId,
       entityType: "Client",
       entityId: created.id,
       action: "remote_access.client_created_from_sync",
@@ -807,6 +891,111 @@ export class DevicesService {
     });
 
     return created;
+  }
+
+  private async runDueRemoteAccessAutoSyncs() {
+    try {
+      const now = new Date();
+      const staleLockCutoff = new Date(now.getTime() - RMM_AUTO_SYNC_LOCK_STALE_MINUTES * 60_000);
+      const settingsRecords = await this.prisma.systemSetting.findMany({
+        where: {
+          remoteAccessProviderEnabled: true,
+          remoteAccessAutoSyncEnabled: true,
+          remoteAccessAutoSyncIntervalMinutes: { not: null },
+          OR: [{ remoteAccessNextAutoSyncAt: null }, { remoteAccessNextAutoSyncAt: { lte: now } }],
+          AND: [
+            {
+              OR: [{ remoteAccessAutoSyncLockedAt: null }, { remoteAccessAutoSyncLockedAt: { lt: staleLockCutoff } }]
+            }
+          ]
+        },
+        orderBy: { remoteAccessNextAutoSyncAt: "asc" },
+        take: 1
+      });
+
+      for (const settings of settingsRecords) {
+        if (this.runningAutoSyncs.has(settings.organizationId)) {
+          continue;
+        }
+
+        if (await this.shouldDeferRemoteAccessAutoSync(settings.organizationId, now)) {
+          await this.deferRemoteAccessAutoSync(settings.organizationId, "Automatic RMM sync deferred to avoid overlapping priority sync work.");
+          continue;
+        }
+
+        this.runningAutoSyncs.add(settings.organizationId);
+        try {
+          await this.prisma.systemSetting.update({
+            where: { organizationId: settings.organizationId },
+            data: { remoteAccessAutoSyncLockedAt: new Date() }
+          });
+          await this.syncRemoteAccessForOrganization({
+            organizationId: settings.organizationId,
+            userId: null,
+            refreshDetails: false,
+            trigger: "auto"
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unknown RMM auto sync failure.";
+          await this.prisma.systemSetting.update({
+            where: { organizationId: settings.organizationId },
+            data: {
+              remoteAccessLastSyncAt: new Date(),
+              remoteAccessLastSyncStatus: "error",
+              remoteAccessLastSyncMessage: message.slice(0, 500),
+              remoteAccessNextAutoSyncAt: this.nextAutoSyncAt(settings.remoteAccessAutoSyncIntervalMinutes),
+              remoteAccessAutoSyncLockedAt: null
+            }
+          });
+          this.logger.warn(
+            `RMM auto sync failed for organization ${settings.organizationId}: ${message}`
+          );
+        } finally {
+          this.runningAutoSyncs.delete(settings.organizationId);
+        }
+      }
+    } catch (error) {
+      this.logger.warn(`RMM auto sync scan failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  }
+
+  private async shouldDeferRemoteAccessAutoSync(organizationId: string, now: Date) {
+    const priorityWindowEnd = new Date(now.getTime() + RMM_SYNC_PRIORITY_WINDOW_MS);
+    const recentMailboxLockCutoff = new Date(now.getTime() - 10 * 60_000);
+    const [priorityMailboxes, dueReports] = await Promise.all([
+      this.prisma.mailbox.count({
+        where: {
+          organizationId,
+          isActive: true,
+          autoSyncEnabled: true,
+          OR: [
+            { autoSyncLockedAt: { gte: recentMailboxLockCutoff } },
+            { nextAutoSyncAt: null },
+            { nextAutoSyncAt: { lte: priorityWindowEnd } }
+          ]
+        }
+      }),
+      this.prisma.reportSchedule.count({
+        where: {
+          organizationId,
+          isActive: true,
+          nextRunAt: { lte: priorityWindowEnd }
+        }
+      })
+    ]);
+    return priorityMailboxes > 0 || dueReports > 0;
+  }
+
+  private async deferRemoteAccessAutoSync(organizationId: string, reason: string) {
+    await this.prisma.systemSetting.update({
+      where: { organizationId },
+      data: {
+        remoteAccessNextAutoSyncAt: new Date(Date.now() + RMM_AUTO_SYNC_DEFER_MINUTES * 60_000),
+        remoteAccessAutoSyncLockedAt: null,
+        remoteAccessLastSyncStatus: "deferred",
+        remoteAccessLastSyncMessage: reason
+      }
+    });
   }
 
   private async getSettingsRecord(organizationId: string) {
@@ -831,8 +1020,16 @@ export class DevicesService {
       backgroundUrlTemplate: settings.remoteAccessBackgroundUrlTemplate,
       lastSyncAt: settings.remoteAccessLastSyncAt,
       lastSyncStatus: settings.remoteAccessLastSyncStatus,
-      lastSyncMessage: settings.remoteAccessLastSyncMessage
+      lastSyncMessage: settings.remoteAccessLastSyncMessage,
+      autoSyncEnabled: settings.remoteAccessAutoSyncEnabled,
+      autoSyncIntervalMinutes: settings.remoteAccessAutoSyncIntervalMinutes,
+      nextAutoSyncAt: settings.remoteAccessNextAutoSyncAt
     };
+  }
+
+  private nextAutoSyncAt(intervalMinutes: number | null) {
+    const minutes = intervalMinutes ?? RMM_AUTO_SYNC_DEFAULT_INTERVAL_MINUTES;
+    return new Date(Date.now() + minutes * 60_000);
   }
 
   private toDeviceResponse(device: DeviceWithRemoteProfile, settings: RmmSettingsRecord) {
