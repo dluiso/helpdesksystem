@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AttachmentScanStatus, AttachmentSource, Prisma } from "@prisma/client";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
@@ -110,13 +110,14 @@ export class EventServicesAttachmentsService {
   }
 
   async loadOutboundAttachments(requestId: string, attachmentIds: string[]): Promise<OutboundMailAttachment[]> {
-    if (!attachmentIds.length) {
+    const uniqueAttachmentIds = [...new Set(attachmentIds)];
+    if (!uniqueAttachmentIds.length) {
       return [];
     }
 
     const attachments = await this.prisma.eventServiceAttachment.findMany({
       where: {
-        id: { in: attachmentIds },
+        id: { in: uniqueAttachmentIds },
         requestId,
         messageId: null,
         deletedAt: null,
@@ -124,6 +125,10 @@ export class EventServicesAttachmentsService {
       },
       orderBy: { createdAt: "asc" }
     });
+
+    if (attachments.length !== uniqueAttachmentIds.length) {
+      throw new BadRequestException("One or more attachments are no longer available for outbound email.");
+    }
 
     return Promise.all(
       attachments.map(async (attachment) => ({

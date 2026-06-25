@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Mailbox } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
@@ -9,6 +9,7 @@ import { MockMailProvider } from "./providers/mock-mail.provider";
 
 export interface SendTicketReplyInput {
   organizationId: string;
+  ticketId?: string | null;
   mailboxId?: string | null;
   to: string[];
   cc?: string[];
@@ -40,10 +41,11 @@ export class MailDeliveryService {
       return null;
     }
 
-    const attachments = [
-      ...(input.attachmentIds?.length ? await this.loadOutboundAttachments(input.attachmentIds) : []),
-      ...(input.rawAttachments ?? [])
-    ];
+    const attachmentIds = [...new Set(input.attachmentIds ?? [])];
+    const ticketAttachments = attachmentIds.length
+      ? await this.loadOutboundAttachments(attachmentIds, input.ticketId ?? null)
+      : [];
+    const attachments = [...ticketAttachments, ...(input.rawAttachments ?? [])];
 
     return provider.sendMessage({
       mailboxId: mailbox.id,
@@ -67,15 +69,21 @@ export class MailDeliveryService {
     });
   }
 
-  private async loadOutboundAttachments(attachmentIds: string[]) {
+  private async loadOutboundAttachments(attachmentIds: string[], ticketId: string | null) {
     const attachments = await this.prisma.ticketAttachment.findMany({
       where: {
         id: { in: attachmentIds },
+        ...(ticketId ? { ticketId } : {}),
+        ticketMessageId: null,
         deletedAt: null,
         scanStatus: { notIn: ["SUSPICIOUS", "BLOCKED"] }
       },
       orderBy: { createdAt: "asc" }
     });
+
+    if (attachments.length !== attachmentIds.length) {
+      throw new BadRequestException("One or more attachments are no longer available for outbound email.");
+    }
 
     return Promise.all(
       attachments.map(async (attachment) => ({

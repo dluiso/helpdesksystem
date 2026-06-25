@@ -1536,6 +1536,7 @@ export class TicketsService {
     if (!isInternal && latestInboundMessage?.senderEmail && (action === "send" || action === "send_and_close")) {
       sendResult = await this.mailDelivery.sendTicketReply({
         organizationId: user.organizationId,
+        ticketId: internalTicketId,
         mailboxId: ticket.mailboxId,
         to: [latestInboundMessage.senderEmail],
         cc: ccEmails,
