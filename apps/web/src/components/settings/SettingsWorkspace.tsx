@@ -307,6 +307,34 @@ interface SecuritySettings {
   turnstileProtectPasswordReset: boolean;
 }
 
+type SecurityPostureStatus = "ok" | "warning" | "info";
+
+interface SecurityPostureCheck {
+  key: string;
+  label: string;
+  status: SecurityPostureStatus;
+  description: string;
+  value: string;
+}
+
+interface SecurityPostureGroup {
+  key: "access" | "bot" | "uploads" | "integrations" | "operations";
+  title: string;
+  description: string;
+  checks: SecurityPostureCheck[];
+}
+
+interface SecurityPosture {
+  generatedAt: string;
+  environment: string;
+  groups: SecurityPostureGroup[];
+  summary: {
+    ok: number;
+    warning: number;
+    info: number;
+  };
+}
+
 interface AuditLogUserOption {
   id: string;
   name: string;
@@ -469,6 +497,16 @@ const GENERAL_TABS = [
 ] as const;
 
 type GeneralTab = (typeof GENERAL_TABS)[number]["key"];
+
+const SECURITY_TABS = [
+  { key: "access", label: "Access" },
+  { key: "bot", label: "Bot Protection" },
+  { key: "uploads", label: "Uploads" },
+  { key: "integrations", label: "Integrations" },
+  { key: "operations", label: "Operations" }
+] as const;
+
+type SecurityTab = (typeof SECURITY_TABS)[number]["key"];
 
 const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   applicationName: "Avidity IT Management Tool",
@@ -674,6 +712,46 @@ function NotificationUserCard({
   );
 }
 
+function securityStatusClass(status: SecurityPostureStatus) {
+  if (status === "ok") return "success";
+  if (status === "warning") return "warning-pill";
+  return "muted-pill";
+}
+
+function SecurityPosturePanel({ group }: { group: SecurityPostureGroup | undefined }) {
+  if (!group) {
+    return (
+      <div className="empty-state compact-empty-state">
+        <strong>Security posture is not available.</strong>
+        <span className="muted">Refresh Settings after the API finishes loading.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="security-posture-panel">
+      <div className="section-heading compact-heading">
+        <div>
+          <h3>{group.title}</h3>
+          <p className="muted">{group.description}</p>
+        </div>
+      </div>
+      <div className="security-check-grid">
+        {group.checks.map((check) => (
+          <article className={`security-check-card ${check.status}`} key={check.key}>
+            <div className="security-check-main">
+              <span className={`status-pill ${securityStatusClass(check.status)}`}>{check.status === "ok" ? "OK" : check.status === "warning" ? "Review" : "Info"}</span>
+              <strong>{check.label}</strong>
+            </div>
+            <p>{check.description}</p>
+            <span className="security-check-value">{check.value}</span>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function SettingsWorkspace() {
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -691,6 +769,7 @@ export function SettingsWorkspace() {
   const [generalDraft, setGeneralDraft] = useState<GeneralSettings>(DEFAULT_GENERAL_SETTINGS);
   const [securitySettings, setSecuritySettings] = useState<SecuritySettings | null>(null);
   const [securityDraft, setSecurityDraft] = useState<SecuritySettings>(DEFAULT_SECURITY_SETTINGS);
+  const [securityPosture, setSecurityPosture] = useState<SecurityPosture | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLogResult | null>(null);
   const [expandedAuditLogId, setExpandedAuditLogId] = useState<string | null>(null);
   const [systemHealth, setSystemHealth] = useState<SystemHealthSummary | null>(null);
@@ -779,6 +858,7 @@ export function SettingsWorkspace() {
   const [busy, setBusy] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<ActiveSection>("general");
   const [generalTab, setGeneralTab] = useState<GeneralTab>("identity");
+  const [securityTab, setSecurityTab] = useState<SecurityTab>("access");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [aiConfigError, setAiConfigError] = useState<string | null>(null);
@@ -797,6 +877,7 @@ export function SettingsWorkspace() {
   const systemHealthSnapshots = systemHealthHistory?.snapshots ?? [];
   const systemHealthHistoryPageCount = Math.max(1, Math.ceil(systemHealthSnapshots.length / SYSTEM_HEALTH_HISTORY_PAGE_SIZE));
   const visibleSystemHealthSnapshots = systemHealthSnapshots.slice((systemHealthHistoryPage - 1) * SYSTEM_HEALTH_HISTORY_PAGE_SIZE, systemHealthHistoryPage * SYSTEM_HEALTH_HISTORY_PAGE_SIZE);
+  const activeSecurityPostureGroup = securityPosture?.groups.find((group) => group.key === securityTab);
   const bulkProvider = useMemo(() => aiProviders.find((provider) => provider.id === aiBulkDraft.providerConfigId), [aiBulkDraft.providerConfigId, aiProviders]);
   const filteredSpamEntries = useMemo(() => {
     const search = spamSearch.trim().toLowerCase();
@@ -1001,9 +1082,10 @@ export function SettingsWorkspace() {
       setSpamEntries(spamResult.status === "fulfilled" ? spamResult.value : []);
       setMaintenanceSummary(maintenanceResult.status === "fulfilled" ? maintenanceResult.value : null);
       setMaintenanceDraft(maintenanceResult.status === "fulfilled" ? String(maintenanceResult.value.recycleBinRetentionDays) : "7");
-      const [generalResult, securityResult, auditResult] = await Promise.allSettled([
+      const [generalResult, securityResult, securityPostureResult, auditResult] = await Promise.allSettled([
         apiFetch<GeneralSettings>("/system-settings/general"),
         apiFetch<SecuritySettings>("/system-settings/security"),
+        apiFetch<SecurityPosture>("/system-settings/security-posture"),
         loadAuditLogs()
       ]);
       if (generalResult.status === "fulfilled") {
@@ -1012,6 +1094,7 @@ export function SettingsWorkspace() {
       if (securityResult.status === "fulfilled") {
         applySecuritySettings(securityResult.value);
       }
+      setSecurityPosture(securityPostureResult.status === "fulfilled" ? securityPostureResult.value : null);
       if (auditResult.status === "rejected") {
         setAuditLogs(null);
       }
@@ -1106,6 +1189,8 @@ export function SettingsWorkspace() {
         body: JSON.stringify(securitySettingsPayload(securityDraft))
       });
       applySecuritySettings(saved);
+      const posture = await apiFetch<SecurityPosture>("/system-settings/security-posture");
+      setSecurityPosture(posture);
       setNotice("Security settings saved.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save security settings.");
@@ -3678,149 +3763,228 @@ export function SettingsWorkspace() {
 
           {activeSection === "security" ? (
             <section className="grid">
-              <div className="panel">
+              <div className="panel security-center-panel">
                 <div className="section-heading">
                   <div>
-                    <h2>Login Security</h2>
-                    <p className="muted">Control password reset, per-user MFA, and Cloudflare Turnstile checks without storing raw secrets in the app.</p>
+                    <h2>Security Center</h2>
+                    <p className="muted">Review application security posture and manage safe, settings-driven controls.</p>
                   </div>
-                  <span className={`status-pill ${securitySettings ? "success" : "muted-pill"}`}>{securitySettings ? "Loaded" : "Defaults"}</span>
+                  <div className="security-summary-pills">
+                    <span className={`status-pill ${securitySettings ? "success" : "muted-pill"}`}>{securitySettings ? "Loaded" : "Defaults"}</span>
+                    {securityPosture ? (
+                      <>
+                        <span className="status-pill success">{securityPosture.summary.ok} OK</span>
+                        <span className="status-pill warning-pill">{securityPosture.summary.warning} Review</span>
+                      </>
+                    ) : null}
+                  </div>
                 </div>
 
-                <div className="grid columns-2 settings-section">
-                  <div className="panel subtle-panel">
-                    <h3>Password Reset</h3>
-                    <p className="muted">Users receive a short-lived email link when reset is enabled.</p>
+                <div className="settings-tabs security-settings-tabs settings-section" role="tablist" aria-label="Security settings areas">
+                  {SECURITY_TABS.map((tab) => (
+                    <button className={securityTab === tab.key ? "active" : ""} key={tab.key} type="button" onClick={() => setSecurityTab(tab.key)} role="tab" aria-selected={securityTab === tab.key}>
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                <SecurityPosturePanel group={activeSecurityPostureGroup} />
+
+                {securityTab === "access" ? (
+                  <div className="security-module-grid settings-section">
+                    <div className="panel subtle-panel">
+                      <h3>Password Reset</h3>
+                      <p className="muted">Users receive a short-lived email link when reset is enabled.</p>
+                      <div className="client-form-grid settings-section">
+                        <label className="checkbox-row">
+                          <input
+                            type="checkbox"
+                            checked={securityDraft.passwordResetEnabled}
+                            onChange={(event) => setSecurityDraft((current) => ({ ...current, passwordResetEnabled: event.target.checked }))}
+                          />
+                          Enable forgot password flow
+                        </label>
+                        <label>
+                          Reset link TTL minutes
+                          <input
+                            className="input"
+                            type="number"
+                            min={5}
+                            max={240}
+                            value={securityDraft.passwordResetTokenTtlMinutes}
+                            onChange={(event) => setSecurityDraft((current) => ({ ...current, passwordResetTokenTtlMinutes: Number(event.target.value) }))}
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="panel subtle-panel">
+                      <h3>Two-Factor Authentication</h3>
+                      <p className="muted">Users can enable MFA in Profile. Admins can reset MFA from Users when recovery is needed.</p>
+                      <div className="stack settings-section">
+                        <label className="checkbox-row">
+                          <input
+                            type="checkbox"
+                            checked={securityDraft.mfaUserManagedEnabled}
+                            onChange={(event) => setSecurityDraft((current) => ({ ...current, mfaUserManagedEnabled: event.target.checked }))}
+                          />
+                          Allow users to manage their own 2FA
+                        </label>
+                        <label className="checkbox-row">
+                          <input
+                            type="checkbox"
+                            checked={securityDraft.mfaRequiredForAdmins}
+                            onChange={(event) => setSecurityDraft((current) => ({ ...current, mfaRequiredForAdmins: event.target.checked }))}
+                          />
+                          Require 2FA for administrator roles
+                        </label>
+                        <label className="checkbox-row">
+                          <input
+                            type="checkbox"
+                            checked={securityDraft.mfaRequiredForAllUsers}
+                            onChange={(event) => setSecurityDraft((current) => ({ ...current, mfaRequiredForAllUsers: event.target.checked }))}
+                          />
+                          Require 2FA for all users
+                        </label>
+                        {securityDraft.mfaRequiredForAllUsers ? (
+                          <p className="warning-text">Only enable after users have configured 2FA, otherwise they will be blocked at sign-in until an admin resets or disables the requirement.</p>
+                        ) : null}
+                        <label>
+                          Trust device duration days
+                          <input
+                            className="input"
+                            type="number"
+                            min={1}
+                            max={90}
+                            value={securityDraft.mfaTrustedDeviceDays}
+                            onChange={(event) => setSecurityDraft((current) => ({ ...current, mfaTrustedDeviceDays: Number(event.target.value) }))}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                    <div className="settings-actions security-module-actions">
+                      <button className="button" type="button" onClick={saveSecuritySettings} disabled={busy === "security-settings"}>
+                        Save Access Settings
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {securityTab === "bot" ? (
+                  <div className="panel subtle-panel settings-section">
+                    <div className="section-heading">
+                      <div>
+                        <h3>Cloudflare Turnstile</h3>
+                        <p className="muted">Protect login and password reset with Turnstile. Store the secret in the server environment and save only its reference here.</p>
+                      </div>
+                      <span className={`status-pill ${securityDraft.turnstileEnabled ? "success" : "muted-pill"}`}>{securityDraft.turnstileEnabled ? "Enabled" : "Disabled"}</span>
+                    </div>
                     <div className="client-form-grid settings-section">
                       <label className="checkbox-row">
                         <input
                           type="checkbox"
-                          checked={securityDraft.passwordResetEnabled}
-                          onChange={(event) => setSecurityDraft((current) => ({ ...current, passwordResetEnabled: event.target.checked }))}
+                          checked={securityDraft.turnstileEnabled}
+                          onChange={(event) => setSecurityDraft((current) => ({ ...current, turnstileEnabled: event.target.checked }))}
                         />
-                        Enable forgot password flow
+                        Enable Cloudflare Turnstile
                       </label>
+                      <span />
                       <label>
-                        Reset link TTL minutes
+                        Site key
                         <input
                           className="input"
-                          type="number"
-                          min={5}
-                          max={240}
-                          value={securityDraft.passwordResetTokenTtlMinutes}
-                          onChange={(event) => setSecurityDraft((current) => ({ ...current, passwordResetTokenTtlMinutes: Number(event.target.value) }))}
+                          value={securityDraft.turnstileSiteKey}
+                          onChange={(event) => setSecurityDraft((current) => ({ ...current, turnstileSiteKey: event.target.value }))}
+                          placeholder="0x4AAAA..."
                         />
                       </label>
-                    </div>
-                  </div>
-
-                  <div className="panel subtle-panel">
-                    <h3>Two-Factor Authentication</h3>
-                    <p className="muted">Users can enable MFA in Profile. Admins can reset MFA from Users when recovery is needed.</p>
-                    <div className="stack settings-section">
-                      <label className="checkbox-row">
-                        <input
-                          type="checkbox"
-                          checked={securityDraft.mfaUserManagedEnabled}
-                          onChange={(event) => setSecurityDraft((current) => ({ ...current, mfaUserManagedEnabled: event.target.checked }))}
-                        />
-                        Allow users to manage their own 2FA
-                      </label>
-                      <label className="checkbox-row">
-                        <input
-                          type="checkbox"
-                          checked={securityDraft.mfaRequiredForAdmins}
-                          onChange={(event) => setSecurityDraft((current) => ({ ...current, mfaRequiredForAdmins: event.target.checked }))}
-                        />
-                        Require 2FA for administrator roles
-                      </label>
-                      <label className="checkbox-row">
-                        <input
-                          type="checkbox"
-                          checked={securityDraft.mfaRequiredForAllUsers}
-                          onChange={(event) => setSecurityDraft((current) => ({ ...current, mfaRequiredForAllUsers: event.target.checked }))}
-                        />
-                        Require 2FA for all users
-                      </label>
-                      {securityDraft.mfaRequiredForAllUsers ? (
-                        <p className="warning-text">Only enable after users have configured 2FA, otherwise they will be blocked at sign-in until an admin resets or disables the requirement.</p>
-                      ) : null}
                       <label>
-                        Trust device duration days
+                        Secret reference
                         <input
                           className="input"
-                          type="number"
-                          min={1}
-                          max={90}
-                          value={securityDraft.mfaTrustedDeviceDays}
-                          onChange={(event) => setSecurityDraft((current) => ({ ...current, mfaTrustedDeviceDays: Number(event.target.value) }))}
+                          value={securityDraft.turnstileSecretReference}
+                          onChange={(event) => setSecurityDraft((current) => ({ ...current, turnstileSecretReference: event.target.value }))}
+                          placeholder="env:TURNSTILE_SECRET_KEY"
                         />
                       </label>
+                      <div className="stack settings-section">
+                        <label className="checkbox-row">
+                          <input
+                            type="checkbox"
+                            checked={securityDraft.turnstileProtectLogin}
+                            onChange={(event) => setSecurityDraft((current) => ({ ...current, turnstileProtectLogin: event.target.checked }))}
+                          />
+                          Protect sign-in
+                        </label>
+                        <label className="checkbox-row">
+                          <input
+                            type="checkbox"
+                            checked={securityDraft.turnstileProtectPasswordReset}
+                            onChange={(event) => setSecurityDraft((current) => ({ ...current, turnstileProtectPasswordReset: event.target.checked }))}
+                          />
+                          Protect forgot password
+                        </label>
+                      </div>
+                    </div>
+                    <p className="muted settings-section">Example production environment value: TURNSTILE_SECRET_KEY=your-cloudflare-secret. Save env:TURNSTILE_SECRET_KEY in this form.</p>
+                    <div className="settings-actions">
+                      <button className="button" type="button" onClick={saveSecuritySettings} disabled={busy === "security-settings"}>
+                        Save Bot Protection Settings
+                      </button>
                     </div>
                   </div>
-                </div>
+                ) : null}
 
-                <div className="panel subtle-panel settings-section">
-                  <div className="section-heading">
-                    <div>
-                      <h3>Cloudflare Turnstile</h3>
-                      <p className="muted">Protect login and password reset with Turnstile. Store the secret in the server environment and save only its reference here.</p>
-                    </div>
-                    <span className={`status-pill ${securityDraft.turnstileEnabled ? "success" : "muted-pill"}`}>{securityDraft.turnstileEnabled ? "Enabled" : "Disabled"}</span>
+                {securityTab === "uploads" ? (
+                  <div className="security-guidance-grid settings-section">
+                    <article className="security-guidance-card">
+                      <h3>Server scanner</h3>
+                      <p className="muted">Uploads are already bounded by API limits. Antivirus enforcement becomes active after ClamAV is installed and enabled in production environment variables.</p>
+                    </article>
+                    <article className="security-guidance-card">
+                      <h3>Media policy</h3>
+                      <p className="muted">Branding uploads accept PNG, JPG, WEBP, and ICO. SVG is intentionally blocked to reduce scriptable image risk.</p>
+                    </article>
+                    <article className="security-guidance-card">
+                      <h3>Knowledge imports</h3>
+                      <p className="muted">PDF imports require both a PDF-like name or MIME type and a real PDF file header before processing.</p>
+                    </article>
                   </div>
-                  <div className="client-form-grid settings-section">
-                    <label className="checkbox-row">
-                      <input
-                        type="checkbox"
-                        checked={securityDraft.turnstileEnabled}
-                        onChange={(event) => setSecurityDraft((current) => ({ ...current, turnstileEnabled: event.target.checked }))}
-                      />
-                      Enable Cloudflare Turnstile
-                    </label>
-                    <span />
-                    <label>
-                      Site key
-                      <input
-                        className="input"
-                        value={securityDraft.turnstileSiteKey}
-                        onChange={(event) => setSecurityDraft((current) => ({ ...current, turnstileSiteKey: event.target.value }))}
-                        placeholder="0x4AAAA..."
-                      />
-                    </label>
-                    <label>
-                      Secret reference
-                      <input
-                        className="input"
-                        value={securityDraft.turnstileSecretReference}
-                        onChange={(event) => setSecurityDraft((current) => ({ ...current, turnstileSecretReference: event.target.value }))}
-                        placeholder="env:TURNSTILE_SECRET_KEY"
-                      />
-                    </label>
-                    <label className="checkbox-row">
-                      <input
-                        type="checkbox"
-                        checked={securityDraft.turnstileProtectLogin}
-                        onChange={(event) => setSecurityDraft((current) => ({ ...current, turnstileProtectLogin: event.target.checked }))}
-                      />
-                      Protect sign-in
-                    </label>
-                    <label className="checkbox-row">
-                      <input
-                        type="checkbox"
-                        checked={securityDraft.turnstileProtectPasswordReset}
-                        onChange={(event) => setSecurityDraft((current) => ({ ...current, turnstileProtectPasswordReset: event.target.checked }))}
-                      />
-                      Protect forgot password
-                    </label>
-                  </div>
-                  <p className="muted settings-section">Example production environment value: TURNSTILE_SECRET_KEY=your-cloudflare-secret. Save env:TURNSTILE_SECRET_KEY in this form.</p>
-                </div>
+                ) : null}
 
-                <div className="settings-actions">
-                  <button className="button" type="button" onClick={saveSecuritySettings} disabled={busy === "security-settings"}>
-                    Save Security Settings
-                  </button>
-                </div>
+                {securityTab === "integrations" ? (
+                  <div className="security-guidance-grid settings-section">
+                    <article className="security-guidance-card">
+                      <h3>RMM URLs</h3>
+                      <p className="muted">RMM endpoints are validated before saving. Use `RMM_ALLOWED_HOSTS` on the server to keep production pointed at approved Tactical RMM hosts.</p>
+                    </article>
+                    <article className="security-guidance-card">
+                      <h3>AI providers</h3>
+                      <p className="muted">New AI providers must store API keys as environment references such as `env:GEMINI_API_KEY`; raw secrets are rejected for new writes.</p>
+                    </article>
+                    <article className="security-guidance-card">
+                      <h3>URL controls</h3>
+                      <p className="muted">Production blocks insecure protocols and private/local integration hosts unless explicitly allowed through environment variables.</p>
+                    </article>
+                  </div>
+                ) : null}
+
+                {securityTab === "operations" ? (
+                  <div className="security-guidance-grid settings-section">
+                    <article className="security-guidance-card">
+                      <h3>Audit visibility</h3>
+                      <p className="muted">Use Event Logs for administrative activity review and CSV export. A future database migration should add hard organization scoping to every audit record.</p>
+                    </article>
+                    <article className="security-guidance-card">
+                      <h3>Dependency audit</h3>
+                      <p className="muted">Dependency findings remain visible because some vulnerable packages are transitive. Handle them in a dedicated dependency phase, not with `audit fix --force` in production.</p>
+                    </article>
+                    <article className="security-guidance-card">
+                      <h3>Runtime data</h3>
+                      <p className="muted">Keep runtime storage and production environment files outside commits. Back up before server-side package or security changes.</p>
+                    </article>
+                  </div>
+                ) : null}
               </div>
             </section>
           ) : null}

@@ -95,6 +95,13 @@ export class SystemSettingsController {
     return this.systemSettingsService.getAttachmentPolicy();
   }
 
+  @Get("security-posture")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("system_settings.view")
+  getSecurityPosture(@CurrentUser() user: AuthenticatedUser) {
+    return this.systemSettingsService.getSecurityPosture(user);
+  }
+
   @Get("audit-logs")
   @UseGuards(SessionAuthGuard, PermissionsGuard)
   @RequirePermissions("audit_logs.view")

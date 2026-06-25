@@ -333,6 +333,102 @@ export class SystemSettingsService {
     };
   }
 
+  async getSecurityPosture(user: AuthenticatedUser) {
+    const settings = await this.getOrCreateSettings(user.organizationId);
+    const attachmentPolicy = await this.getAttachmentPolicy();
+    const aiProviders = await this.prisma.aiProviderConfig.findMany({
+      where: { organizationId: user.organizationId },
+      select: { name: true, provider: true, apiKeyReference: true }
+    });
+
+    const appUrl = this.config.get<string>("APP_URL") ?? "";
+    const corsOrigins = this.csvEnv("CORS_ORIGINS");
+    const globalAllowedHosts = this.csvEnv("INTEGRATION_ALLOWED_HOSTS");
+    const aiAllowedHosts = this.csvEnv("AI_ALLOWED_HOSTS");
+    const rmmAllowedHosts = this.csvEnv("RMM_ALLOWED_HOSTS");
+    const clamavEnabled = this.booleanEnv("CLAMAV_ENABLED", false);
+    const clamavFailClosed = this.booleanEnv("CLAMAV_FAIL_CLOSED", false);
+    const allowInsecureIntegrationUrls = this.booleanEnv("ALLOW_INSECURE_INTEGRATION_URLS", false);
+    const allowPrivateIntegrationHosts = this.booleanEnv("ALLOW_PRIVATE_INTEGRATION_HOSTS", false);
+    const nonMockAiProviders = aiProviders.filter((provider) => provider.provider !== "MOCK");
+    const legacyAiProviders = nonMockAiProviders.filter((provider) => Boolean(provider.apiKeyReference) && !provider.apiKeyReference?.startsWith("env:"));
+    const missingAiSecretReferences = nonMockAiProviders.filter((provider) => !provider.apiKeyReference);
+
+    const groups = [
+      {
+        key: "access",
+        title: "Access Protection",
+        description: "Session, origin, MFA, and password recovery controls.",
+        checks: [
+          this.securityCheck("origin-protection", "Origin protection", "ok", "Active for authenticated unsafe requests.", "Active"),
+          this.securityCheck("allowed-origins", "Allowed origins", corsOrigins.length || appUrl ? "ok" : "warning", corsOrigins.length ? `${corsOrigins.length} configured` : appUrl ? "Falls back to APP_URL" : "Not configured", corsOrigins.length ? corsOrigins.join(", ") : appUrl || "Configure APP_URL/CORS_ORIGINS"),
+          this.securityCheck("session-cookie", "Session cookie name", "ok", "Used consistently by API and web proxy.", this.config.get<string>("SESSION_COOKIE_NAME") ?? "avidity_session"),
+          this.securityCheck("mfa-policy", "MFA policy", settings.mfaRequiredForAdmins || settings.mfaRequiredForAllUsers ? "ok" : "warning", settings.mfaRequiredForAllUsers ? "Required for all users" : settings.mfaRequiredForAdmins ? "Required for admins" : "Optional", "Configured in this page"),
+          this.securityCheck("password-reset", "Password reset", settings.passwordResetEnabled ? "ok" : "info", settings.passwordResetEnabled ? `${settings.passwordResetTokenTtlMinutes} minute token TTL` : "Disabled", "Settings-driven")
+        ]
+      },
+      {
+        key: "bot",
+        title: "Bot Protection",
+        description: "Public entry points and Cloudflare Turnstile coverage.",
+        checks: [
+          this.securityCheck("public-throttle", "Public form throttling", "ok", "Support and Event Services public submissions use throttling.", "Active"),
+          this.securityCheck("turnstile", "Cloudflare Turnstile", settings.turnstileEnabled ? "ok" : "warning", settings.turnstileEnabled ? "Enabled" : "Disabled", settings.turnstileEnabled ? "Configured below" : "Enable when Cloudflare keys are ready"),
+          this.securityCheck("turnstile-login", "Login coverage", settings.turnstileEnabled && settings.turnstileProtectLogin ? "ok" : "warning", settings.turnstileProtectLogin ? "Protected" : "Not protected", "Protect sign-in after validating keys"),
+          this.securityCheck("turnstile-secret", "Secret storage", settings.turnstileSecretReference?.startsWith("env:") ? "ok" : "warning", settings.turnstileSecretReference?.startsWith("env:") ? "Environment reference" : "Missing env reference", "Use env:TURNSTILE_SECRET_KEY")
+        ]
+      },
+      {
+        key: "uploads",
+        title: "Upload Security",
+        description: "File size, type, scanner, and media handling protections.",
+        checks: [
+          this.securityCheck("upload-size", "Maximum upload size", "ok", "Enforced by API upload interceptors.", `${attachmentPolicy.maximumUploadSizeMb} MB`),
+          this.securityCheck("upload-limits", "Multipart limits", "ok", "File count, field count, field size, and part count limits are enforced.", "Active"),
+          this.securityCheck("svg-branding", "SVG branding uploads", "ok", "SVG is blocked for uploaded branding assets.", "Blocked"),
+          this.securityCheck("pdf-header", "PDF import validation", "ok", "Knowledge Base imports require a real PDF header.", "Active"),
+          this.securityCheck("clamav", "Antivirus scanner", clamavEnabled ? "ok" : "warning", clamavEnabled ? "Enabled" : "Not enabled", clamavEnabled ? `${this.config.get<string>("CLAMAV_HOST") ?? "127.0.0.1"}:${this.config.get<string>("CLAMAV_PORT") ?? "3310"}` : "Install and enable ClamAV on the server"),
+          this.securityCheck("clamav-fail-mode", "Scanner failure mode", clamavEnabled && clamavFailClosed ? "ok" : "warning", clamavFailClosed ? "Fail closed" : "Fail open", "Use fail closed after server validation")
+        ]
+      },
+      {
+        key: "integrations",
+        title: "Integration Security",
+        description: "RMM, AI, and custom URL restrictions.",
+        checks: [
+          this.securityCheck("integration-https", "HTTPS requirement", allowInsecureIntegrationUrls ? "warning" : "ok", allowInsecureIntegrationUrls ? "HTTP allowed by env" : "HTTPS required in production", "ALLOW_INSECURE_INTEGRATION_URLS"),
+          this.securityCheck("private-hosts", "Private integration hosts", allowPrivateIntegrationHosts ? "warning" : "ok", allowPrivateIntegrationHosts ? "Private/local hosts allowed by env" : "Private/local hosts blocked in production", "ALLOW_PRIVATE_INTEGRATION_HOSTS"),
+          this.securityCheck("global-allowlist", "Global host allowlist", globalAllowedHosts.length ? "ok" : "info", globalAllowedHosts.length ? `${globalAllowedHosts.length} hosts` : "Not set", globalAllowedHosts.join(", ") || "Optional INTEGRATION_ALLOWED_HOSTS"),
+          this.securityCheck("ai-allowlist", "AI host allowlist", aiAllowedHosts.length ? "ok" : "warning", aiAllowedHosts.length ? `${aiAllowedHosts.length} hosts` : "Not set", aiAllowedHosts.join(", ") || "Recommended: AI_ALLOWED_HOSTS"),
+          this.securityCheck("rmm-allowlist", "RMM host allowlist", rmmAllowedHosts.length ? "ok" : "warning", rmmAllowedHosts.length ? `${rmmAllowedHosts.length} hosts` : "Not set", rmmAllowedHosts.join(", ") || "Recommended: RMM_ALLOWED_HOSTS"),
+          this.securityCheck("ai-secret-references", "AI secret references", legacyAiProviders.length || missingAiSecretReferences.length ? "warning" : "ok", legacyAiProviders.length ? `${legacyAiProviders.length} legacy provider${legacyAiProviders.length === 1 ? "" : "s"}` : missingAiSecretReferences.length ? `${missingAiSecretReferences.length} missing reference${missingAiSecretReferences.length === 1 ? "" : "s"}` : "Environment references only", legacyAiProviders.map((provider) => provider.name).join(", ") || "Use env:API_KEY_NAME")
+        ]
+      },
+      {
+        key: "operations",
+        title: "Operational Security",
+        description: "Auditability, dependency posture, and known follow-up controls.",
+        checks: [
+          this.securityCheck("audit-logs", "Audit logs", "ok", "Administrative actions are recorded and exportable.", "Active"),
+          this.securityCheck("audit-org-scope", "Audit org isolation", "warning", "Current schema needs a migration for hard organization scoping.", "Pending migration"),
+          this.securityCheck("dependency-audit", "Dependency audit", "warning", "Some vulnerabilities are transitive and require a controlled dependency phase.", "Manual review required"),
+          this.securityCheck("runtime-storage", "Runtime storage", "ok", "Local storage is kept outside git and should stay ignored on production.", "Operational control")
+        ]
+      }
+    ];
+
+    return {
+      generatedAt: new Date().toISOString(),
+      environment: this.config.get<string>("NODE_ENV") ?? "development",
+      groups,
+      summary: {
+        ok: groups.flatMap((group) => group.checks).filter((check) => check.status === "ok").length,
+        warning: groups.flatMap((group) => group.checks).filter((check) => check.status === "warning").length,
+        info: groups.flatMap((group) => group.checks).filter((check) => check.status === "info").length
+      }
+    };
+  }
+
   private async getOrCreateSettings(organizationId: string) {
     const existing = await this.prisma.systemSetting.findUnique({ where: { organizationId } });
     if (existing) return existing;
@@ -520,6 +616,25 @@ export class SystemSettingsService {
   private optionalString(value: string | null | undefined) {
     const trimmed = value?.trim();
     return trimmed || null;
+  }
+
+  private booleanEnv(key: string, fallback: boolean) {
+    const value = this.config.get<string>(key);
+    if (value === undefined || value === null || value === "") {
+      return fallback;
+    }
+    return ["1", "true", "yes", "on"].includes(value.toLowerCase());
+  }
+
+  private csvEnv(key: string) {
+    return (this.config.get<string>(key) ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+  }
+
+  private securityCheck(key: string, label: string, status: "ok" | "warning" | "info", description: string, value: string) {
+    return { key, label, status, description, value };
   }
 
   private validateHexColor(value: string, label: string) {
