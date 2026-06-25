@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { DeviceStatus, DeviceType, DeviceViewScope, Prisma, RemoteAccessProvider } from "@prisma/client";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
+import { validateIntegrationUrl } from "../../common/integration-url-policy";
 import { PrismaService } from "../prisma/prisma.service";
 import { DeviceQueryDto } from "./dto/device-query.dto";
 import { UpdateRmmSettingsDto } from "./dto/update-rmm-settings.dto";
@@ -331,18 +332,39 @@ export class DevicesService {
       throw new BadRequestException("Use an environment variable reference such as env:TACTICAL_RMM_API_KEY.");
     }
 
+    const apiBaseUrl = validateIntegrationUrl(input.apiBaseUrl, this.config, {
+      label: "RMM API base URL",
+      allowedHostsEnv: "RMM_ALLOWED_HOSTS"
+    });
+    const dashboardUrl = validateIntegrationUrl(input.dashboardUrl, this.config, {
+      label: "RMM dashboard URL",
+      allowedHostsEnv: "RMM_ALLOWED_HOSTS"
+    });
+    const deviceUrlTemplate = validateIntegrationUrl(input.deviceUrlTemplate, this.config, {
+      label: "RMM device URL template",
+      allowedHostsEnv: "RMM_ALLOWED_HOSTS"
+    });
+    const controlUrlTemplate = validateIntegrationUrl(input.controlUrlTemplate, this.config, {
+      label: "RMM control URL template",
+      allowedHostsEnv: "RMM_ALLOWED_HOSTS"
+    });
+    const backgroundUrlTemplate = validateIntegrationUrl(input.backgroundUrlTemplate, this.config, {
+      label: "RMM remote background URL template",
+      allowedHostsEnv: "RMM_ALLOWED_HOSTS"
+    });
+
     const settings = await this.prisma.systemSetting.update({
       where: { organizationId: user.organizationId },
       data: {
         remoteAccessProviderEnabled: input.enabled,
         remoteAccessProviderName: this.optionalTrim(input.providerName) ?? "Tactical RMM",
-        remoteAccessApiBaseUrl: this.optionalTrim(input.apiBaseUrl),
+        remoteAccessApiBaseUrl: apiBaseUrl,
         remoteAccessApiKeyReference: this.optionalTrim(input.apiKeyReference),
         remoteAccessAgentsPath: this.normalizePath(input.agentsPath) ?? "/agents/",
-        remoteAccessDashboardUrl: this.optionalTrim(input.dashboardUrl),
-        remoteAccessDeviceUrlTemplate: this.optionalTrim(input.deviceUrlTemplate),
-        remoteAccessControlUrlTemplate: this.optionalTrim(input.controlUrlTemplate),
-        remoteAccessBackgroundUrlTemplate: this.optionalTrim(input.backgroundUrlTemplate)
+        remoteAccessDashboardUrl: dashboardUrl,
+        remoteAccessDeviceUrlTemplate: deviceUrlTemplate,
+        remoteAccessControlUrlTemplate: controlUrlTemplate,
+        remoteAccessBackgroundUrlTemplate: backgroundUrlTemplate
       }
     });
 

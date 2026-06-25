@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { AiProvider, Prisma } from "@prisma/client";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
+import { validateIntegrationUrl } from "../../common/integration-url-policy";
 import { PrismaService } from "../prisma/prisma.service";
 import { UpsertAiActionSettingDto } from "./dto/upsert-ai-action-setting.dto";
 import { UpsertAiModelDto } from "./dto/upsert-ai-model.dto";
@@ -45,8 +46,8 @@ export class AiAssistantService {
         organizationId: user.organizationId,
         name: input.name.trim(),
         provider: input.provider,
-        baseUrl: this.optionalTrim(input.baseUrl),
-        apiKeyReference: this.optionalTrim(input.apiKeyReference),
+        baseUrl: this.normalizeProviderBaseUrl(input.baseUrl),
+        apiKeyReference: this.normalizeApiKeyReference(input.provider, input.apiKeyReference),
         defaultModel: this.optionalTrim(input.defaultModel),
         isEnabled: input.isEnabled ?? true,
         timeoutMs: input.timeoutMs ?? 30000,
@@ -63,8 +64,8 @@ export class AiAssistantService {
       data: {
         name: input.name.trim(),
         provider: input.provider,
-        baseUrl: this.optionalTrim(input.baseUrl),
-        apiKeyReference: this.optionalTrim(input.apiKeyReference),
+        baseUrl: this.normalizeProviderBaseUrl(input.baseUrl),
+        apiKeyReference: this.normalizeApiKeyReference(input.provider, input.apiKeyReference),
         defaultModel: this.optionalTrim(input.defaultModel),
         isEnabled: input.isEnabled ?? true,
         timeoutMs: input.timeoutMs ?? 30000,
@@ -486,6 +487,24 @@ export class AiAssistantService {
       return this.config.get<string>(reference.slice(4)) ?? null;
     }
 
+    return reference;
+  }
+
+  private normalizeProviderBaseUrl(value: string | null | undefined) {
+    return validateIntegrationUrl(value, this.config, {
+      label: "AI provider base URL",
+      allowedHostsEnv: "AI_ALLOWED_HOSTS"
+    });
+  }
+
+  private normalizeApiKeyReference(provider: AiProvider, value: string | null | undefined) {
+    const reference = this.optionalTrim(value);
+    if (!reference) {
+      return null;
+    }
+    if (provider !== AiProvider.MOCK && !reference.startsWith("env:")) {
+      throw new BadRequestException("Use an environment variable reference such as env:OPENAI_API_KEY.");
+    }
     return reference;
   }
 
