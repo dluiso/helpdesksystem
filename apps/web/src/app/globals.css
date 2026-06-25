@@ -10310,10 +10310,60 @@ a.dashboard-list-row:hover {
 
 .knowledge-attachments {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   margin-top: 18px;
   padding-top: 14px;
   border-top: 1px solid var(--line);
+}
+
+.knowledge-attachments h3 {
+  margin: 0;
+}
+
+.knowledge-attachment-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.knowledge-attachment-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.knowledge-attachment-row:hover {
+  border-color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 7%, var(--surface-raised));
+}
+
+.knowledge-attachment-row svg {
+  flex: 0 0 auto;
+  color: var(--brand-primary);
+}
+
+.knowledge-attachment-row span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.knowledge-attachment-row strong,
+.knowledge-attachment-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge-attachment-row small {
+  color: var(--muted);
 }
 
 .knowledge-import-modal {

@@ -173,6 +173,7 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
   const searchParams = useSearchParams();
   const editorRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const [articles, setArticles] = useState<KnowledgeArticle[]>([]);
   const [detailArticle, setDetailArticle] = useState<KnowledgeArticle | null>(null);
@@ -367,7 +368,7 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
         title: draft.title,
         content: composeContent(pages),
         accentColor: draft.accentColor || null,
-        pages: pages.map((page, index) => ({ ...page, sortOrder: index })),
+        pages: pages.map(toEditablePageInput),
         categoryId: draft.categoryId || null,
         tags: normalizeTags(draft.tags),
         status: draft.status ?? "DRAFT",
@@ -525,12 +526,44 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
       });
       const imageUrl = `${apiBaseUrl}/knowledge-base/articles/${selectedArticleId}/attachments/${attachment.id}/preview`;
       editorRef.current?.focus();
-      document.execCommand("insertHTML", false, `<img src="${imageUrl}" data-attachment-id="${attachment.id}" alt="${attachment.originalFilename}" style="max-width:100%;height:auto;" />`);
+      document.execCommand("insertHTML", false, `<img src="${escapeAttribute(imageUrl)}" data-attachment-id="${escapeAttribute(attachment.id)}" alt="${escapeAttribute(attachment.originalFilename)}" style="max-width:100%;height:auto;" />`);
       setNotice("Image inserted.");
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to upload image.");
     } finally {
+      if (imageInputRef.current) imageInputRef.current.value = "";
+      setBusy(false);
+    }
+  }
+
+  async function uploadArticleAttachment(file: File) {
+    if (!selectedArticleId) {
+      setError("Save the article before attaching files.");
+      return;
+    }
+    const formData = new FormData();
+    formData.append("file", file);
+    setBusy(true);
+    setError(null);
+    try {
+      const attachment = await apiFetch<KnowledgeAttachment>(`/knowledge-base/articles/${selectedArticleId}/attachments`, {
+        method: "POST",
+        body: formData
+      });
+      const fileUrl = `${apiBaseUrl}/knowledge-base/articles/${selectedArticleId}/attachments/${attachment.id}/preview`;
+      editorRef.current?.focus();
+      document.execCommand(
+        "insertHTML",
+        false,
+        `<p><a href="${escapeAttribute(fileUrl)}" data-attachment-id="${escapeAttribute(attachment.id)}" title="${escapeAttribute(attachment.originalFilename)}">${escapeHtml(attachment.originalFilename)}</a></p>`
+      );
+      setNotice("File attached and linked.");
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to upload file.");
+    } finally {
+      if (attachmentInputRef.current) attachmentInputRef.current.value = "";
       setBusy(false);
     }
   }
@@ -957,6 +990,11 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
                     <span>Image</span>
                   </button>
                   <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={(event: ChangeEvent<HTMLInputElement>) => event.target.files?.[0] && void uploadInlineImage(event.target.files[0])} />
+                  <button className="button secondary" type="button" onClick={() => attachmentInputRef.current?.click()} disabled={!selectedArticleId}>
+                    <FileUp size={16} aria-hidden="true" />
+                    <span>File</span>
+                  </button>
+                  <input ref={attachmentInputRef} type="file" accept="application/pdf,image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt" hidden onChange={(event: ChangeEvent<HTMLInputElement>) => event.target.files?.[0] && void uploadArticleAttachment(event.target.files[0])} />
                 </div>
                 <div
                   key={activeDraftPage?.id}
@@ -966,6 +1004,9 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
                   suppressContentEditableWarning
                   dangerouslySetInnerHTML={{ __html: activeDraftPage?.content ?? "" }}
                 />
+                {visibleAttachments.length > 0 ? (
+                  <AttachmentList articleId={selectedArticleId} attachments={visibleAttachments} />
+                ) : null}
               </section>
             </div>
             <div className="form-actions">
@@ -1031,14 +1072,7 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
               </section>
             </div>
             {visibleAttachments.length > 0 ? (
-              <div className="knowledge-attachments">
-                <h3>Files</h3>
-                {visibleAttachments.map((attachment) => (
-                  <a href={`${apiBaseUrl}/knowledge-base/articles/${selectedArticle.id}/attachments/${attachment.id}/preview`} target="_blank" rel="noreferrer" key={attachment.id}>
-                    {attachment.originalFilename}
-                  </a>
-                ))}
-              </div>
+              <AttachmentList articleId={selectedArticle.id} attachments={visibleAttachments} />
             ) : null}
           </article>
         ) : loading ? (
@@ -1175,6 +1209,17 @@ function legacyPage(article: KnowledgeArticle): KnowledgeArticlePage {
   return { id: `${article.id}-content`, title: "Content", content: article.content, sortOrder: 0 };
 }
 
+function toEditablePageInput(page: KnowledgeArticlePage, index: number) {
+  return {
+    title: page.title,
+    content: page.content,
+    sortOrder: index,
+    sourceType: page.sourceType ?? null,
+    sourceExternalId: page.sourceExternalId ?? null,
+    sourceUrl: page.sourceUrl ?? null
+  };
+}
+
 function normalizeTags(tags: string[] | undefined) {
   return [...new Set((tags ?? []).map((item) => item.trim().toLowerCase()).filter(Boolean))];
 }
@@ -1185,6 +1230,43 @@ function stripHtml(value: string) {
 
 function composeContent(pages: Array<{ title: string; content: string }>) {
   return pages.map((page) => `<section><h2>${escapeHtml(page.title)}</h2>${page.content}</section>`).join("\n");
+}
+
+function AttachmentList({ articleId, attachments }: { articleId: string; attachments: KnowledgeAttachment[] }) {
+  return (
+    <div className="knowledge-attachments">
+      <div>
+        <h3>Files</h3>
+        <p className="muted">Documents and files linked to this article.</p>
+      </div>
+      <div className="knowledge-attachment-list">
+        {attachments.map((attachment) => {
+          const previewUrl = `${apiBaseUrl}/knowledge-base/articles/${articleId}/attachments/${attachment.id}/preview`;
+          return (
+            <a className="knowledge-attachment-row" href={previewUrl} target="_blank" rel="noreferrer" key={attachment.id}>
+              <FileUp size={16} aria-hidden="true" />
+              <span>
+                <strong>{attachment.originalFilename}</strong>
+                <small>{attachment.mimeType || "File"} - {formatFileSize(attachment.fileSize)}</small>
+              </span>
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function formatFileSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "Unknown size";
+  const units = ["B", "KB", "MB", "GB"];
+  let size = bytes;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${size >= 10 || unitIndex === 0 ? Math.round(size) : size.toFixed(1)} ${units[unitIndex]}`;
 }
 
 function formatOneNoteNotebookLabel(notebook: OneNoteNotebook) {
@@ -1202,4 +1284,8 @@ function cleanApiError(error: unknown, fallback: string) {
 
 function escapeHtml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function escapeAttribute(value: string) {
+  return escapeHtml(value).replace(/"/g, "&quot;");
 }
