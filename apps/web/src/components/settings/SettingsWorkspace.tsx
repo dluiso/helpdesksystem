@@ -219,7 +219,46 @@ interface MaintenanceSummary {
   eligibleTickets: number;
   deletedAttachments: number;
   eligibleAttachments: number;
+  quarantine?: {
+    quarantined: number;
+    pending: number;
+    restored: number;
+  };
   cutoff: string;
+}
+
+interface AttachmentQuarantineItem {
+  id: string;
+  type: "ticket" | "event";
+  originalFilename: string;
+  mimeType: string;
+  fileSize: number;
+  source: string;
+  scanStatus: string;
+  scanResult: string;
+  scanOverriddenAt: string | null;
+  scanOverrideReason: string | null;
+  createdAt: string;
+  parent: {
+    id: string;
+    number: string;
+    title: string;
+    client: string | null;
+  };
+  uploadedBy: string | null;
+  restoredBy: string | null;
+}
+
+interface AttachmentQuarantineResult {
+  items: AttachmentQuarantineItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  counts: {
+    quarantined: number;
+    pending: number;
+    restored: number;
+  };
 }
 
 interface GeneralSettings {
@@ -765,6 +804,7 @@ export function SettingsWorkspace() {
   const [notificationPreferenceRows, setNotificationPreferenceRows] = useState<UserNotificationPreferenceRow[]>([]);
   const [spamEntries, setSpamEntries] = useState<SpamBlockEntry[]>([]);
   const [maintenanceSummary, setMaintenanceSummary] = useState<MaintenanceSummary | null>(null);
+  const [attachmentQuarantine, setAttachmentQuarantine] = useState<AttachmentQuarantineResult | null>(null);
   const [generalSettings, setGeneralSettings] = useState<GeneralSettings | null>(null);
   const [generalDraft, setGeneralDraft] = useState<GeneralSettings>(DEFAULT_GENERAL_SETTINGS);
   const [securitySettings, setSecuritySettings] = useState<SecuritySettings | null>(null);
@@ -793,6 +833,14 @@ export function SettingsWorkspace() {
   const [spamActiveFilter, setSpamActiveFilter] = useState("");
   const [spamDraft, setSpamDraft] = useState({ type: "EMAIL" as "EMAIL" | "DOMAIN", value: "", notes: "" });
   const [maintenanceDraft, setMaintenanceDraft] = useState("7");
+  const [maintenanceTab, setMaintenanceTab] = useState<"recycle" | "quarantine">("recycle");
+  const [quarantineFilters, setQuarantineFilters] = useState({
+    type: "all",
+    status: "quarantined",
+    search: "",
+    page: "1",
+    pageSize: "25"
+  });
   const [mailboxDrafts, setMailboxDrafts] = useState<
     Record<
       string,
@@ -874,6 +922,12 @@ export function SettingsWorkspace() {
   const auditFirstItem = auditTotal === 0 ? 0 : (auditPage - 1) * auditPageSize + 1;
   const auditLastItem = auditTotal === 0 ? 0 : Math.min(auditTotal, auditPage * auditPageSize);
   const auditPageCount = Math.max(1, Math.ceil(auditTotal / auditPageSize));
+  const quarantinePage = Number(attachmentQuarantine?.page ?? quarantineFilters.page);
+  const quarantinePageSize = Number(attachmentQuarantine?.pageSize ?? quarantineFilters.pageSize);
+  const quarantineTotal = attachmentQuarantine?.total ?? 0;
+  const quarantineFirstItem = quarantineTotal === 0 ? 0 : (quarantinePage - 1) * quarantinePageSize + 1;
+  const quarantineLastItem = quarantineTotal === 0 ? 0 : Math.min(quarantineTotal, quarantinePage * quarantinePageSize);
+  const quarantinePageCount = Math.max(1, Math.ceil(quarantineTotal / quarantinePageSize));
   const systemHealthSnapshots = systemHealthHistory?.snapshots ?? [];
   const systemHealthHistoryPageCount = Math.max(1, Math.ceil(systemHealthSnapshots.length / SYSTEM_HEALTH_HISTORY_PAGE_SIZE));
   const visibleSystemHealthSnapshots = systemHealthSnapshots.slice((systemHealthHistoryPage - 1) * SYSTEM_HEALTH_HISTORY_PAGE_SIZE, systemHealthHistoryPage * SYSTEM_HEALTH_HISTORY_PAGE_SIZE);
@@ -1020,6 +1074,22 @@ export function SettingsWorkspace() {
     const query = auditQueryString(nextFilters);
     const result = await apiFetch<AuditLogResult>(`/system-settings/audit-logs${query ? `?${query}` : ""}`);
     setAuditLogs(result);
+  }
+
+  function quarantineQueryString(nextFilters = quarantineFilters) {
+    const params = new URLSearchParams();
+    Object.entries(nextFilters).forEach(([key, value]) => {
+      if (value) {
+        params.set(key, value);
+      }
+    });
+    return params.toString();
+  }
+
+  async function loadAttachmentQuarantine(nextFilters = quarantineFilters) {
+    const query = quarantineQueryString(nextFilters);
+    const result = await apiFetch<AttachmentQuarantineResult>(`/maintenance/attachment-quarantine${query ? `?${query}` : ""}`);
+    setAttachmentQuarantine(result);
   }
 
   async function loadSystemHealth(range = systemHealthRange) {
@@ -1255,6 +1325,25 @@ export function SettingsWorkspace() {
       .replace(/[._-]+/g, " ")
       .replace(/([a-z])([A-Z])/g, "$1 $2")
       .replace(/\b\w/g, (character) => character.toUpperCase());
+  }
+
+  function formatSettingsBytes(bytes: number) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+    const units = ["B", "KB", "MB", "GB"];
+    const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    return `${(bytes / 1024 ** exponent).toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
+  }
+
+  function antivirusHealthMetadata(component: SystemHealthComponent) {
+    if (component.key !== "antivirus" || !component.metadata || typeof component.metadata !== "object") {
+      return null;
+    }
+    const metadata = component.metadata as {
+      endpoint?: string;
+      version?: string | null;
+      counts?: { clean?: number; quarantined?: number; pending?: number; skipped?: number; restored?: number };
+    };
+    return metadata;
   }
 
   function shortAuditId(value: string | null) {
@@ -1677,6 +1766,57 @@ export function SettingsWorkspace() {
     }
   }
 
+  async function applyQuarantineFilters(nextFilters = quarantineFilters) {
+    setBusy("attachment-quarantine");
+    setError(null);
+    try {
+      setQuarantineFilters(nextFilters);
+      await loadAttachmentQuarantine(nextFilters);
+    } catch {
+      setError("Unable to load attachment quarantine.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function rescanQuarantinedAttachment(item: AttachmentQuarantineItem) {
+    setBusy(`rescan-${item.id}`);
+    setNotice(null);
+    setError(null);
+    try {
+      await apiFetch(`/maintenance/attachment-quarantine/${item.type}/${item.id}/rescan`, { method: "POST" });
+      setNotice("Attachment rescan completed.");
+      await Promise.all([loadSettingsData(), loadAttachmentQuarantine(quarantineFilters)]);
+    } catch {
+      setError("Unable to rescan attachment.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function restoreQuarantinedAttachment(item: AttachmentQuarantineItem) {
+    const reason = window.prompt(`Restore ${item.originalFilename} as a false positive? Enter a reason for the audit log.`);
+    if (!reason?.trim()) {
+      return;
+    }
+
+    setBusy(`restore-${item.id}`);
+    setNotice(null);
+    setError(null);
+    try {
+      await apiFetch(`/maintenance/attachment-quarantine/${item.type}/${item.id}/restore`, {
+        method: "POST",
+        body: JSON.stringify({ reason: reason.trim() })
+      });
+      setNotice("Attachment restored as a false positive.");
+      await Promise.all([loadSettingsData(), loadAttachmentQuarantine(quarantineFilters)]);
+    } catch {
+      setError("Unable to restore attachment.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   function resetAutoReplyDraft() {
     setEditingAutoReplyId(null);
     setAutoReplyDraft({
@@ -2077,6 +2217,11 @@ export function SettingsWorkspace() {
     if (activeSection !== "systemHealth") return;
     loadSystemHealth(systemHealthRange).catch(() => setError("Unable to load system health information."));
   }, [activeSection, systemHealthRange]);
+
+  useEffect(() => {
+    if (activeSection !== "maintenance" || maintenanceTab !== "quarantine") return;
+    loadAttachmentQuarantine(quarantineFilters).catch(() => setError("Unable to load attachment quarantine."));
+  }, [activeSection, maintenanceTab, quarantineFilters]);
 
   useEffect(() => {
     setSystemHealthHistoryPage(1);
@@ -3480,67 +3625,224 @@ export function SettingsWorkspace() {
           {activeSection === "knowledge" ? <KnowledgeConfigPanel /> : null}
 
           {activeSection === "maintenance" ? (
-            <section className="grid columns-2">
-              <div className="panel">
-                <div className="section-heading">
-                  <div>
-                    <h2>Recycle Bin Cleanup</h2>
-                    <p className="muted">Permanently remove soft-deleted tickets and attachments after the retention window.</p>
-                  </div>
-                </div>
-                <div className="metric-grid settings-section">
-                  <div className="panel subtle-panel metric">
-                    <span className="muted">Deleted tickets</span>
-                    <strong>{maintenanceSummary?.deletedTickets ?? 0}</strong>
-                  </div>
-                  <div className="panel subtle-panel metric">
-                    <span className="muted">Eligible tickets</span>
-                    <strong>{maintenanceSummary?.eligibleTickets ?? 0}</strong>
-                  </div>
-                  <div className="panel subtle-panel metric">
-                    <span className="muted">Deleted attachments</span>
-                    <strong>{maintenanceSummary?.deletedAttachments ?? 0}</strong>
-                  </div>
-                  <div className="panel subtle-panel metric">
-                    <span className="muted">Eligible attachments</span>
-                    <strong>{maintenanceSummary?.eligibleAttachments ?? 0}</strong>
-                  </div>
-                </div>
-                <label className="field settings-section">
-                  <span>Auto-clean retention days</span>
-                  <input className="input compact-select" type="number" min={1} max={365} value={maintenanceDraft} onChange={(event) => setMaintenanceDraft(event.target.value)} />
-                </label>
-                <p className="muted">
-                  Current cutoff: {maintenanceSummary?.cutoff ? new Date(maintenanceSummary.cutoff).toLocaleString() : "Not calculated"}. Last cleanup:{" "}
-                  {maintenanceSummary?.lastRecycleBinCleanupAt ? new Date(maintenanceSummary.lastRecycleBinCleanupAt).toLocaleString() : "Never"}.
-                </p>
-                <div className="settings-actions settings-section">
-                  <button className="button secondary" type="button" onClick={saveMaintenanceSettings} disabled={busy === "maintenance-settings"}>
-                    Save Retention
-                  </button>
-                  <button className="button danger-button" type="button" onClick={cleanupRecycleBin} disabled={busy === "maintenance-cleanup"}>
-                    Clear Eligible Items
-                  </button>
-                </div>
+            <section className="grid">
+              <div className="settings-tabs settings-section" role="tablist" aria-label="Maintenance areas">
+                <button className={maintenanceTab === "recycle" ? "active" : ""} type="button" onClick={() => setMaintenanceTab("recycle")}>
+                  Recycle Bin
+                </button>
+                <button className={maintenanceTab === "quarantine" ? "active" : ""} type="button" onClick={() => setMaintenanceTab("quarantine")}>
+                  Attachment Quarantine
+                </button>
               </div>
 
-              <div className="panel">
-                <h2>Safety Rules</h2>
-                <div className="stack-list settings-section settings-rule-list">
-                  <div className="stack-row">
-                    <strong>Manual cleanup requires confirmation</strong>
-                    <span className="muted">The app prompts before any permanent deletion.</span>
+              {maintenanceTab === "recycle" ? (
+                <div className="grid columns-2">
+                  <div className="panel">
+                    <div className="section-heading">
+                      <div>
+                        <h2>Recycle Bin Cleanup</h2>
+                        <p className="muted">Permanently remove soft-deleted tickets and attachments after the retention window.</p>
+                      </div>
+                    </div>
+                    <div className="metric-grid settings-section">
+                      <div className="panel subtle-panel metric">
+                        <span className="muted">Deleted tickets</span>
+                        <strong>{maintenanceSummary?.deletedTickets ?? 0}</strong>
+                      </div>
+                      <div className="panel subtle-panel metric">
+                        <span className="muted">Eligible tickets</span>
+                        <strong>{maintenanceSummary?.eligibleTickets ?? 0}</strong>
+                      </div>
+                      <div className="panel subtle-panel metric">
+                        <span className="muted">Deleted attachments</span>
+                        <strong>{maintenanceSummary?.deletedAttachments ?? 0}</strong>
+                      </div>
+                      <div className="panel subtle-panel metric">
+                        <span className="muted">Eligible attachments</span>
+                        <strong>{maintenanceSummary?.eligibleAttachments ?? 0}</strong>
+                      </div>
+                    </div>
+                    <label className="field settings-section">
+                      <span>Auto-clean retention days</span>
+                      <input className="input compact-select" type="number" min={1} max={365} value={maintenanceDraft} onChange={(event) => setMaintenanceDraft(event.target.value)} />
+                    </label>
+                    <p className="muted">
+                      Current cutoff: {maintenanceSummary?.cutoff ? new Date(maintenanceSummary.cutoff).toLocaleString() : "Not calculated"}. Last cleanup:{" "}
+                      {maintenanceSummary?.lastRecycleBinCleanupAt ? new Date(maintenanceSummary.lastRecycleBinCleanupAt).toLocaleString() : "Never"}.
+                    </p>
+                    <div className="settings-actions settings-section">
+                      <button className="button secondary" type="button" onClick={saveMaintenanceSettings} disabled={busy === "maintenance-settings"}>
+                        Save Retention
+                      </button>
+                      <button className="button danger-button" type="button" onClick={cleanupRecycleBin} disabled={busy === "maintenance-cleanup"}>
+                        Clear Eligible Items
+                      </button>
+                    </div>
                   </div>
-                  <div className="stack-row">
-                    <strong>Automatic cleanup uses retention</strong>
-                    <span className="muted">Only recycle bin items older than the configured retention period are eligible.</span>
-                  </div>
-                  <div className="stack-row">
-                    <strong>Files are removed with records</strong>
-                    <span className="muted">Associated stored files are deleted before the database records are removed.</span>
+
+                  <div className="panel">
+                    <h2>Safety Rules</h2>
+                    <div className="stack-list settings-section settings-rule-list">
+                      <div className="stack-row">
+                        <strong>Manual cleanup requires confirmation</strong>
+                        <span className="muted">The app prompts before any permanent deletion.</span>
+                      </div>
+                      <div className="stack-row">
+                        <strong>Automatic cleanup uses retention</strong>
+                        <span className="muted">Only recycle bin items older than the configured retention period are eligible.</span>
+                      </div>
+                      <div className="stack-row">
+                        <strong>Files are removed with records</strong>
+                        <span className="muted">Associated stored files are deleted before the database records are removed.</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : null}
+
+              {maintenanceTab === "quarantine" ? (
+                <div className="panel">
+                  <div className="section-heading">
+                    <div>
+                      <h2>Attachment Quarantine</h2>
+                      <p className="muted">Review blocked, suspicious, pending, and restored antivirus scan results without deleting stored files.</p>
+                    </div>
+                    <div className="settings-actions compact-actions">
+                      <span className="status-pill warning-pill">{attachmentQuarantine?.counts.quarantined ?? maintenanceSummary?.quarantine?.quarantined ?? 0} quarantined</span>
+                      <span className="status-pill">{attachmentQuarantine?.counts.pending ?? maintenanceSummary?.quarantine?.pending ?? 0} pending</span>
+                      <span className="status-pill success">{attachmentQuarantine?.counts.restored ?? maintenanceSummary?.quarantine?.restored ?? 0} restored</span>
+                    </div>
+                  </div>
+
+                  <div className="audit-filter-grid settings-section">
+                    <label className="field">
+                      <span>Type</span>
+                      <select className="input" value={quarantineFilters.type} onChange={(event) => void applyQuarantineFilters({ ...quarantineFilters, type: event.target.value, page: "1" })}>
+                        <option value="all">All sources</option>
+                        <option value="ticket">Tickets</option>
+                        <option value="event">Event Services</option>
+                      </select>
+                    </label>
+                    <label className="field">
+                      <span>Status</span>
+                      <select className="input" value={quarantineFilters.status} onChange={(event) => void applyQuarantineFilters({ ...quarantineFilters, status: event.target.value, page: "1" })}>
+                        <option value="quarantined">Quarantined</option>
+                        <option value="pending">Pending / skipped</option>
+                        <option value="restored">Restored</option>
+                        <option value="all">All review items</option>
+                      </select>
+                    </label>
+                    <label className="field audit-search-field">
+                      <span>Search</span>
+                      <input className="input" placeholder="Filename, ticket, event, MIME type..." value={quarantineFilters.search} onChange={(event) => setQuarantineFilters((current) => ({ ...current, search: event.target.value, page: "1" }))} />
+                    </label>
+                    <label className="field audit-page-size-field">
+                      <span>Rows</span>
+                      <select className="input" value={quarantineFilters.pageSize} onChange={(event) => void applyQuarantineFilters({ ...quarantineFilters, pageSize: event.target.value, page: "1" })}>
+                        <option value="25">25 rows</option>
+                        <option value="50">50 rows</option>
+                        <option value="100">100 rows</option>
+                      </select>
+                    </label>
+                    <div className="audit-filter-actions">
+                      <button className="button" type="button" onClick={() => void applyQuarantineFilters(quarantineFilters)} disabled={busy === "attachment-quarantine"}>
+                        Apply Filters
+                      </button>
+                      <button className="button secondary" type="button" onClick={() => void applyQuarantineFilters({ type: "all", status: "quarantined", search: "", page: "1", pageSize: quarantineFilters.pageSize })}>
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="settings-actions settings-section audit-pagination audit-pagination-top">
+                    <span className="muted">
+                      Showing {quarantineFirstItem}-{quarantineLastItem} of {quarantineTotal} attachments.
+                    </span>
+                    <button className="button secondary" type="button" disabled={quarantinePage <= 1 || busy === "attachment-quarantine"} onClick={() => void applyQuarantineFilters({ ...quarantineFilters, page: String(Math.max(1, quarantinePage - 1)) })}>
+                      Previous
+                    </button>
+                    <span className="status-pill">Page {quarantinePage} of {quarantinePageCount}</span>
+                    <button className="button secondary" type="button" disabled={!attachmentQuarantine || quarantinePage >= quarantinePageCount || busy === "attachment-quarantine"} onClick={() => void applyQuarantineFilters({ ...quarantineFilters, page: String(quarantinePage + 1) })}>
+                      Next
+                    </button>
+                  </div>
+
+                  <div className="table-scroll settings-section">
+                    <table className="tickets-table audit-log-table">
+                      <thead>
+                        <tr>
+                          <th>File</th>
+                          <th>Source</th>
+                          <th>Parent</th>
+                          <th>Scan</th>
+                          <th>Created</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {attachmentQuarantine?.items.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="audit-empty-cell">
+                              <span className="muted">No attachments match the current quarantine filters.</span>
+                            </td>
+                          </tr>
+                        ) : null}
+                        {(attachmentQuarantine?.items ?? []).map((item) => (
+                          <tr key={`${item.type}-${item.id}`} className="audit-row">
+                            <td>
+                              <strong>{item.originalFilename}</strong>
+                              <span className="muted">{item.mimeType} - {formatSettingsBytes(item.fileSize)}</span>
+                            </td>
+                            <td>
+                              <span className="status-pill">{item.type === "ticket" ? "Ticket" : "Event"}</span>
+                              <span className="muted">{formatAuditLabel(item.source)}</span>
+                            </td>
+                            <td>
+                              <strong>{item.parent.number}</strong>
+                              <span className="muted">{item.parent.title}</span>
+                              <span className="muted">{item.parent.client}</span>
+                            </td>
+                            <td>
+                              <span className={`status-pill ${item.scanStatus === "CLEAN" ? "success" : item.scanStatus === "PENDING" ? "warning-pill" : "danger-pill"}`}>{formatAuditLabel(item.scanStatus)}</span>
+                              <span className="muted">{formatAuditLabel(item.scanResult)}</span>
+                              {item.scanOverriddenAt ? <span className="muted">Restored {new Date(item.scanOverriddenAt).toLocaleString()}</span> : null}
+                            </td>
+                            <td>
+                              <strong>{new Date(item.createdAt).toLocaleDateString()}</strong>
+                              <span className="muted">{new Date(item.createdAt).toLocaleTimeString()}</span>
+                            </td>
+                            <td>
+                              <div className="settings-actions compact-actions">
+                                <button className="button secondary small-button" type="button" onClick={() => void rescanQuarantinedAttachment(item)} disabled={busy === `rescan-${item.id}`}>
+                                  Rescan
+                                </button>
+                                {item.scanStatus === "BLOCKED" || item.scanStatus === "SUSPICIOUS" ? (
+                                  <button className="button secondary small-button" type="button" onClick={() => void restoreQuarantinedAttachment(item)} disabled={busy === `restore-${item.id}`}>
+                                    Restore
+                                  </button>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="settings-actions settings-section audit-pagination">
+                    <span className="muted">
+                      Showing {quarantineFirstItem}-{quarantineLastItem} of {quarantineTotal} attachments.
+                    </span>
+                    <button className="button secondary" type="button" disabled={quarantinePage <= 1 || busy === "attachment-quarantine"} onClick={() => void applyQuarantineFilters({ ...quarantineFilters, page: String(Math.max(1, quarantinePage - 1)) })}>
+                      Previous
+                    </button>
+                    <span className="status-pill">Page {quarantinePage} of {quarantinePageCount}</span>
+                    <button className="button secondary" type="button" disabled={!attachmentQuarantine || quarantinePage >= quarantinePageCount || busy === "attachment-quarantine"} onClick={() => void applyQuarantineFilters({ ...quarantineFilters, page: String(quarantinePage + 1) })}>
+                      Next
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </section>
           ) : null}
 
@@ -4332,16 +4634,28 @@ export function SettingsWorkspace() {
                 </div>
 
                 <div className="system-health-component-grid settings-section">
-                  {(systemHealth?.components ?? []).map((component) => (
-                    <article className={`system-health-card ${component.status}`} key={component.key}>
-                      <div>
-                        <span className="system-health-led" aria-hidden="true" />
-                        <strong>{component.name}</strong>
-                      </div>
-                      <p>{component.message}</p>
-                      <span className="muted">Checked {new Date(component.checkedAt).toLocaleString()}</span>
-                    </article>
-                  ))}
+                  {(systemHealth?.components ?? []).map((component) => {
+                    const antivirusMetadata = antivirusHealthMetadata(component);
+                    return (
+                      <article className={`system-health-card ${component.status}`} key={component.key}>
+                        <div>
+                          <span className="system-health-led" aria-hidden="true" />
+                          <strong>{component.name}</strong>
+                        </div>
+                        <p>{component.message}</p>
+                        {antivirusMetadata ? (
+                          <div className="system-health-card-metadata">
+                            <span>Clean {antivirusMetadata.counts?.clean ?? 0}</span>
+                            <span>Quarantined {antivirusMetadata.counts?.quarantined ?? 0}</span>
+                            <span>Pending {(antivirusMetadata.counts?.pending ?? 0) + (antivirusMetadata.counts?.skipped ?? 0)}</span>
+                            <span>Restored {antivirusMetadata.counts?.restored ?? 0}</span>
+                            <small>{antivirusMetadata.version ?? antivirusMetadata.endpoint ?? "Scanner metadata unavailable"}</small>
+                          </div>
+                        ) : null}
+                        <span className="muted">Checked {new Date(component.checkedAt).toLocaleString()}</span>
+                      </article>
+                    );
+                  })}
                   {!systemHealth ? <p className="muted">Loading system health components...</p> : null}
                 </div>
               </div>

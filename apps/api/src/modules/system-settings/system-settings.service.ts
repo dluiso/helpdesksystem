@@ -412,7 +412,7 @@ export class SystemSettingsService {
         description: "Auditability, dependency posture, and known follow-up controls.",
         checks: [
           this.securityCheck("audit-logs", "Audit logs", "ok", "Administrative actions are recorded and exportable.", "Active"),
-          this.securityCheck("audit-org-scope", "Audit org isolation", "warning", "Current schema needs a migration for hard organization scoping.", "Pending migration"),
+          this.securityCheck("audit-org-scope", "Audit org isolation", "ok", "Audit logs are scoped by organization with legacy user backfill compatibility.", "Active"),
           this.securityCheck("dependency-audit", "Dependency audit", "warning", "Some vulnerabilities are transitive and require a controlled dependency phase.", "Manual review required"),
           this.securityCheck("runtime-storage", "Runtime storage", "ok", "Local storage is kept outside git and should stay ignored on production.", "Operational control")
         ]

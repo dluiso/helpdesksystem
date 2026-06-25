@@ -255,6 +255,7 @@ model Organization {
   eventServiceSequences EventServiceSequence[]
   supportPortalForms   SupportPortalForm[]
   deviceViews          UserDeviceView[]
+  auditLogs            AuditLog[]
 
   @@map("organizations")
 }
@@ -436,6 +437,8 @@ model User {
   deviceViews         UserDeviceView[]
   uploadedAttachments TicketAttachment[]
   uploadedEventServiceAttachments EventServiceAttachment[]
+  scanOverrideTicketAttachments TicketAttachment[] @relation("TicketAttachmentScanOverride")
+  scanOverrideEventServiceAttachments EventServiceAttachment[] @relation("EventServiceAttachmentScanOverride")
   signature           UserSignature?
   auditLogs           AuditLog[]
   aiRequestLogs       AiRequestLog[]
@@ -1182,17 +1185,23 @@ model TicketAttachment {
   emailAttachmentId  String?
   scanStatus         AttachmentScanStatus  @default(PENDING)
   scanResult         AttachmentScanResult  @default(NOT_SCANNED)
+  scanOverriddenAt   DateTime?
+  scanOverrideReason String?
+  scanOverriddenById String?                @db.Uuid
   createdAt          DateTime              @default(now())
   deletedAt          DateTime?
   ticket             Ticket                @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   ticketMessage      TicketMessage?        @relation(fields: [ticketMessageId], references: [id], onDelete: SetNull)
   uploadedByUser     User?                 @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  scanOverriddenBy   User?                 @relation("TicketAttachmentScanOverride", fields: [scanOverriddenById], references: [id], onDelete: SetNull)
   storedFile         StoredFile            @relation(fields: [storedFileId], references: [id], onDelete: Restrict)
 
   @@index([ticketId])
   @@index([ticketMessageId])
   @@index([uploadedByUserId])
   @@index([scanStatus])
+  @@index([scanResult])
+  @@index([scanOverriddenById])
   @@index([deletedAt])
   @@map("ticket_attachments")
 }
@@ -1217,17 +1226,23 @@ model EventServiceAttachment {
   emailAttachmentId String?
   scanStatus       AttachmentScanStatus  @default(PENDING)
   scanResult       AttachmentScanResult  @default(NOT_SCANNED)
+  scanOverriddenAt DateTime?
+  scanOverrideReason String?
+  scanOverriddenById String?              @db.Uuid
   createdAt        DateTime              @default(now())
   deletedAt        DateTime?
   request          EventServiceRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
   message          EventServiceMessage?  @relation(fields: [messageId], references: [id], onDelete: SetNull)
   uploadedByUser   User?                 @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  scanOverriddenBy User?                  @relation("EventServiceAttachmentScanOverride", fields: [scanOverriddenById], references: [id], onDelete: SetNull)
   storedFile       StoredFile            @relation(fields: [storedFileId], references: [id], onDelete: Restrict)
 
   @@index([requestId])
   @@index([messageId])
   @@index([uploadedByUserId])
   @@index([scanStatus])
+  @@index([scanResult])
+  @@index([scanOverriddenById])
   @@index([deletedAt])
   @@map("event_service_attachments")
 }
@@ -1628,8 +1643,9 @@ model UserDeviceView {
 }
 
 model AuditLog {
-  id         String   @id @default(uuid()) @db.Uuid
-  userId     String?  @db.Uuid
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String?  @db.Uuid
+  userId         String?  @db.Uuid
   entityType String
   entityId   String?
   action     String
@@ -1637,8 +1653,10 @@ model AuditLog {
   userAgent  String?
   metadata   Json?
   createdAt  DateTime @default(now())
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([organizationId, createdAt])
   @@index([userId, createdAt])
   @@index([entityType, entityId])
   @@index([action, createdAt])

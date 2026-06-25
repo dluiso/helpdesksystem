@@ -2946,6 +2946,34 @@ select.compact-select {
   color: var(--text-muted);
 }
 
+.system-health-card-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.system-health-card-metadata span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  background: var(--surface);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.system-health-card-metadata small {
+  flex-basis: 100%;
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .system-health-timeline-panel {
   display: grid;
   gap: 12px;

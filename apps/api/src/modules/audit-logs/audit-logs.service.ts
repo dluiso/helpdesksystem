@@ -5,6 +5,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AuditLogQueryDto } from "./dto/audit-log-query.dto";
 
 export interface CreateAuditLogInput {
+  organizationId?: string | null;
   userId?: string | null;
   entityType: string;
   entityId?: string | null;
@@ -19,8 +20,10 @@ export class AuditLogsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(input: CreateAuditLogInput) {
+    const organizationId = input.organizationId ?? (input.userId ? await this.resolveUserOrganizationId(input.userId) : null);
     return this.prisma.auditLog.create({
       data: {
+        organizationId,
         userId: input.userId ?? null,
         entityType: input.entityType,
         entityId: input.entityId ?? null,
@@ -51,14 +54,14 @@ export class AuditLogsService {
         orderBy: [{ firstName: "asc" }, { lastName: "asc" }]
       }),
       this.prisma.auditLog.findMany({
-        where: { user: { organizationId: user.organizationId } },
+        where: this.organizationWhere(user.organizationId),
         distinct: ["action"],
         select: { action: true },
         orderBy: { action: "asc" },
         take: 200
       }),
       this.prisma.auditLog.findMany({
-        where: { user: { organizationId: user.organizationId } },
+        where: this.organizationWhere(user.organizationId),
         distinct: ["entityType"],
         select: { entityType: true },
         orderBy: { entityType: "asc" },
@@ -107,7 +110,7 @@ export class AuditLogsService {
   }
 
   private buildWhere(user: AuthenticatedUser, query: AuditLogQueryDto): Prisma.AuditLogWhereInput {
-    const where: Prisma.AuditLogWhereInput = { user: { organizationId: user.organizationId } };
+    const where: Prisma.AuditLogWhereInput = this.organizationWhere(user.organizationId);
     if (query.userId) where.userId = query.userId;
     if (query.action) where.action = query.action;
     if (query.entityType) where.entityType = query.entityType;
@@ -121,16 +124,38 @@ export class AuditLogsService {
     if (createdAt.gte || createdAt.lte) where.createdAt = createdAt;
     if (query.search?.trim()) {
       const search = query.search.trim();
-      where.OR = [
-        { action: { contains: search, mode: "insensitive" } },
-        { entityType: { contains: search, mode: "insensitive" } },
-        { entityId: { contains: search, mode: "insensitive" } },
-        { ipAddress: { contains: search, mode: "insensitive" } },
-        { userAgent: { contains: search, mode: "insensitive" } },
-        { user: { email: { contains: search, mode: "insensitive" } } }
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : []),
+        {
+          OR: [
+            { action: { contains: search, mode: "insensitive" } },
+            { entityType: { contains: search, mode: "insensitive" } },
+            { entityId: { contains: search, mode: "insensitive" } },
+            { ipAddress: { contains: search, mode: "insensitive" } },
+            { userAgent: { contains: search, mode: "insensitive" } },
+            { user: { email: { contains: search, mode: "insensitive" } } }
+          ]
+        }
       ];
     }
     return where;
+  }
+
+  private organizationWhere(organizationId: string): Prisma.AuditLogWhereInput {
+    return {
+      OR: [
+        { organizationId },
+        { organizationId: null, user: { organizationId } }
+      ]
+    };
+  }
+
+  private async resolveUserOrganizationId(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { organizationId: true }
+    });
+    return user?.organizationId ?? null;
   }
 
   private toPositiveInt(value: string | undefined, fallback: number, max: number) {

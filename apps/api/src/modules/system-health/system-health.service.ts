@@ -1,8 +1,9 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { AttachmentScanResult, AttachmentScanStatus, Prisma } from "@prisma/client";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { AuthenticatedUser } from "../auth/auth.types";
+import { FileScanService } from "../file-storage/file-scan.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 export type SystemHealthStatus = "ok" | "warning" | "error";
@@ -40,6 +41,7 @@ const componentNames: Record<string, string> = {
   support_portal: "Support portal",
   event_services: "Event services",
   ai: "AI providers",
+  antivirus: "Antivirus scanner",
   audit_logs: "Audit logs"
 };
 
@@ -85,7 +87,10 @@ export class SystemHealthService implements OnModuleInit, OnModuleDestroy {
   private automaticCheckTimer?: NodeJS.Timeout;
   private automaticCheckRunning = false;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly fileScan: FileScanService
+  ) {}
 
   onModuleInit() {
     const intervalMs = this.automaticCheckIntervalMs();
@@ -120,6 +125,7 @@ export class SystemHealthService implements OnModuleInit, OnModuleDestroy {
       this.checkSupportPortal(organizationId, settings?.supportPortalEnabled ?? false),
       this.checkEventServices(organizationId),
       this.checkAi(organizationId, settings?.aiAssistantEnabled ?? false),
+      this.checkAntivirus(organizationId),
       this.checkAuditLogs()
     ]);
 
@@ -355,6 +361,69 @@ export class SystemHealthService implements OnModuleInit, OnModuleDestroy {
     }
     const enabledProviders = await this.prisma.aiProviderConfig.count({ where: { organizationId, isEnabled: true } });
     return buildComponent("ai", "AI providers", enabledProviders > 0 ? "ok" : "warning", enabledProviders > 0 ? `${enabledProviders} enabled AI provider${enabledProviders === 1 ? "" : "s"} configured.` : "No enabled AI provider is configured.");
+  }
+
+  private async checkAntivirus(organizationId: string) {
+    const [scanner, ticketCounts, eventCounts] = await Promise.all([
+      this.fileScan.getScannerHealth(),
+      this.scanCountsForTickets(organizationId),
+      this.scanCountsForEventServices(organizationId)
+    ]);
+    const totals = {
+      total: ticketCounts.total + eventCounts.total,
+      clean: ticketCounts.clean + eventCounts.clean,
+      quarantined: ticketCounts.quarantined + eventCounts.quarantined,
+      pending: ticketCounts.pending + eventCounts.pending,
+      skipped: ticketCounts.skipped + eventCounts.skipped,
+      restored: ticketCounts.restored + eventCounts.restored
+    };
+
+    const metadata = {
+      endpoint: scanner.endpoint,
+      enabled: scanner.enabled,
+      failClosed: scanner.failClosed,
+      reachable: scanner.reachable,
+      version: scanner.version,
+      counts: totals
+    };
+
+    if (!scanner.enabled) {
+      return buildComponent("antivirus", "Antivirus scanner", "warning", "ClamAV is not enabled for attachment scanning.", metadata);
+    }
+    if (!scanner.reachable) {
+      return buildComponent("antivirus", "Antivirus scanner", scanner.failClosed ? "error" : "warning", scanner.error ?? "ClamAV is not reachable.", metadata);
+    }
+    if (totals.quarantined > 0) {
+      return buildComponent("antivirus", "Antivirus scanner", "warning", `${totals.quarantined} quarantined attachment${totals.quarantined === 1 ? "" : "s"} need review.`, metadata);
+    }
+    if (totals.pending > 0 || totals.skipped > 0) {
+      return buildComponent("antivirus", "Antivirus scanner", "warning", `${totals.pending + totals.skipped} attachment${totals.pending + totals.skipped === 1 ? "" : "s"} are not fully scanned.`, metadata);
+    }
+    return buildComponent("antivirus", "Antivirus scanner", "ok", `${totals.clean} attachment${totals.clean === 1 ? "" : "s"} scanned clean.`, metadata);
+  }
+
+  private async scanCountsForTickets(organizationId: string) {
+    const [total, clean, quarantined, pending, skipped, restored] = await Promise.all([
+      this.prisma.ticketAttachment.count({ where: { ticket: { organizationId }, deletedAt: null } }),
+      this.prisma.ticketAttachment.count({ where: { ticket: { organizationId }, deletedAt: null, scanStatus: AttachmentScanStatus.CLEAN, scanResult: AttachmentScanResult.PASSED } }),
+      this.prisma.ticketAttachment.count({ where: { ticket: { organizationId }, deletedAt: null, scanStatus: { in: [AttachmentScanStatus.SUSPICIOUS, AttachmentScanStatus.BLOCKED] } } }),
+      this.prisma.ticketAttachment.count({ where: { ticket: { organizationId }, deletedAt: null, scanStatus: AttachmentScanStatus.PENDING } }),
+      this.prisma.ticketAttachment.count({ where: { ticket: { organizationId }, deletedAt: null, scanResult: AttachmentScanResult.SKIPPED } }),
+      this.prisma.ticketAttachment.count({ where: { ticket: { organizationId }, deletedAt: null, scanOverriddenAt: { not: null } } })
+    ]);
+    return { total, clean, quarantined, pending, skipped, restored };
+  }
+
+  private async scanCountsForEventServices(organizationId: string) {
+    const [total, clean, quarantined, pending, skipped, restored] = await Promise.all([
+      this.prisma.eventServiceAttachment.count({ where: { request: { organizationId }, deletedAt: null } }),
+      this.prisma.eventServiceAttachment.count({ where: { request: { organizationId }, deletedAt: null, scanStatus: AttachmentScanStatus.CLEAN, scanResult: AttachmentScanResult.PASSED } }),
+      this.prisma.eventServiceAttachment.count({ where: { request: { organizationId }, deletedAt: null, scanStatus: { in: [AttachmentScanStatus.SUSPICIOUS, AttachmentScanStatus.BLOCKED] } } }),
+      this.prisma.eventServiceAttachment.count({ where: { request: { organizationId }, deletedAt: null, scanStatus: AttachmentScanStatus.PENDING } }),
+      this.prisma.eventServiceAttachment.count({ where: { request: { organizationId }, deletedAt: null, scanResult: AttachmentScanResult.SKIPPED } }),
+      this.prisma.eventServiceAttachment.count({ where: { request: { organizationId }, deletedAt: null, scanOverriddenAt: { not: null } } })
+    ]);
+    return { total, clean, quarantined, pending, skipped, restored };
   }
 
   private async checkAuditLogs() {

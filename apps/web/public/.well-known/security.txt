@@ -1,0 +1,6 @@
+Contact: mailto:support@aviditytechnologies.com
+Expires: 2027-06-24T23:59:00Z
+Preferred-Languages: en, es
+Canonical: https://one.aviditytechnologies.com/.well-known/security.txt
+Canonical: https://support.aviditytechnologies.com/.well-known/security.txt
+Canonical: https://events.aviditytechnologies.com/.well-known/security.txt
