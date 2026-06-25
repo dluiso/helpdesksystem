@@ -136,6 +136,50 @@ const THEME_OPTIONS: Array<{ value: ThemePreference; label: string; description:
   { value: "system", label: "System", description: "Follow your operating system setting." }
 ];
 
+function notificationPreferencePayload(preference: NotificationPreference): NotificationPreference {
+  return {
+    inAppEnabled: preference.inAppEnabled,
+    emailEnabled: preference.emailEnabled,
+    ticketAssignedToMe: preference.ticketAssignedToMe,
+    ticketAssignedToMyTeam: preference.ticketAssignedToMyTeam,
+    ticketReplyOnAssignedTicket: preference.ticketReplyOnAssignedTicket,
+    internalNoteOnAssignedTicket: preference.internalNoteOnAssignedTicket,
+    internalNoteMention: preference.internalNoteMention,
+    routingRuleMatched: preference.routingRuleMatched,
+    ticketReopened: preference.ticketReopened,
+    newTicketCreated: preference.newTicketCreated,
+    inAppTicketAssignedToMe: preference.inAppTicketAssignedToMe,
+    inAppTicketAssignedToMyTeam: preference.inAppTicketAssignedToMyTeam,
+    inAppTicketReplyOnAssignedTicket: preference.inAppTicketReplyOnAssignedTicket,
+    inAppInternalNoteOnAssignedTicket: preference.inAppInternalNoteOnAssignedTicket,
+    inAppInternalNoteMention: preference.inAppInternalNoteMention,
+    inAppRoutingRuleMatched: preference.inAppRoutingRuleMatched,
+    inAppTicketReopened: preference.inAppTicketReopened,
+    inAppNewTicketCreated: preference.inAppNewTicketCreated,
+    emailTicketAssignedToMe: preference.emailTicketAssignedToMe,
+    emailTicketAssignedToMyTeam: preference.emailTicketAssignedToMyTeam,
+    emailTicketReplyOnAssignedTicket: preference.emailTicketReplyOnAssignedTicket,
+    emailInternalNoteOnAssignedTicket: preference.emailInternalNoteOnAssignedTicket,
+    emailInternalNoteMention: preference.emailInternalNoteMention,
+    emailRoutingRuleMatched: preference.emailRoutingRuleMatched,
+    emailTicketReopened: preference.emailTicketReopened,
+    emailNewTicketCreated: preference.emailNewTicketCreated,
+    inAppEventAssignedToMe: preference.inAppEventAssignedToMe,
+    inAppEventRequestUpdated: preference.inAppEventRequestUpdated,
+    inAppEventTaskAssignedToMe: preference.inAppEventTaskAssignedToMe,
+    inAppEventTaskUpdated: preference.inAppEventTaskUpdated,
+    inAppEventCommentAdded: preference.inAppEventCommentAdded,
+    emailEventAssignedToMe: preference.emailEventAssignedToMe,
+    emailEventRequestUpdated: preference.emailEventRequestUpdated,
+    emailEventTaskAssignedToMe: preference.emailEventTaskAssignedToMe,
+    emailEventTaskUpdated: preference.emailEventTaskUpdated,
+    emailEventCommentAdded: preference.emailEventCommentAdded,
+    inAppNewEventRequestCreated: preference.inAppNewEventRequestCreated,
+    emailNewEventRequestCreated: preference.emailNewEventRequestCreated,
+    dailyDigestEnabled: preference.dailyDigestEnabled
+  };
+}
+
 function NotificationSwitch({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
   return (
     <button
@@ -367,7 +411,7 @@ export function ProfileWorkspace() {
     try {
       const response = await apiFetch<NotificationPreference>("/notification-preferences/me", {
         method: "PATCH",
-        body: JSON.stringify(notificationDraft)
+        body: JSON.stringify(notificationPreferencePayload(notificationDraft))
       });
       setNotificationDraft(response);
       setMessage("Notification preferences saved.");

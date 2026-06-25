@@ -597,4 +597,91 @@ describe("TicketsService", () => {
       )
     ).rejects.toThrow("Reply from the primary ticket");
   });
+
+  it("notifies every selected specialist when a ticket is assigned to multiple users", async () => {
+    const user = {
+      id: "dispatcher-1",
+      organizationId: "org-1",
+      email: "dispatcher@example.com",
+      firstName: "Dispatch",
+      lastName: "User",
+      forcePasswordChange: false,
+      permissions: []
+    };
+    const existingTicket = {
+      id: "ticket-1",
+      ticketNumber: "AIT-100001"
+    };
+    const updatedTicket = {
+      ...existingTicket,
+      assignedUserId: "tech-1"
+    };
+    const prisma = {
+      ticket: {
+        findFirst: jest.fn().mockResolvedValue(existingTicket),
+        update: jest.fn().mockResolvedValue(updatedTicket)
+      },
+      user: {
+        findMany: jest.fn().mockResolvedValue([{ id: "tech-1" }, { id: "tech-2" }])
+      },
+      ticketAssignee: {
+        findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        create: jest.fn().mockResolvedValue({})
+      },
+      ticketWatcher: {
+        upsert: jest.fn().mockResolvedValue({})
+      }
+    };
+    const auditLogs = { create: jest.fn() };
+    const sanitizer = { sanitize: jest.fn((value: string) => value) };
+    const contactsService = { resolveRequesterFromEmail: jest.fn() };
+    const routing = { applyInboundRules: jest.fn() };
+    const mailDelivery = { sendTicketReply: jest.fn() };
+    const notifications = { notifyUser: jest.fn(), notifyNewTicketCreated: jest.fn() };
+    const autoReplies = { sendForNewInboundTicket: jest.fn() };
+    const service = new TicketsService(
+      prisma as never,
+      auditLogs as never,
+      sanitizer as never,
+      contactsService as never,
+      routing as never,
+      mailDelivery as never,
+      notifications as never,
+      autoReplies as never
+    );
+
+    await expect(
+      service.updateAssignment(
+        "AIT-100001",
+        {
+          assignedUserIds: ["tech-1", "tech-2"]
+        },
+        user
+      )
+    ).resolves.toEqual(updatedTicket);
+
+    expect(prisma.ticket.update).toHaveBeenCalledWith({
+      where: { id: "ticket-1" },
+      data: expect.objectContaining({ assignedUserId: "tech-1" })
+    });
+    expect(prisma.ticketAssignee.create).toHaveBeenCalledTimes(2);
+    expect(notifications.notifyUser).toHaveBeenCalledTimes(2);
+    expect(notifications.notifyUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "tech-1",
+        ticketId: "ticket-1",
+        title: "Ticket assigned: AIT-100001",
+        eventType: "ticketAssignedToMe"
+      })
+    );
+    expect(notifications.notifyUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "tech-2",
+        ticketId: "ticket-1",
+        title: "Ticket assigned: AIT-100001",
+        eventType: "ticketAssignedToMe"
+      })
+    );
+  });
 });

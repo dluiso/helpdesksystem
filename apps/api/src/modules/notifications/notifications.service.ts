@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Prisma } from "@prisma/client";
 import { AuthenticatedUser } from "../auth/auth.types";
@@ -52,6 +52,8 @@ const EVENT_CHANNEL_FIELDS: Record<NotificationEventType, { inApp: keyof UpdateN
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly mailDelivery: MailDeliveryService,
@@ -387,6 +389,7 @@ export class NotificationsService {
               client: { select: { name: true } },
               contact: { select: { firstName: true, lastName: true, email: true } },
               assignedUser: { select: { firstName: true, lastName: true, email: true } },
+              assignees: { include: { user: { select: { firstName: true, lastName: true, email: true } } }, orderBy: { createdAt: "asc" } },
               assignedTeam: { select: { name: true } }
             }
           })
@@ -437,8 +440,10 @@ export class NotificationsService {
         bodyText: emailBody.text,
         bodyHtml: emailBody.html
       });
-    } catch {
+    } catch (error) {
       // Email notification failures must not block ticket workflows.
+      const message = error instanceof Error ? error.message : "Unknown notification email failure";
+      this.logger.warn(`Unable to send ${input.eventType} email notification to ${input.email}: ${message}`);
     }
   }
 
@@ -550,6 +555,7 @@ export class NotificationsService {
       client: { name: string } | null;
       contact: { firstName: string; lastName: string; email: string } | null;
       assignedUser: { firstName: string; lastName: string; email: string } | null;
+      assignees: Array<{ user: { firstName: string; lastName: string; email: string } }>;
       assignedTeam: { name: string } | null;
     },
     eventType: NotificationEventType
@@ -557,9 +563,8 @@ export class NotificationsService {
     const requester = ticket.contact
       ? `${ticket.contact.firstName} ${ticket.contact.lastName}`.trim() || ticket.contact.email
       : ticket.senderEmail ?? "Unknown requester";
-    const assignedTo = ticket.assignedUser
-      ? `${ticket.assignedUser.firstName} ${ticket.assignedUser.lastName}`.trim() || ticket.assignedUser.email
-      : ticket.assignedTeam?.name ?? "Unassigned";
+    const assignedUsers = ticket.assignees.map((assignee) => this.userDisplay(assignee.user));
+    const assignedTo = assignedUsers.length > 0 ? assignedUsers.join(", ") : ticket.assignedUser ? this.userDisplay(ticket.assignedUser) : ticket.assignedTeam?.name ?? "Unassigned";
     const ticketUrl = `${this.appUrl()}/tickets/${encodeURIComponent(ticket.ticketNumber)}`;
     const reason = body?.trim() || title;
     const lines = [
