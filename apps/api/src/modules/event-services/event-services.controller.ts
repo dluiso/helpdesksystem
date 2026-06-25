@@ -17,6 +17,7 @@ import {
   UploadedFile
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { ThrottlerGuard } from "@nestjs/throttler";
 import { Request } from "express";
 import { Response } from "express";
 import { getRequestIp } from "../../common/request-ip";
@@ -61,6 +62,7 @@ export class EventServicesController {
   }
 
   @Post("public/event-services/requests")
+  @UseGuards(ThrottlerGuard)
   createPublicRequest(@Body() body: CreatePublicEventServiceRequestDto, @Req() request: Request) {
     return this.eventServices.createPublicRequest(body, {
       ipAddress: getRequestIp(request),

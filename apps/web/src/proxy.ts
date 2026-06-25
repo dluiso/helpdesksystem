@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const publicPaths = ["/login", "/reset-password", "/public/event-services", "/public/support"];
+const sessionCookieName = process.env.SESSION_COOKIE_NAME ?? "avidity_session";
 
 export function proxy(request: NextRequest) {
   const host = request.headers.get("host")?.toLowerCase() ?? "";
@@ -12,7 +13,7 @@ export function proxy(request: NextRequest) {
   }
 
   const isPublic = publicPaths.some((path) => request.nextUrl.pathname.startsWith(path));
-  const hasSession = request.cookies.has("avidity_session");
+  const hasSession = request.cookies.has(sessionCookieName);
 
   if (!isPublic && !hasSession) {
     const loginUrl = new URL("/login", request.url);

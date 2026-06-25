@@ -7,6 +7,7 @@ import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import { json, urlencoded } from "express";
 import { AppModule } from "./app.module";
+import { createOriginProtectionMiddleware } from "./common/origin-protection.middleware";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, new ExpressAdapter());
@@ -30,6 +31,7 @@ async function bootstrap() {
   app.use(json({ limit: "1mb" }));
   app.use(urlencoded({ extended: true, limit: "1mb" }));
   app.use(cookieParser(config.get<string>("SESSION_SECRET")));
+  app.use(createOriginProtectionMiddleware(config));
   app.enableCors({
     origin: allowedOrigins,
     credentials: true

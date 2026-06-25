@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from "@nestjs/common";
+import { ThrottlerGuard } from "@nestjs/throttler";
 import { Request } from "express";
 import { getRequestIp } from "../../common/request-ip";
 import { AuthenticatedUser } from "../auth/auth.types";
@@ -23,6 +24,7 @@ export class SupportPortalController {
   }
 
   @Post("public/support/tickets")
+  @UseGuards(ThrottlerGuard)
   createPublicTicket(@Body() body: CreatePublicSupportTicketDto, @Req() request: Request) {
     return this.supportPortal.createPublicTicket(body, {
       ipAddress: getRequestIp(request),
