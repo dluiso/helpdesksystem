@@ -548,6 +548,18 @@ const EVENT_NOTIFICATION_FIELDS: Array<{ label: string; inAppKey: keyof Notifica
   { label: "Event comment added", inAppKey: "inAppEventCommentAdded", emailKey: "emailEventCommentAdded" }
 ];
 
+function hasEnabledEmailEvents(preference: NotificationPreference) {
+  return (
+    preference.dailyDigestEnabled ||
+    TICKET_NOTIFICATION_FIELDS.some((field) => Boolean(preference[field.emailKey])) ||
+    EVENT_NOTIFICATION_FIELDS.some((field) => Boolean(preference[field.emailKey]))
+  );
+}
+
+function assignmentEmailReady(preference: NotificationPreference) {
+  return preference.emailEnabled && preference.emailTicketAssignedToMe;
+}
+
 const GENERAL_TABS = [
   { key: "identity", label: "Identity" },
   { key: "assets", label: "Assets" },
@@ -737,6 +749,10 @@ function NotificationUserCard({
   onChange: (userId: string, key: keyof NotificationPreference, value: boolean) => void;
   onSave: (row: UserNotificationPreferenceRow) => void;
 }) {
+  const emailEventsBlocked = !row.notificationPreference.emailEnabled && hasEnabledEmailEvents(row.notificationPreference);
+  const assignmentReady = assignmentEmailReady(row.notificationPreference);
+  const assignmentLabel = assignmentReady ? "Assignment email ready" : row.notificationPreference.emailTicketAssignedToMe ? "Email channel off" : "Assignment email off";
+
   return (
     <article className="notification-user-card">
       <div className="notification-user-header">
@@ -746,10 +762,18 @@ function NotificationUserCard({
           </h3>
           <p className="muted">{row.email}</p>
         </div>
-        <button className="button secondary" type="button" onClick={() => onSave(row)} disabled={busy === `notification-${row.id}`}>
-          Save
-        </button>
+        <div className="notification-user-actions">
+          <span className={`status-pill ${assignmentReady ? "success" : row.notificationPreference.emailTicketAssignedToMe ? "warning-pill" : "muted-pill"}`}>{assignmentLabel}</span>
+          <button className="button secondary" type="button" onClick={() => onSave(row)} disabled={busy === `notification-${row.id}`}>
+            Save
+          </button>
+        </div>
       </div>
+      {emailEventsBlocked ? (
+        <div className="notification-warning-banner" role="status">
+          Email-specific events are enabled for this user, but the Email channel is off.
+        </div>
+      ) : null}
       <div className="notification-channel-strip">
         <div className="notification-channel-item">
           <span>In-app</span>
@@ -2302,6 +2326,11 @@ export function SettingsWorkspace() {
     }
   }, [systemHealthHistoryPage, systemHealthHistoryPageCount]);
 
+  const activeNotificationRows = notificationPreferenceRows.filter((row) => row.isActive);
+  const assignmentReadyRows = activeNotificationRows.filter((row) => assignmentEmailReady(row.notificationPreference));
+  const assignmentBlockedRows = activeNotificationRows.filter((row) => row.notificationPreference.emailTicketAssignedToMe && !row.notificationPreference.emailEnabled);
+  const assignmentOffRows = activeNotificationRows.filter((row) => !row.notificationPreference.emailTicketAssignedToMe);
+
   return (
     <div className="settings-page">
       <div className="compact-page-header settings-page-header">
@@ -3572,6 +3601,28 @@ export function SettingsWorkspace() {
                 </div>
                 <span className="status-pill">{notificationPreferenceRows.length} users</span>
               </div>
+              <div className="notification-coverage-grid settings-section" aria-label="Assignment email readiness">
+                <div className="notification-coverage-card">
+                  <span>Assignment email ready</span>
+                  <strong>{assignmentReadyRows.length}</strong>
+                  <small>Active users with Email and Assigned to me enabled.</small>
+                </div>
+                <div className="notification-coverage-card warning">
+                  <span>Email channel off</span>
+                  <strong>{assignmentBlockedRows.length}</strong>
+                  <small>Assigned to me is enabled, but Email blocks delivery.</small>
+                </div>
+                <div className="notification-coverage-card muted">
+                  <span>Assignment email off</span>
+                  <strong>{assignmentOffRows.length}</strong>
+                  <small>Active users who will only receive in-app assignment alerts.</small>
+                </div>
+              </div>
+              {assignmentBlockedRows.length > 0 ? (
+                <div className="notification-warning-banner settings-section" role="status">
+                  Review Email channel for: {assignmentBlockedRows.map((row) => `${row.firstName} ${row.lastName}`.trim() || row.email).join(", ")}.
+                </div>
+              ) : null}
               <div className="notification-user-list settings-section">
                 {notificationPreferenceRows.length === 0 ? <p className="muted">No users available for notification settings.</p> : null}
                 {notificationPreferenceRows.map((row) => (

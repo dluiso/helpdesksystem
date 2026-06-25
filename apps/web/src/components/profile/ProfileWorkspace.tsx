@@ -180,6 +180,14 @@ function notificationPreferencePayload(preference: NotificationPreference): Noti
   };
 }
 
+function hasEnabledEmailEvents(preference: NotificationPreference) {
+  return (
+    preference.dailyDigestEnabled ||
+    TICKET_NOTIFICATION_FIELDS.some((field) => Boolean(preference[field.emailKey])) ||
+    EVENT_NOTIFICATION_FIELDS.some((field) => Boolean(preference[field.emailKey]))
+  );
+}
+
 function NotificationSwitch({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
   return (
     <button
@@ -502,6 +510,9 @@ export function ProfileWorkspace() {
     }
   }, [activeSection, signatureHtml]);
 
+  const emailEventsBlocked = notificationDraft ? !notificationDraft.emailEnabled && hasEnabledEmailEvents(notificationDraft) : false;
+  const assignmentEmailReady = notificationDraft ? notificationDraft.emailEnabled && notificationDraft.emailTicketAssignedToMe : false;
+
   return (
     <div className="stack profile-page">
       <div className="compact-page-header profile-page-header">
@@ -716,7 +727,15 @@ export function ProfileWorkspace() {
                   <h2>Notifications</h2>
                   <p className="muted">Choose which ticket and Event Services notifications can reach you.</p>
                 </div>
+                <span className={`status-pill ${assignmentEmailReady ? "success" : "warning-pill"}`}>
+                  {assignmentEmailReady ? "Assignment email ready" : "Assignment email off"}
+                </span>
               </div>
+              {emailEventsBlocked ? (
+                <div className="notification-warning-banner settings-section" role="status">
+                  Email delivery is turned off. Email-specific notification switches are saved, but they will not send until the Email channel is enabled.
+                </div>
+              ) : null}
               <div className="notification-channel-strip settings-section">
                 <div className="notification-channel-item">
                   <span>In-app</span>

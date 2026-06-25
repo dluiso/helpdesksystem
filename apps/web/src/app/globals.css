@@ -6235,6 +6235,66 @@ select.public-event-input[multiple] {
   margin: 4px 0 0;
 }
 
+.notification-user-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.notification-coverage-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.notification-coverage-card {
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--success) 35%, var(--line));
+  border-radius: 8px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--success) 8%, var(--surface-raised));
+  box-shadow: var(--shadow-xs);
+}
+
+.notification-coverage-card.warning {
+  border-color: color-mix(in srgb, #d97706 45%, var(--line));
+  background: color-mix(in srgb, #f59e0b 10%, var(--surface-raised));
+}
+
+.notification-coverage-card.muted {
+  border-color: var(--line);
+  background: var(--surface-subtle);
+}
+
+.notification-coverage-card span,
+.notification-coverage-card small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.notification-coverage-card strong {
+  display: block;
+  margin: 4px 0;
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.notification-warning-banner {
+  border: 1px solid color-mix(in srgb, #d97706 45%, var(--line));
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, #f59e0b 10%, var(--surface));
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .notification-channel-strip {
   display: flex;
   flex-wrap: wrap;
@@ -12045,6 +12105,19 @@ a.dashboard-list-row:hover {
 
   .notification-user-card {
     padding: 12px;
+  }
+
+  .notification-coverage-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .notification-user-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .notification-user-actions {
+    justify-content: flex-start;
   }
 
   .support-section-header {
