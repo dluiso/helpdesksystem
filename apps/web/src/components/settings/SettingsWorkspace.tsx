@@ -2295,7 +2295,7 @@ export function SettingsWorkspace() {
                 <div className="section-heading">
                   <div>
                     <h2>Branding Assets</h2>
-                    <p className="muted">Upload PNG, JPG, WebP, SVG, or ICO assets up to 2 MB.</p>
+                    <p className="muted">Upload PNG, JPG, WebP, or ICO assets up to 2 MB.</p>
                   </div>
                 </div>
                 <div className="branding-asset-list settings-section">
@@ -2321,7 +2321,7 @@ export function SettingsWorkspace() {
                       <label className="button secondary file-button">
                         <Upload size={16} aria-hidden="true" />
                         <span>{busy === `branding-${asset.type}` ? "Uploading" : "Upload"}</span>
-                        <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon,.ico" onChange={(event) => void uploadBrandingAsset(asset.type, event.target.files?.[0] ?? null)} />
+                        <input type="file" accept="image/png,image/jpeg,image/webp,image/x-icon,.ico" onChange={(event) => void uploadBrandingAsset(asset.type, event.target.files?.[0] ?? null)} />
                       </label>
                     </div>
                   ))}

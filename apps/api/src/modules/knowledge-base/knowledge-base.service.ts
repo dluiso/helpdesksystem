@@ -333,7 +333,9 @@ export class KnowledgeBaseService {
     user: AuthenticatedUser,
     file: { originalname: string; mimetype: string; size: number; buffer: Buffer }
   ) {
-    if (!file.originalname.toLowerCase().endsWith(".pdf") && file.mimetype !== "application/pdf") {
+    const hasPdfNameOrMime = file.originalname.toLowerCase().endsWith(".pdf") || file.mimetype === "application/pdf";
+    const hasPdfSignature = file.buffer.subarray(0, 5).toString("ascii") === "%PDF-";
+    if (!hasPdfNameOrMime || !hasPdfSignature) {
       throw new BadRequestException("Upload a PDF file.");
     }
 

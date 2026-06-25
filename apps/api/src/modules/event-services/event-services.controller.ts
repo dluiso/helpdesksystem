@@ -45,6 +45,7 @@ import { UpsertEventServiceServiceDto } from "./dto/upsert-event-service-service
 import { EventServicesService } from "./event-services.service";
 import { BulkEventServiceRequestIdsDto } from "./dto/bulk-event-service-request-ids.dto";
 import { EventServicesAttachmentsService } from "./event-services-attachments.service";
+import { singleFileUploadOptions } from "../file-storage/upload-limits";
 
 const uploadLimitMb = Number(process.env.MAX_UPLOAD_SIZE_MB ?? 25);
 const uploadLimitBytes = uploadLimitMb * 1024 * 1024;
@@ -262,7 +263,7 @@ export class EventServicesController {
   @Post("event-services/:requestId/attachments")
   @UseGuards(SessionAuthGuard, PermissionsGuard)
   @RequirePermissions("event_services.update")
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: uploadLimitBytes } }))
+  @UseInterceptors(FileInterceptor("file", singleFileUploadOptions(uploadLimitBytes)))
   uploadAttachment(
     @Param("requestId") requestId: string,
     @CurrentUser() user: AuthenticatedUser,

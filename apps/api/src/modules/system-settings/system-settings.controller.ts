@@ -11,6 +11,7 @@ import { PermissionsGuard } from "../permissions/guards/permissions.guard";
 import { UpdateGeneralSettingsDto } from "./dto/update-general-settings.dto";
 import { UpdateSecuritySettingsDto } from "./dto/update-security-settings.dto";
 import { SystemSettingsService } from "./system-settings.service";
+import { singleFileUploadOptions } from "../file-storage/upload-limits";
 
 const brandingUploadLimitBytes = 2 * 1024 * 1024;
 
@@ -72,7 +73,7 @@ export class SystemSettingsController {
   @Post("branding-assets")
   @UseGuards(SessionAuthGuard, PermissionsGuard)
   @RequirePermissions("system_settings.update")
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: brandingUploadLimitBytes } }))
+  @UseInterceptors(FileInterceptor("file", singleFileUploadOptions(brandingUploadLimitBytes)))
   uploadBrandingAsset(
     @CurrentUser() user: AuthenticatedUser,
     @Query("type") type: "logo" | "loginLogo" | "loginFormLogo" | "mobileLogo" | "mobileLoginLogo" | "appIcon",

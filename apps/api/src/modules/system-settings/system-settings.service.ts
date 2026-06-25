@@ -7,7 +7,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { UpdateGeneralSettingsDto } from "./dto/update-general-settings.dto";
 import { UpdateSecuritySettingsDto } from "./dto/update-security-settings.dto";
 
-const BRANDING_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon"]);
+const BRANDING_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/x-icon", "image/vnd.microsoft.icon"]);
 const BRANDING_MAX_BYTES = 2 * 1024 * 1024;
 
 @Injectable()
@@ -272,7 +272,7 @@ export class SystemSettingsService {
 
   async uploadBrandingAsset(user: AuthenticatedUser, assetType: "logo" | "loginLogo" | "loginFormLogo" | "mobileLogo" | "mobileLoginLogo" | "appIcon", file: { originalname: string; mimetype: string; size: number; buffer: Buffer }) {
     if (!BRANDING_MIME_TYPES.has(file.mimetype)) {
-      throw new BadRequestException("Branding asset must be a PNG, JPG, WEBP, SVG, or ICO image.");
+      throw new BadRequestException("Branding asset must be a PNG, JPG, WEBP, or ICO image.");
     }
     if (file.size > BRANDING_MAX_BYTES) {
       throw new BadRequestException("Branding asset must be 2 MB or smaller.");

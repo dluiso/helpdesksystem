@@ -35,6 +35,7 @@ import {
   UpdateKnowledgeCategoryDto
 } from "./dto/knowledge-base.dto";
 import { KnowledgeBaseService } from "./knowledge-base.service";
+import { singleFileUploadOptions } from "../file-storage/upload-limits";
 import { KnowledgeOneNoteImportService } from "./knowledge-onenote-import.service";
 
 const uploadLimitMb = Number(process.env.MAX_UPLOAD_SIZE_MB ?? 25);
@@ -129,7 +130,7 @@ export class KnowledgeBaseController {
 
   @Post("articles/:articleId/attachments")
   @RequirePermissions("knowledge_base.update")
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: uploadLimitBytes } }))
+  @UseInterceptors(FileInterceptor("file", singleFileUploadOptions(uploadLimitBytes)))
   uploadAttachment(
     @Param("articleId") articleId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -162,7 +163,7 @@ export class KnowledgeBaseController {
 
   @Post("import/pdf/preview")
   @RequirePermissions("knowledge_base.create")
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: uploadLimitBytes } }))
+  @UseInterceptors(FileInterceptor("file", singleFileUploadOptions(uploadLimitBytes)))
   previewPdfImport(
     @CurrentUser() user: AuthenticatedUser,
     @UploadedFile() file?: { originalname: string; mimetype: string; size: number; buffer: Buffer }

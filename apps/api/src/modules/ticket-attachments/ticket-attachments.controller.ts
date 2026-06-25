@@ -20,6 +20,7 @@ import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
 import { RequirePermissions } from "../permissions/decorators/require-permissions.decorator";
 import { PermissionsGuard } from "../permissions/guards/permissions.guard";
 import { TicketAttachmentsService } from "./ticket-attachments.service";
+import { singleFileUploadOptions } from "../file-storage/upload-limits";
 
 const uploadLimitMb = Number(process.env.MAX_UPLOAD_SIZE_MB ?? 25);
 const uploadLimitBytes = uploadLimitMb * 1024 * 1024;
@@ -31,7 +32,7 @@ export class TicketAttachmentsController {
 
   @Post()
   @RequirePermissions("ticket_attachments.upload")
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: uploadLimitBytes } }))
+  @UseInterceptors(FileInterceptor("file", singleFileUploadOptions(uploadLimitBytes)))
   async upload(
     @Param("ticketId") ticketId: string,
     @CurrentUser() user: AuthenticatedUser,

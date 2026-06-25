@@ -1,9 +1,10 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { AttachmentScanResult, AttachmentScanStatus, AttachmentSource, Prisma } from "@prisma/client";
+import { AttachmentScanStatus, AttachmentSource, Prisma } from "@prisma/client";
 import { PassThrough } from "node:stream";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { FileStorageService } from "../file-storage/file-storage.service";
+import { FileScanService } from "../file-storage/file-scan.service";
 import { FileValidationService } from "../file-storage/file-validation.service";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -22,6 +23,7 @@ export class TicketAttachmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly fileStorage: FileStorageService,
+    private readonly fileScan: FileScanService,
     private readonly validation: FileValidationService,
     private readonly auditLogs: AuditLogsService
   ) {}
@@ -239,6 +241,7 @@ export class TicketAttachmentsService {
       buffer: input.buffer,
       folder: "attachments"
     });
+    const scan = await this.fileScan.scanBuffer(input.buffer);
 
     return this.prisma.$transaction(async (tx) => {
       const storedFile = await tx.storedFile.create({
@@ -272,8 +275,8 @@ export class TicketAttachmentsService {
           isInline: input.isInline,
           contentId: input.contentId,
           emailAttachmentId: input.emailAttachmentId,
-          scanStatus: AttachmentScanStatus.PENDING,
-          scanResult: AttachmentScanResult.NOT_SCANNED
+          scanStatus: scan.scanStatus,
+          scanResult: scan.scanResult
         }
       });
     });
