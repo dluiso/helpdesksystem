@@ -60,7 +60,7 @@ export class FileScanService {
       socket.on("connect", () => {
         const size = Buffer.alloc(4);
         size.writeUInt32BE(buffer.length, 0);
-        socket.write("INSTREAM\n");
+        socket.write("zINSTREAM\0");
         socket.write(size);
         socket.write(buffer);
         socket.write(Buffer.alloc(4));

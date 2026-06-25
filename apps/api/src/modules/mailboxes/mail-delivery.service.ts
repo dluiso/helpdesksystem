@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Mailbox } from "@prisma/client";
+import { AttachmentScanStatus, Mailbox } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { FileStorageService } from "../file-storage/file-storage.service";
 import { MailProvider, OutboundMailAttachment, SendMessageResult } from "./providers/mail-provider.interface";
@@ -82,7 +82,7 @@ export class MailDeliveryService {
     });
 
     if (attachments.length !== attachmentIds.length) {
-      throw new BadRequestException("One or more attachments are no longer available for outbound email.");
+      await this.rejectUnavailableTicketAttachments(attachmentIds, ticketId);
     }
 
     return Promise.all(
@@ -95,6 +95,37 @@ export class MailDeliveryService {
         contentId: attachment.contentId
       }))
     );
+  }
+
+  private async rejectUnavailableTicketAttachments(attachmentIds: string[], ticketId: string | null): Promise<never> {
+    const requestedAttachments = await this.prisma.ticketAttachment.findMany({
+      where: {
+        id: { in: attachmentIds },
+        ...(ticketId ? { ticketId } : {})
+      },
+      select: {
+        id: true,
+        scanStatus: true,
+        deletedAt: true,
+        ticketMessageId: true
+      }
+    });
+    const foundIds = new Set(requestedAttachments.map((attachment) => attachment.id));
+    const hasMissing = attachmentIds.some((attachmentId) => !foundIds.has(attachmentId));
+    const hasBlocked = requestedAttachments.some((attachment) =>
+      attachment.scanStatus === AttachmentScanStatus.SUSPICIOUS ||
+      attachment.scanStatus === AttachmentScanStatus.BLOCKED
+    );
+    const hasUnavailable = requestedAttachments.some((attachment) => attachment.deletedAt || attachment.ticketMessageId);
+
+    if (hasBlocked) {
+      throw new BadRequestException("One or more attachments were blocked by antivirus scanning and cannot be sent.");
+    }
+    if (hasMissing || hasUnavailable) {
+      throw new BadRequestException("One or more attachments are no longer available for outbound email.");
+    }
+
+    throw new BadRequestException("One or more attachments could not be prepared for outbound email.");
   }
 
   private async streamToBuffer(stream: NodeJS.ReadableStream) {

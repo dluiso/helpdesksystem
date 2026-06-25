@@ -127,7 +127,7 @@ export class EventServicesAttachmentsService {
     });
 
     if (attachments.length !== uniqueAttachmentIds.length) {
-      throw new BadRequestException("One or more attachments are no longer available for outbound email.");
+      await this.rejectUnavailableOutboundAttachments(requestId, uniqueAttachmentIds);
     }
 
     return Promise.all(
@@ -140,6 +140,37 @@ export class EventServicesAttachmentsService {
         contentId: attachment.contentId
       }))
     );
+  }
+
+  private async rejectUnavailableOutboundAttachments(requestId: string, attachmentIds: string[]): Promise<never> {
+    const requestedAttachments = await this.prisma.eventServiceAttachment.findMany({
+      where: {
+        id: { in: attachmentIds },
+        requestId
+      },
+      select: {
+        id: true,
+        scanStatus: true,
+        deletedAt: true,
+        messageId: true
+      }
+    });
+    const foundIds = new Set(requestedAttachments.map((attachment) => attachment.id));
+    const hasMissing = attachmentIds.some((attachmentId) => !foundIds.has(attachmentId));
+    const hasBlocked = requestedAttachments.some((attachment) =>
+      attachment.scanStatus === AttachmentScanStatus.SUSPICIOUS ||
+      attachment.scanStatus === AttachmentScanStatus.BLOCKED
+    );
+    const hasUnavailable = requestedAttachments.some((attachment) => attachment.deletedAt || attachment.messageId);
+
+    if (hasBlocked) {
+      throw new BadRequestException("One or more attachments were blocked by antivirus scanning and cannot be sent.");
+    }
+    if (hasMissing || hasUnavailable) {
+      throw new BadRequestException("One or more attachments are no longer available for outbound email.");
+    }
+
+    throw new BadRequestException("One or more attachments could not be prepared for outbound email.");
   }
 
   private async createAttachmentRecord(input: {
