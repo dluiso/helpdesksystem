@@ -1087,13 +1087,20 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
                   <>
                     <h3>{activeViewPage.title}</h3>
                     <div className="knowledge-content" dangerouslySetInnerHTML={{ __html: activeViewPage.content }} />
+                    {visibleAttachments.length > 0 ? (
+                      <AttachmentList articleId={selectedArticle.id} attachments={visibleAttachments} />
+                    ) : null}
                   </>
-                ) : <div className="knowledge-content" dangerouslySetInnerHTML={{ __html: selectedArticle.content }} />}
+                ) : (
+                  <>
+                    <div className="knowledge-content" dangerouslySetInnerHTML={{ __html: selectedArticle.content }} />
+                    {visibleAttachments.length > 0 ? (
+                      <AttachmentList articleId={selectedArticle.id} attachments={visibleAttachments} />
+                    ) : null}
+                  </>
+                )}
               </section>
             </div>
-            {visibleAttachments.length > 0 ? (
-              <AttachmentList articleId={selectedArticle.id} attachments={visibleAttachments} />
-            ) : null}
           </article>
         ) : loading ? (
           <div className="empty-state-panel">
