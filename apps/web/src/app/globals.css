@@ -10265,11 +10265,25 @@ a.dashboard-list-row:hover {
 }
 
 .knowledge-content {
+  width: 100%;
   margin-top: 18px;
   line-height: 1.55;
   min-width: 0;
   max-width: 100%;
+  overflow-x: hidden;
   overflow-wrap: anywhere;
+}
+
+.knowledge-content *,
+.knowledge-rich-editor * {
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+
+.knowledge-content [style],
+.knowledge-rich-editor [style] {
+  max-width: 100% !important;
 }
 
 .knowledge-content img {
@@ -10281,14 +10295,17 @@ a.dashboard-list-row:hover {
 
 .knowledge-content pre,
 .knowledge-rich-editor pre {
+  max-width: 100%;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
 .knowledge-content table {
   display: block;
+  width: 100% !important;
   max-width: 100%;
   overflow-x: auto;
+  table-layout: fixed;
 }
 
 .knowledge-content ul,
@@ -10386,6 +10403,7 @@ a.dashboard-list-row:hover {
 .knowledge-page-view {
   display: grid;
   gap: 12px;
+  width: 100%;
   min-width: 0;
 }
 
@@ -10395,13 +10413,17 @@ a.dashboard-list-row:hover {
 }
 
 .knowledge-rich-editor {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 360px;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
   color: #0f172a;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
 }
 
 .knowledge-rich-editor:focus {
@@ -11004,7 +11026,7 @@ a.dashboard-list-row:hover {
   .knowledge-list-panel,
   .knowledge-detail-panel {
     min-height: 0;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .knowledge-catalog-panel > .section-heading {
@@ -11017,6 +11039,19 @@ a.dashboard-list-row:hover {
     grid-template-columns: 1fr;
     width: 100%;
     max-width: none;
+  }
+
+  .knowledge-page-nav.read {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scroll-snap-type: x proximity;
+  }
+
+  .knowledge-page-nav.read button {
+    flex: 0 0 min(220px, 78vw);
+    scroll-snap-align: start;
   }
 
   .knowledge-article-list {

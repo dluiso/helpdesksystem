@@ -1464,6 +1464,7 @@ model KnowledgeArticlePage {
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   article          KnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  attachments      KnowledgeArticleAttachment[]
 
   @@index([articleId, sortOrder])
   @@index([sourceType, sourceExternalId])
@@ -1473,6 +1474,7 @@ model KnowledgeArticlePage {
 model KnowledgeArticleAttachment {
   id               String              @id @default(uuid()) @db.Uuid
   articleId        String              @db.Uuid
+  pageId           String?             @db.Uuid
   uploadedByUserId String?             @db.Uuid
   storedFileId     String              @unique @db.Uuid
   originalFilename String
@@ -1487,10 +1489,12 @@ model KnowledgeArticleAttachment {
   deletedAt        DateTime?
   createdAt        DateTime            @default(now())
   article          KnowledgeArticle    @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  page             KnowledgeArticlePage? @relation(fields: [pageId], references: [id], onDelete: SetNull)
   uploadedBy       User?               @relation("KnowledgeArticleAttachmentUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
   storedFile       StoredFile          @relation(fields: [storedFileId], references: [id], onDelete: Cascade)
 
   @@index([articleId])
+  @@index([pageId])
   @@index([deletedAt])
   @@map("knowledge_article_attachments")
 }

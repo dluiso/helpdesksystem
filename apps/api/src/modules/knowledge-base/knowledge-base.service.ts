@@ -187,10 +187,7 @@ export class KnowledgeBaseService {
     const pages = input.pages !== undefined ? this.normalizeArticlePages(input.pages, nextTitle ?? existing.title, input.content ?? existing.content) : null;
 
     return this.prisma.$transaction(async (tx) => {
-      if (pages) {
-        await tx.knowledgeArticlePage.deleteMany({ where: { articleId: existing.id } });
-      }
-      return tx.knowledgeArticle.update({
+      const updated = await tx.knowledgeArticle.update({
         where: { id: existing.id },
         data: {
           ...(nextTitle ? { title: nextTitle, slug: nextTitle === existing.title ? existing.slug : await this.uniqueArticleSlug(user.organizationId, nextTitle) } : {}),
@@ -205,9 +202,16 @@ export class KnowledgeBaseService {
                 publishedAt: nextStatus === KnowledgeStatus.PUBLISHED ? existing.publishedAt ?? new Date() : null
               }
             : {}),
-          updatedById: user.id,
-          ...(pages ? { pages: { create: pages.map((page, index) => this.toPageCreateInput(page, index)) } } : {})
-        },
+          updatedById: user.id
+        }
+      });
+
+      if (pages) {
+        await this.replaceArticlePages(tx, existing.id, pages);
+      }
+
+      return tx.knowledgeArticle.findUniqueOrThrow({
+        where: { id: updated.id },
         include: this.articleInclude()
       });
     });
@@ -226,9 +230,11 @@ export class KnowledgeBaseService {
     articleId: string,
     user: AuthenticatedUser,
     file: { originalname: string; mimetype: string; size: number; buffer: Buffer },
-    isInline = false
+    isInline = false,
+    pageId?: string
   ) {
     const article = await this.findArticleOrThrow(articleId, user.organizationId);
+    const page = pageId ? await this.findArticlePageOrThrow(article.id, pageId) : null;
     const stored = await this.fileStorage.saveAttachmentFile({
       originalFilename: file.originalname,
       mimeType: file.mimetype || "application/octet-stream",
@@ -253,6 +259,7 @@ export class KnowledgeBaseService {
       return tx.knowledgeArticleAttachment.create({
         data: {
           articleId: article.id,
+          pageId: page?.id ?? null,
           uploadedByUserId: user.id,
           storedFileId: storedFile.id,
           originalFilename: stored.originalFilename,
@@ -509,12 +516,24 @@ export class KnowledgeBaseService {
     return article;
   }
 
+  private async findArticlePageOrThrow(articleId: string, pageId: string) {
+    const page = await this.prisma.knowledgeArticlePage.findFirst({
+      where: { id: pageId, articleId },
+      select: { id: true }
+    });
+    if (!page) {
+      throw new BadRequestException("Knowledge page was not found for this article.");
+    }
+    return page;
+  }
+
   private normalizeArticlePages(pages: KnowledgeArticlePageInputDto[] | undefined, articleTitle: string, fallbackContent: string | undefined) {
     const candidates = pages?.length
       ? pages.filter((page) => page.selected !== false)
       : [{ title: articleTitle || "Content", content: fallbackContent ?? "" }];
     const normalized = candidates
       .map((page, index) => ({
+        id: this.isUuid(page.id) ? page.id : undefined,
         title: this.cleanPageTitle(page.title || `Page ${index + 1}`),
         content: this.sanitizer.sanitize(page.content),
         sortOrder: page.sortOrder ?? index,
@@ -548,6 +567,49 @@ export class KnowledgeBaseService {
       sourceUrl: page.sourceUrl,
       sourceSyncedAt: page.sourceType && page.sourceExternalId ? new Date() : null
     };
+  }
+
+  private async replaceArticlePages(
+    tx: Prisma.TransactionClient,
+    articleId: string,
+    pages: ReturnType<KnowledgeBaseService["normalizeArticlePages"]>
+  ) {
+    const existingPages = await tx.knowledgeArticlePage.findMany({
+      where: { articleId },
+      select: { id: true }
+    });
+    const existingIds = new Set(existingPages.map((page) => page.id));
+    const retainedIds = new Set<string>();
+
+    for (const [index, page] of pages.entries()) {
+      const data = this.toPageCreateInput(page, index);
+      if (page.id && existingIds.has(page.id)) {
+        retainedIds.add(page.id);
+        await tx.knowledgeArticlePage.update({
+          where: { id: page.id },
+          data
+        });
+      } else {
+        const created = await tx.knowledgeArticlePage.create({
+          data: {
+            articleId,
+            ...data
+          }
+        });
+        retainedIds.add(created.id);
+      }
+    }
+
+    const removedIds = [...existingIds].filter((id) => !retainedIds.has(id));
+    if (removedIds.length) {
+      await tx.knowledgeArticlePage.deleteMany({
+        where: { id: { in: removedIds }, articleId }
+      });
+    }
+  }
+
+  private isUuid(value: string | undefined) {
+    return Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
   }
 
   private cleanPageTitle(value: string) {

@@ -29,6 +29,7 @@ interface KnowledgeAttachment {
   mimeType: string;
   fileSize: number;
   isInline: boolean;
+  pageId: string | null;
 }
 
 interface KnowledgeArticlePage {
@@ -217,7 +218,13 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
   const allTags = useMemo(() => [...new Set(articles.flatMap((article) => article.tags))].sort(), [articles]);
   const publishedArticleCount = articles.filter((article) => article.status === "PUBLISHED").length;
   const draftArticleCount = articles.filter((article) => article.status === "DRAFT").length;
-  const visibleAttachments = selectedArticle?.attachments.filter((attachment) => !attachment.isInline) ?? [];
+  const activePageAttachmentId = editing ? activeDraftPage?.id : activeViewPage?.id;
+  const visibleAttachments =
+    selectedArticle?.attachments.filter(
+      (attachment) =>
+        !attachment.isInline &&
+        (attachment.pageId === activePageAttachmentId || (!attachment.pageId && selectedArticlePages.length <= 1))
+    ) ?? [];
   const isOneNoteArticle = Boolean(selectedArticle?.sourceType?.startsWith("ONENOTE") || selectedArticle?.pages?.some((page) => page.sourceType === "ONENOTE_PAGE"));
 
   useEffect(() => {
@@ -320,7 +327,7 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
     if (!selectedArticle) return;
     const pages = selectedArticle.pages?.length ? selectedArticle.pages : [legacyPage(selectedArticle)];
     setDraft({ ...selectedArticle, pages });
-    setActiveDraftPageId(pages[0]?.id ?? "");
+    setActiveDraftPageId(activeViewPage?.id ?? pages[0]?.id ?? "");
     setEditing(true);
     setNotice(null);
   }
@@ -377,10 +384,12 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
       const saved = selectedArticleId
         ? await apiFetch<KnowledgeArticle>(`/knowledge-base/articles/${selectedArticleId}`, { method: "PATCH", body: JSON.stringify(payload) })
         : await apiFetch<KnowledgeArticle>("/knowledge-base/articles", { method: "POST", body: JSON.stringify(payload) });
+      const activePageIndex = Math.max(0, pages.findIndex((page) => page.id === activeDraftPage?.id));
+      const nextActivePage = saved.pages?.find((page) => page.id === activeDraftPage?.id) ?? saved.pages?.[activePageIndex] ?? saved.pages?.[0] ?? null;
       setSelectedArticleId(saved.id);
       setDraft(saved);
       setDetailArticle(saved);
-      setActiveViewPageId(saved.pages?.[0]?.id ?? "");
+      setActiveViewPageId(nextActivePage?.id ?? "");
       setEditing(false);
       setNotice("Article saved.");
       if (!isDetailMode) {
@@ -464,6 +473,15 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
     router.push(`/knowledge-base/${targetArticleId}${params.toString() ? `?${params.toString()}` : ""}`);
   }
 
+  function selectViewPage(pageId: string) {
+    setActiveViewPageId(pageId);
+    if (isDetailMode && selectedArticleId) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("page", pageId);
+      router.replace(`/knowledge-base/${selectedArticleId}?${params.toString()}`, { scroll: false });
+    }
+  }
+
   function toggleSelectedArticle(articleId: string, checked: boolean) {
     setSelectedArticleIds((current) => (checked ? [...new Set([...current, articleId])] : current.filter((id) => id !== articleId)));
   }
@@ -512,7 +530,7 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
   }
 
   async function uploadInlineImage(file: File) {
-    if (!selectedArticleId) {
+    if (!selectedArticleId || !activeDraftPage?.id) {
       setError("Save the article before inserting images.");
       return;
     }
@@ -520,7 +538,8 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
     formData.append("file", file);
     setBusy(true);
     try {
-      const attachment = await apiFetch<KnowledgeAttachment>(`/knowledge-base/articles/${selectedArticleId}/attachments?inline=true`, {
+      const params = new URLSearchParams({ inline: "true", pageId: activeDraftPage.id });
+      const attachment = await apiFetch<KnowledgeAttachment>(`/knowledge-base/articles/${selectedArticleId}/attachments?${params.toString()}`, {
         method: "POST",
         body: formData
       });
@@ -538,7 +557,7 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
   }
 
   async function uploadArticleAttachment(file: File) {
-    if (!selectedArticleId) {
+    if (!selectedArticleId || !activeDraftPage?.id) {
       setError("Save the article before attaching files.");
       return;
     }
@@ -547,7 +566,8 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
     setBusy(true);
     setError(null);
     try {
-      const attachment = await apiFetch<KnowledgeAttachment>(`/knowledge-base/articles/${selectedArticleId}/attachments`, {
+      const params = new URLSearchParams({ pageId: activeDraftPage.id });
+      const attachment = await apiFetch<KnowledgeAttachment>(`/knowledge-base/articles/${selectedArticleId}/attachments?${params.toString()}`, {
         method: "POST",
         body: formData
       });
@@ -1055,7 +1075,7 @@ export function KnowledgeBaseWorkspace({ articleId }: KnowledgeBaseWorkspaceProp
               {selectedArticlePages.length > 1 ? (
                 <aside className="knowledge-page-nav read">
                   {selectedArticlePages.map((page, index) => (
-                    <button className={page.id === activeViewPage?.id ? "active" : ""} type="button" key={page.id} onClick={() => setActiveViewPageId(page.id)}>
+                    <button className={page.id === activeViewPage?.id ? "active" : ""} type="button" key={page.id} onClick={() => selectViewPage(page.id)}>
                       <span>{page.title}</span>
                       <small>Page {index + 1}</small>
                     </button>
@@ -1211,6 +1231,7 @@ function legacyPage(article: KnowledgeArticle): KnowledgeArticlePage {
 
 function toEditablePageInput(page: KnowledgeArticlePage, index: number) {
   return {
+    id: page.id,
     title: page.title,
     content: page.content,
     sortOrder: index,
@@ -1237,7 +1258,7 @@ function AttachmentList({ articleId, attachments }: { articleId: string; attachm
     <div className="knowledge-attachments">
       <div>
         <h3>Files</h3>
-        <p className="muted">Documents and files linked to this article.</p>
+        <p className="muted">Documents and files linked to this page.</p>
       </div>
       <div className="knowledge-attachment-list">
         {attachments.map((attachment) => {

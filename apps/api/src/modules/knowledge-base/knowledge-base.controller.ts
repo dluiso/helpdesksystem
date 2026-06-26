@@ -135,12 +135,13 @@ export class KnowledgeBaseController {
     @Param("articleId") articleId: string,
     @CurrentUser() user: AuthenticatedUser,
     @UploadedFile() file?: { originalname: string; mimetype: string; size: number; buffer: Buffer },
-    @Query("inline") inline?: string
+    @Query("inline") inline?: string,
+    @Query("pageId") pageId?: string
   ) {
     if (!file) {
       throw new BadRequestException("Attachment file is required.");
     }
-    return this.knowledgeBaseService.uploadAttachment(articleId, user, file, inline === "true");
+    return this.knowledgeBaseService.uploadAttachment(articleId, user, file, inline === "true", pageId);
   }
 
   @Get("articles/:articleId/attachments/:attachmentId/preview")
