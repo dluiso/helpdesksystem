@@ -444,6 +444,97 @@ describe("TicketsService", () => {
     });
   });
 
+  it("uses internal note CC as internal watcher notifications without sending email", async () => {
+    const ticket = {
+      id: "ticket-1",
+      ticketNumber: "AIT-100001",
+      status: "OPEN",
+      subject: "Printer issue",
+      mailboxId: null,
+      firstResponseAt: null,
+      assignedUserId: null,
+      assignedTeamId: null,
+      assignedGroupId: null
+    };
+    const message = { id: "message-1", ticketId: "ticket-1" };
+    const prisma = {
+      ticket: {
+        findFirst: jest.fn().mockResolvedValue(ticket),
+        update: jest.fn().mockResolvedValue(ticket)
+      },
+      user: {
+        findMany: jest.fn().mockResolvedValue([{ id: "user-2", email: "observer@example.com" }])
+      },
+      ticketMessage: {
+        create: jest.fn().mockResolvedValue(message)
+      },
+      ticketAttachment: {
+        updateMany: jest.fn()
+      },
+      ticketWatcher: {
+        upsert: jest.fn().mockResolvedValue({})
+      }
+    };
+    const auditLogs = { create: jest.fn() };
+    const sanitizer = { sanitize: jest.fn((value: string) => value) };
+    const contactsService = { resolveRequesterFromEmail: jest.fn() };
+    const routing = { applyInboundRules: jest.fn() };
+    const mailDelivery = { sendTicketReply: jest.fn() };
+    const notifications = { notifyUser: jest.fn(), notifyNewTicketCreated: jest.fn() };
+    const autoReplies = { sendForNewInboundTicket: jest.fn() };
+    const service = new TicketsService(
+      prisma as never,
+      auditLogs as never,
+      sanitizer as never,
+      contactsService as never,
+      routing as never,
+      mailDelivery as never,
+      notifications as never,
+      autoReplies as never
+    );
+
+    await expect(
+      service.createMessage(
+        "AIT-100001",
+        {
+          bodyText: "Internal update",
+          bodyHtml: "<p>Internal update</p>",
+          visibility: "internal",
+          ccUserIds: ["user-2"],
+          action: "save_note"
+        },
+        {
+          id: "user-1",
+          organizationId: "org-1",
+          email: "tech@example.com",
+          firstName: "Tech",
+          lastName: "User",
+          forcePasswordChange: false,
+          permissions: []
+        }
+      )
+    ).resolves.toEqual(message);
+
+    expect(mailDelivery.sendTicketReply).not.toHaveBeenCalled();
+    expect(prisma.ticketMessage.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        direction: "INTERNAL",
+        visibility: "INTERNAL",
+        ccEmails: ["observer@example.com"],
+        notifiedUserIds: ["user-2"]
+      })
+    });
+    expect(prisma.ticketWatcher.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ userId: "user-2", reason: "CC on internal note" })
+    }));
+    expect(notifications.notifyUser).toHaveBeenCalledWith(expect.objectContaining({
+      userId: "user-2",
+      ticketId: "ticket-1",
+      title: "Internal note added",
+      eventType: "internalNoteMention"
+    }));
+  });
+
   it("merges selected source tickets into a primary ticket", async () => {
     const user = {
       id: "user-1",

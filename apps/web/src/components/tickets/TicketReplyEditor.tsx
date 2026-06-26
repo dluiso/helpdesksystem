@@ -64,13 +64,12 @@ interface UserSignature {
 
 interface TicketReplyEditorProps {
   ticketId?: string;
-  notifyUsers?: Array<{ id: string; firstName: string; lastName: string; email: string }>;
   ccUsers?: Array<{ id: string; firstName: string; lastName: string; email: string }>;
   ccContacts?: Array<{ id: string; firstName: string; lastName: string; email: string }>;
   onSaved?: () => void | Promise<void>;
 }
 
-export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], ccContacts = [], onSaved }: TicketReplyEditorProps) {
+export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onSaved }: TicketReplyEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const autocompleteRequestRef = useRef(0);
   const signatureHtmlRef = useRef("");
@@ -79,7 +78,6 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], cc
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [preview, setPreview] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentPreviewItem[]>([]);
-  const [notifyUserIds, setNotifyUserIds] = useState<string[]>([]);
   const [ccInput, setCcInput] = useState("");
   const [ccEmails, setCcEmails] = useState<string[]>([]);
   const [ccUserIds, setCcUserIds] = useState<string[]>([]);
@@ -446,6 +444,11 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], cc
   function changeMode(nextMode: "public" | "internal") {
     setMode(nextMode);
     setShowActionMenu(false);
+    setCcInput("");
+    setError(null);
+    if (nextMode === "internal") {
+      setCcEmails([]);
+    }
   }
 
   function primaryAction(): ComposerAction {
@@ -475,7 +478,6 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], cc
           bodyHtml,
           bodyText,
           attachmentIds: attachments.map((attachment) => attachment.id),
-          notifyUserIds,
           ccEmails,
           ccUserIds,
           action: selectedAction
@@ -485,7 +487,6 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], cc
       setDraftText("");
       setAutocompleteSuggestion("");
       setAttachments([]);
-      setNotifyUserIds([]);
       setCcInput("");
       setCcEmails([]);
       setCcUserIds([]);
@@ -519,10 +520,6 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], cc
     }
   }
 
-  function toggleNotifyUser(userId: string) {
-    setNotifyUserIds((current) => (current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId]));
-  }
-
   function addCcToken(rawValue: string) {
     const token = rawValue.trim().replace(/,$/, "");
     if (!token) {
@@ -540,6 +537,11 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], cc
         return;
       }
       setError(`No internal user matched ${token}.`);
+      return;
+    }
+
+    if (mode === "internal") {
+      setError("Internal notes can only CC @internal users. Use Watchers for ongoing ticket updates.");
       return;
     }
 
@@ -745,54 +747,54 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], cc
           data-placeholder={mode === "public" ? "Write a customer-facing reply..." : "Write an internal troubleshooting note..."}
         />
       </div>
-      {mode === "public" ? (
-        <div className="cc-picker">
-          <label className="field">
-            <span>CC</span>
-            <input
-              className="input"
-              value={ccInput}
-              onChange={(event) => setCcInput(event.target.value)}
-              onBlur={() => addCcToken(ccInput)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === "," || event.key === "Tab") {
-                  event.preventDefault();
-                  addCcToken(ccInput);
-                }
-              }}
-              placeholder="Add email, requester, or @internal user"
-              list="ticket-cc-users"
-            />
-            <datalist id="ticket-cc-users">
-              {ccUsers.map((user) => (
-                <option key={`user-${user.id}`} value={`@${user.firstName} ${user.lastName}`}>
-                  {user.email}
-                </option>
-              ))}
-              {ccContacts.map((contact) => (
-                <option key={`contact-${contact.id}`} value={`${contact.firstName} ${contact.lastName} <${contact.email}>`}>
-                  Requester
-                </option>
-              ))}
-            </datalist>
-          </label>
-          <div className="chip-row">
-            {ccEmails.map((email) => (
-              <button className="chip" type="button" key={email} onClick={() => removeCcEmail(email)}>
-                {email} x
-              </button>
+      <div className="cc-picker">
+        <label className="field">
+          <span>CC</span>
+          <input
+            className="input"
+            value={ccInput}
+            onChange={(event) => setCcInput(event.target.value)}
+            onBlur={() => addCcToken(ccInput)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === "," || event.key === "Tab") {
+                event.preventDefault();
+                addCcToken(ccInput);
+              }
+            }}
+            placeholder={mode === "internal" ? "Add @internal user" : "Add email, requester, or @internal user"}
+            list="ticket-cc-users"
+          />
+          <datalist id="ticket-cc-users">
+            {ccUsers.map((user) => (
+              <option key={`user-${user.id}`} value={`@${user.firstName} ${user.lastName}`}>
+                {user.email}
+              </option>
             ))}
-            {ccUserIds.map((userId) => {
-              const user = ccUsers.find((item) => item.id === userId);
-              return user ? (
-                <button className="chip" type="button" key={userId} onClick={() => removeCcUser(userId)}>
-                  {user.firstName} {user.lastName} x
-                </button>
-              ) : null;
-            })}
-          </div>
+            {mode === "public"
+              ? ccContacts.map((contact) => (
+                  <option key={`contact-${contact.id}`} value={`${contact.firstName} ${contact.lastName} <${contact.email}>`}>
+                    Requester
+                  </option>
+                ))
+              : null}
+          </datalist>
+        </label>
+        <div className="chip-row">
+          {ccEmails.map((email) => (
+            <button className="chip" type="button" key={email} onClick={() => removeCcEmail(email)}>
+              {email} x
+            </button>
+          ))}
+          {ccUserIds.map((userId) => {
+            const user = ccUsers.find((item) => item.id === userId);
+            return user ? (
+              <button className="chip" type="button" key={userId} onClick={() => removeCcUser(userId)}>
+                {user.firstName} {user.lastName} x
+              </button>
+            ) : null;
+          })}
         </div>
-      ) : null}
+      </div>
       <div className="grid columns-2 ticket-editor-attachments">
         <AttachmentDropzone ticketId={ticketId} onUploaded={(attachment) => setAttachments((current) => [...current, attachment])} />
         <div className="panel ticket-attachment-preview-panel">
@@ -802,17 +804,6 @@ export function TicketReplyEditor({ ticketId, notifyUsers = [], ccUsers = [], cc
       </div>
       <div className="editor-toolbar editor-submit-toolbar">
         <SignatureInserter onInsert={insertHtml} />
-        {notifyUsers.length ? (
-          <div className="notify-picker">
-            <strong>Notify</strong>
-            {notifyUsers.map((user) => (
-              <label key={user.id}>
-                <input type="checkbox" checked={notifyUserIds.includes(user.id)} onChange={() => toggleNotifyUser(user.id)} />
-                {user.firstName} {user.lastName}
-              </label>
-            ))}
-          </div>
-        ) : null}
         {error ? <span className="error">{error}</span> : null}
         <div className="split-action">
           <button className="button split-action-main" type="button" onClick={() => submitMessage()} disabled={saving || !ticketId}>

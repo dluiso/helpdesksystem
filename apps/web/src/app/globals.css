@@ -9457,6 +9457,19 @@ a.dashboard-list-row:hover {
   overflow-wrap: anywhere;
 }
 
+.message-cc-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -2px 0 10px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.message-cc-list strong {
+  color: var(--text);
+}
+
 .message.internal {
   border-color: var(--warning);
   background: var(--warning-surface);

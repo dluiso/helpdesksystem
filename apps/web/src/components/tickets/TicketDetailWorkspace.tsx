@@ -39,6 +39,7 @@ interface TicketMessage {
   bodyText: string;
   sanitizedBodyHtml: string | null;
   senderEmail: string | null;
+  ccEmails: string[];
   createdAt: string;
   mergedFromTicketId: string | null;
   mergedFromTicketNumber: string | null;
@@ -456,7 +457,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
                   <p className="muted">Send a customer reply or save an internal note.</p>
                 </div>
               </div>
-              <TicketReplyEditor ticketId={ticketRef} notifyUsers={users} ccUsers={users} ccContacts={ccContacts} onSaved={load} />
+              <TicketReplyEditor ticketId={ticketRef} ccUsers={users} ccContacts={ccContacts} onSaved={load} />
             </div>
           ) : null}
           <div className="panel ticket-conversation-panel">
@@ -493,6 +494,12 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
                         Merged from {message.mergedFromTicketNumber}
                         {message.mergedFromTicketSubject ? ` - ${message.mergedFromTicketSubject}` : ""}
                       </span>
+                    </div>
+                  ) : null}
+                  {message.ccEmails.length ? (
+                    <div className="message-cc-list">
+                      <strong>CC</strong>
+                      <span>{message.ccEmails.join(", ")}</span>
                     </div>
                   ) : null}
                   {message.sanitizedBodyHtml ? (

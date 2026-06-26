@@ -1519,8 +1519,14 @@ export class TicketsService {
     const isInternal = input.visibility === "internal";
     const action = input.action ?? (isInternal ? "save_note" : "send");
     const sanitizedBodyHtml = input.bodyHtml ? this.htmlSanitizer.sanitize(input.bodyHtml) : null;
-    const ccEmails = isInternal ? [] : await this.resolveCcEmails(input.ccEmails ?? [], input.ccUserIds ?? [], user.organizationId);
-    const notifiedUserIds = [...new Set(input.notifyUserIds ?? [])];
+    const internalCcUsers = isInternal ? await this.resolveInternalCcUsers(input.ccUserIds ?? [], user.organizationId) : [];
+    if (isInternal && (input.ccEmails?.length ?? 0) > 0) {
+      throw new BadRequestException("Internal notes can only CC internal users.");
+    }
+    const ccEmails = isInternal
+      ? internalCcUsers.map((ccUser) => ccUser.email.toLowerCase())
+      : await this.resolveCcEmails(input.ccEmails ?? [], input.ccUserIds ?? [], user.organizationId);
+    const notifiedUserIds = isInternal ? internalCcUsers.map((ccUser) => ccUser.id) : [];
     const latestInboundMessage = isInternal
       ? null
       : await this.prisma.ticketMessage.findFirst({
@@ -1598,15 +1604,15 @@ export class TicketsService {
     });
 
     const shouldNotifyStaff = !isInternal || action === "send_note" || action === "send_note_and_close";
-    if (shouldNotifyStaff && notifiedUserIds.length) {
+    if (notifiedUserIds.length) {
       await Promise.all(
         notifiedUserIds.map((userId) =>
           this.addWatcherAndNotify(
             internalTicketId,
             userId,
             user.id,
-            isInternal ? "Mentioned on internal note" : "Mentioned on ticket reply",
-            isInternal ? "Internal note added" : "Ticket reply added",
+            "CC on internal note",
+            "Internal note added",
             "internalNoteMention"
           )
         )
@@ -1878,6 +1884,18 @@ export class TicketsService {
     });
 
     return [...new Set([...manualEmails, ...users.map((user) => user.email.toLowerCase())])];
+  }
+
+  private async resolveInternalCcUsers(ccUserIds: string[], organizationId: string) {
+    const uniqueUserIds = [...new Set(ccUserIds)];
+    if (uniqueUserIds.length === 0) {
+      return [];
+    }
+
+    return this.prisma.user.findMany({
+      where: { id: { in: uniqueUserIds }, organizationId, deletedAt: null, isActive: true },
+      select: { id: true, email: true }
+    });
   }
 
   private async shouldMarkWaitingOnTechnicianFromInbound(ticketId: string, status: TicketStatus) {
