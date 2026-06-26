@@ -3739,7 +3739,10 @@ select.compact-select {
 }
 
 .event-task-table td {
-  vertical-align: middle;
+  padding: 9px 10px;
+  vertical-align: top;
+  font-size: 13px;
+  line-height: 1.3;
 }
 
 .event-task-table td strong,
@@ -3747,8 +3750,68 @@ select.compact-select {
   display: block;
 }
 
+.event-task-table th {
+  padding: 8px 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.event-task-table th:nth-child(1) {
+  width: 20%;
+}
+
+.event-task-table th:nth-child(2) {
+  width: 14%;
+}
+
+.event-task-table th:nth-child(3) {
+  width: 13%;
+}
+
+.event-task-table th:nth-child(4) {
+  width: 12%;
+}
+
+.event-task-table th:nth-child(5) {
+  width: 16%;
+}
+
+.event-task-table th:nth-child(6) {
+  width: 12%;
+}
+
+.event-task-table th:nth-child(7) {
+  width: 13%;
+}
+
+.event-task-title,
+.event-task-meta {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.event-task-description,
+.event-task-updated {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.event-task-table .input {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
 .event-task-table .event-inline-select {
-  min-width: 150px;
+  width: 100%;
+  min-width: 0;
   padding-right: 42px;
   background-image:
     linear-gradient(var(--line), var(--line)),
@@ -3775,7 +3838,14 @@ select.compact-select {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+}
+
+.event-task-actions .button {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .event-recycle-panel {
@@ -12276,5 +12346,79 @@ a.dashboard-list-row:hover {
 
   .modal-backdrop {
     padding: 8px;
+  }
+}
+
+@media (max-width: 900px) {
+  .event-my-tasks-panel .table-scroll {
+    display: block;
+    overflow: visible;
+  }
+
+  .event-my-tasks-panel .event-task-table {
+    min-width: 0;
+  }
+
+  .event-my-tasks-panel .event-task-table,
+  .event-my-tasks-panel .event-task-table tbody,
+  .event-my-tasks-panel .event-task-table tr,
+  .event-my-tasks-panel .event-task-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .event-my-tasks-panel .event-task-table thead {
+    display: none;
+  }
+
+  .event-my-tasks-panel .event-task-table tbody {
+    display: grid;
+    gap: 10px;
+  }
+
+  .event-my-tasks-panel .event-task-table tr {
+    display: grid;
+    gap: 9px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-xs);
+  }
+
+  .event-my-tasks-panel .event-task-table td {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 8px;
+    align-items: start;
+    padding: 0;
+    font-size: 13px;
+  }
+
+  .event-my-tasks-panel .event-task-table td::before {
+    content: attr(data-label);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 850;
+    line-height: 1.3;
+    text-transform: uppercase;
+  }
+
+  .event-my-tasks-panel .event-task-table td[colspan] {
+    display: block;
+  }
+
+  .event-my-tasks-panel .event-task-table td[colspan]::before {
+    display: none;
+  }
+
+  .event-my-tasks-panel .event-task-table td:last-child {
+    align-items: center;
+  }
+
+  .event-my-tasks-panel .event-task-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 }

@@ -841,28 +841,28 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                   const draftTask = myTaskDrafts[task.id] ?? { status: task.status, comment: "" };
                   return (
                     <tr key={task.id}>
-                      <td>
-                        <strong>{task.title}</strong>
-                        {task.description ? <span className="muted">{task.description}</span> : null}
+                      <td data-label="Task">
+                        <strong className="event-task-title">{task.title}</strong>
+                        {task.description ? <span className="muted event-task-description">{task.description}</span> : null}
                       </td>
-                      <td>
-                        <strong>{task.request.trackingNumber}</strong>
-                        <span className="muted">{task.request.eventName}</span>
+                      <td data-label="Event">
+                        <strong className="event-task-meta">{task.request.trackingNumber}</strong>
+                        <span className="muted event-task-description">{task.request.eventName}</span>
                       </td>
-                      <td>
-                        <strong>{formatDate(task.request.eventDate)}</strong>
-                        <span className="muted">{task.request.startTime ?? "--"} - {task.request.endTime ?? "--"}</span>
+                      <td data-label="Date / Time">
+                        <strong className="event-task-meta">{formatDate(task.request.eventDate)}</strong>
+                        <span className="muted event-task-description">{task.request.startTime ?? "--"} - {task.request.endTime ?? "--"}</span>
                       </td>
-                      <td>
+                      <td data-label="Status">
                         <select className="input compact-select event-inline-select" value={draftTask.status} onChange={(event) => updateMyTaskDraft(task.id, { status: event.target.value as TaskStatus })}>
                           {taskStatuses.map((status) => <option key={status} value={status}>{label(status)}</option>)}
                         </select>
                       </td>
-                      <td>
+                      <td data-label="Update note">
                         <input className="input" placeholder="Optional note..." value={draftTask.comment} onChange={(event) => updateMyTaskDraft(task.id, { comment: event.target.value })} />
                       </td>
-                      <td>{formatDateTime(task.updatedAt)}</td>
-                      <td>
+                      <td data-label="Updated"><span className="event-task-updated">{formatDateTime(task.updatedAt)}</span></td>
+                      <td data-label="Action">
                         <div className="event-task-actions">
                           <button className="button secondary" type="button" onClick={() => openRequest(task.request)}>Open Event</button>
                           <button className="button" type="button" onClick={() => void saveMyTask(task.id)} disabled={busy === `my-task-${task.id}`}>Save</button>
