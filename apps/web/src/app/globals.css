@@ -7813,6 +7813,33 @@ a.dashboard-list-row:hover {
   background: var(--warning);
 }
 
+.dashboard-specialist-trend-chart {
+  gap: 5px;
+  padding: 14px 8px 0;
+  background:
+    linear-gradient(to top, color-mix(in srgb, var(--line) 52%, transparent) 1px, transparent 1px) 0 0 / 100% 25%,
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-subtle) 42%, transparent), transparent 62%);
+}
+
+.dashboard-specialist-trend-chart .dashboard-activity-bars {
+  gap: 3px;
+}
+
+.dashboard-specialist-trend-chart .dashboard-activity-bars span {
+  min-width: 5px;
+  box-shadow: 0 -1px 0 color-mix(in srgb, #ffffff 30%, transparent);
+}
+
+.dashboard-specialist-trend-chart .dashboard-activity-bars .assigned,
+.dashboard-specialist-trend-legend .assigned {
+  background: #b45309;
+}
+
+.dashboard-specialist-trend-chart .dashboard-activity-bars .closed,
+.dashboard-specialist-trend-legend .closed {
+  background: #047857;
+}
+
 .dashboard-chart-legend {
   display: flex;
   flex-wrap: wrap;

@@ -375,7 +375,7 @@ function SpecialistTrendChart({ items }: { items: NonNullable<DashboardStats["sp
       </div>
       {points.length ? (
         <>
-          <div className="dashboard-activity-chart" role="img" aria-label="Assigned and closed tickets by specialist">
+          <div className="dashboard-activity-chart dashboard-specialist-trend-chart" role="img" aria-label="Assigned and closed tickets by specialist">
             {points.map((point, index) => (
               <div className="dashboard-activity-day" key={point.date} title={`${point.label}: ${point.assigned} assigned, ${point.closed} closed`}>
                 <div className="dashboard-activity-bars">
@@ -386,7 +386,7 @@ function SpecialistTrendChart({ items }: { items: NonNullable<DashboardStats["sp
               </div>
             ))}
           </div>
-          <div className="dashboard-chart-legend">
+          <div className="dashboard-chart-legend dashboard-specialist-trend-legend">
             <span>
               <i className="assigned" /> Assigned
             </span>

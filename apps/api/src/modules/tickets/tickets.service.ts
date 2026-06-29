@@ -514,7 +514,15 @@ export class TicketsService {
 
     return rows
       .filter((row) => row.assignedActive > 0 || row.closedLast30Days > 0 || row.awaitingTechnician > 0)
-      .sort((a, b) => b.assignedActive - a.assignedActive || b.awaitingTechnician - a.awaitingTechnician || b.closedLast30Days - a.closedLast30Days)
+      .sort(
+        (a, b) =>
+          b.averageDailyClosed - a.averageDailyClosed ||
+          b.closedLast30Days - a.closedLast30Days ||
+          a.awaitingTechnician - b.awaitingTechnician ||
+          a.assignedActive - b.assignedActive ||
+          b.totalAssigned - a.totalAssigned ||
+          a.name.localeCompare(b.name)
+      )
       .slice(0, 8)
       .map((row) => ({ ...row, teamAverageActive }));
   }
