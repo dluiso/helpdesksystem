@@ -1016,7 +1016,7 @@ select.compact-select {
 
 .device-toolbar-panel {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(170px, 210px) minmax(150px, 180px) minmax(140px, 170px) auto auto;
+  grid-template-columns: minmax(220px, 1.35fr) repeat(3, minmax(132px, 0.75fr)) minmax(218px, auto) 42px;
   gap: 12px;
   align-items: center;
   border-radius: var(--radius-lg);
@@ -1025,7 +1025,13 @@ select.compact-select {
 }
 
 .device-toolbar-panel.has-card-columns {
-  grid-template-columns: minmax(260px, 1fr) minmax(170px, 210px) minmax(150px, 180px) minmax(140px, 170px) auto minmax(118px, 142px) auto;
+  grid-template-columns: minmax(220px, 1.25fr) repeat(3, minmax(132px, 0.7fr)) minmax(218px, auto) minmax(112px, 132px) 42px;
+}
+
+.device-toolbar-panel > .input,
+.device-toolbar-panel > select,
+.device-toolbar-panel .segmented-control {
+  min-width: 0;
 }
 
 .device-page-header {
@@ -1194,8 +1200,9 @@ select.compact-select {
 
 .device-table {
   width: 100%;
-  min-width: 980px;
+  min-width: 860px;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .device-table th {
@@ -1221,22 +1228,22 @@ select.compact-select {
 
 .device-table th:nth-child(2),
 .device-table td:nth-child(2) {
-  width: 14%;
+  width: 15%;
 }
 
 .device-table th:nth-child(3),
 .device-table td:nth-child(3) {
-  width: 36%;
+  width: 32%;
 }
 
 .device-table th:nth-child(4),
 .device-table td:nth-child(4) {
-  width: 10%;
+  width: 9%;
 }
 
 .device-table th:nth-child(5),
 .device-table td:nth-child(5) {
-  width: 22%;
+  width: 26%;
 }
 
 .device-table tbody tr {
@@ -1260,9 +1267,11 @@ select.compact-select {
 
 .device-view-toggle {
   justify-self: end;
+  width: 100%;
 }
 
 .device-view-toggle button {
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1281,7 +1290,13 @@ select.compact-select {
 }
 
 .device-pagination .button-row {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.device-pagination .button-row .compact-select {
+  width: auto;
+  min-width: 116px;
 }
 
 .device-pagination-count {
@@ -1510,12 +1525,12 @@ select.compact-select {
 }
 
 .device-table-action-cell {
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .device-table-action-cell .device-action-row {
   flex-wrap: nowrap;
-  gap: 6px;
+  gap: 5px;
 }
 
 .device-action-row .button.compact {
@@ -1556,10 +1571,19 @@ select.compact-select {
 }
 
 .device-table-action-cell .device-connect-button,
-.device-table-action-cell .device-background-button,
+.device-table-action-cell .device-background-button {
+  min-width: 78px;
+  padding-inline: 8px;
+}
+
 .device-table-action-cell .device-sysinfo-button {
-  min-width: 86px;
-  padding-inline: 9px;
+  width: 34px;
+  min-width: 34px;
+  padding-inline: 0;
+}
+
+.device-table-action-cell .device-sysinfo-button span {
+  display: none;
 }
 
 .device-sysinfo-button {
@@ -10770,6 +10794,7 @@ a.dashboard-list-row:hover {
   .reports-filter-grid,
   .tickets-filter-grid,
   .device-toolbar-panel,
+  .device-toolbar-panel.has-card-columns,
   .event-filter-panel {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -11309,6 +11334,7 @@ a.dashboard-list-row:hover {
   .rmm-settings-grid,
   .rmm-sync-summary,
   .device-toolbar-panel,
+  .device-toolbar-panel.has-card-columns,
   .device-saved-view-panel {
     grid-template-columns: 1fr;
   }

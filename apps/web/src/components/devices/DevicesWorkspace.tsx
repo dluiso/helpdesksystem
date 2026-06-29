@@ -737,15 +737,15 @@ function FavoriteButton({ device, busy, onFavorite }: { device: DeviceRecord; bu
 function DeviceActions({ device, busy, onOpenRemote }: { device: DeviceRecord; busy: string | null; onOpenRemote: (device: DeviceRecord, mode: "control" | "background" | "system") => void }) {
   return (
     <div className="device-action-row">
-      <button className="button primary compact device-connect-button" type="button" onClick={() => onOpenRemote(device, "control")} disabled={busy === `control:${device.id}` || !device.actionUrls.controlUrl}>
+      <button className="button primary compact device-connect-button" type="button" onClick={() => onOpenRemote(device, "control")} disabled={busy === `control:${device.id}` || !device.actionUrls.controlUrl} title="Open remote control" aria-label={`Open remote control for ${device.name}`}>
         <ExternalLink size={14} aria-hidden="true" />
         <span>Connect</span>
       </button>
-      <button className="button secondary compact device-background-button" type="button" onClick={() => onOpenRemote(device, "background")} disabled={busy === `background:${device.id}` || !device.actionUrls.remoteBackgroundUrl}>
+      <button className="button secondary compact device-background-button" type="button" onClick={() => onOpenRemote(device, "background")} disabled={busy === `background:${device.id}` || !device.actionUrls.remoteBackgroundUrl} title="Open remote background" aria-label={`Open remote background for ${device.name}`}>
         <TerminalSquare size={14} aria-hidden="true" />
         <span>Remote BG</span>
       </button>
-      <button className="button secondary compact device-sysinfo-button" type="button" onClick={() => onOpenRemote(device, "system")} disabled={busy === `system:${device.id}` || !device.actionUrls.systemInfoUrl}>
+      <button className="button secondary compact device-sysinfo-button" type="button" onClick={() => onOpenRemote(device, "system")} disabled={busy === `system:${device.id}` || !device.actionUrls.systemInfoUrl} title="Open system information" aria-label={`Open system information for ${device.name}`}>
         <HardDrive size={14} aria-hidden="true" />
         <span>SysInfo</span>
       </button>
