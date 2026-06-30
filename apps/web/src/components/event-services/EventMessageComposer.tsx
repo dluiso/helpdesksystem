@@ -35,7 +35,11 @@ const toolbar = [
 ] as const;
 
 const INLINE_AUTOCOMPLETE_CLASS = "ai-inline-suggestion";
+const AUTOCOMPLETE_MIN_CHARS = 12;
+const AUTOCOMPLETE_DELAY_MS = 450;
+const LIVE_GRAMMAR_MIN_CHARS = 18;
 const LIVE_GRAMMAR_MAX_CHARS = 420;
+const LIVE_GRAMMAR_DELAY_MS = 850;
 
 interface UserOption {
   id: string;
@@ -93,6 +97,7 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
   const [autocompleteDismissedFor, setAutocompleteDismissedFor] = useState("");
   const [grammarSuggestion, setGrammarSuggestion] = useState<{ original: string; corrected: string; sourceText: string; hasSignature: boolean } | null>(null);
   const [grammarDismissedFor, setGrammarDismissedFor] = useState("");
+  const [grammarChecking, setGrammarChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -120,7 +125,7 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
       return;
     }
     const draft = getAutocompleteDraft();
-    if (draft.length < 20 || draft === autocompleteDismissedFor) {
+    if (draft.length < AUTOCOMPLETE_MIN_CHARS || draft === autocompleteDismissedFor) {
       return;
     }
     const requestNumber = autocompleteRequestRef.current + 1;
@@ -136,7 +141,7 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
           setAutocompleteSuggestion(suggestion && !draft.endsWith(suggestion) && showInlineAutocomplete(suggestion) ? suggestion : "");
         })
         .catch(() => setAutocompleteSuggestion(""));
-    }, 350);
+    }, AUTOCOMPLETE_DELAY_MS);
     return () => window.clearTimeout(timeout);
   }, [aiBusy, autocompleteDismissedFor, draftText, preview, requestId, saving]);
 
@@ -148,12 +153,14 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
     const textAfterCursor = normalizeEditorText(getTextAfterCursor());
     const hasSignatureAtRequest = Boolean(signatureTextRef.current && textAfterCursor === signatureTextRef.current);
     const draft = getGrammarDraft(sourceText);
-    if (draft.length < 18 || draft === grammarDismissedFor) {
+    if (draft.length < LIVE_GRAMMAR_MIN_CHARS || draft === grammarDismissedFor) {
+      setGrammarChecking(false);
       return;
     }
     const requestNumber = grammarRequestRef.current + 1;
     const timeout = window.setTimeout(() => {
       grammarRequestRef.current = requestNumber;
+      setGrammarChecking(true);
       apiFetch<{ text: string }>(`/event-services/${requestId}/ai/fix-grammar`, {
         method: "POST",
         body: JSON.stringify({ draft })
@@ -165,8 +172,13 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
             setGrammarSuggestion({ original: draft, corrected, sourceText, hasSignature: hasSignatureAtRequest });
           }
         })
-        .catch(() => undefined);
-    }, 1100);
+        .catch(() => undefined)
+        .finally(() => {
+          if (grammarRequestRef.current === requestNumber) {
+            setGrammarChecking(false);
+          }
+        });
+    }, LIVE_GRAMMAR_DELAY_MS);
     return () => window.clearTimeout(timeout);
   }, [aiBusy, draftText, grammarDismissedFor, grammarSuggestion, preview, requestId, saving]);
 
@@ -247,6 +259,7 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
     setDraftText(getEditorText());
     setAutocompleteSuggestion("");
     setGrammarSuggestion(null);
+    setGrammarChecking(false);
   }
 
   function getInlineAutocompleteNode() {
@@ -271,6 +284,7 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
   function clearGrammarSuggestion() {
     grammarRequestRef.current += 1;
     setGrammarSuggestion(null);
+    setGrammarChecking(false);
   }
 
   function canInsertInlineAutocomplete() {
@@ -340,6 +354,7 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
     setDraftText(getEditorText());
     setGrammarDismissedFor(grammarSuggestion.corrected);
     setGrammarSuggestion(null);
+    setGrammarChecking(false);
   }
 
   function dismissGrammarSuggestion() {
@@ -347,6 +362,7 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
       setGrammarDismissedFor(grammarSuggestion.original);
     }
     setGrammarSuggestion(null);
+    setGrammarChecking(false);
   }
 
   function handleEditorKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -375,6 +391,7 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
   function handlePaste(event: ClipboardEvent<HTMLDivElement>) {
     removeInlineAutocomplete();
     setAutocompleteSuggestion("");
+    clearGrammarSuggestion();
     const images = Array.from(event.clipboardData.items).filter((item) => item.type.startsWith("image/"));
     if (images.length === 0) return;
     event.preventDefault();
@@ -448,6 +465,7 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
   async function runAiAction(action: "paraphrase" | "improve-reply" | "fix-grammar" | "suggest-reply") {
     if (!requestId || !editorRef.current) return;
     clearAutocomplete();
+    clearGrammarSuggestion();
     const selectedText = action === "paraphrase" || action === "fix-grammar" ? getSelectedText() : "";
     const draft = selectedText || getEditorText();
     if (action !== "suggest-reply" && !draft) {
@@ -539,7 +557,7 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
         <button className="icon-button" type="button" title="Attach" aria-label="Attach">
           <Paperclip size={17} aria-hidden="true" />
         </button>
-        <button className="icon-button" type="button" title="Preview" aria-label="Preview" onClick={() => { clearAutocomplete(); setPreview((value) => !value); }}>
+        <button className="icon-button" type="button" title="Preview" aria-label="Preview" onClick={() => { clearAutocomplete(); clearGrammarSuggestion(); setPreview((value) => !value); }}>
           <Eye size={17} aria-hidden="true" />
         </button>
         <button className="button secondary compact-button" type="button" onClick={() => runAiAction("paraphrase")} disabled={Boolean(aiBusy)}>
@@ -565,6 +583,7 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
         autoCorrect="on"
         contentEditable={!preview}
         dir="ltr"
+        lang="en-US"
         spellCheck
         suppressContentEditableWarning
         ref={editorRef}
@@ -583,6 +602,10 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
             <button className="button secondary small-button" type="button" onClick={dismissGrammarSuggestion}>Dismiss</button>
             <button className="button small-button" type="button" onClick={applyGrammarSuggestion}>Apply</button>
           </div>
+        </div>
+      ) : grammarChecking ? (
+        <div className="grammar-suggestion grammar-suggestion-checking">
+          <div><strong>Checking grammar</strong><span>Reviewing the current sentence...</span></div>
         </div>
       ) : null}
       {mode === "public" ? (

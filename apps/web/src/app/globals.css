@@ -2272,6 +2272,11 @@ select.compact-select {
   color: var(--muted);
 }
 
+.grammar-suggestion-checking {
+  color: var(--muted);
+  background: var(--surface-raised);
+}
+
 .info-banner {
   margin-bottom: 16px;
   padding: 12px 14px;
