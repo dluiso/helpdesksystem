@@ -116,7 +116,14 @@ export class SystemHealthService implements OnModuleInit, OnModuleDestroy {
     }
 
     const settings = await this.prisma.systemSetting.findUnique({
-      where: { organizationId }
+      where: { organizationId },
+      select: {
+        supportPortalEnabled: true,
+        aiAssistantEnabled: true,
+        defaultTimezone: true,
+        dateFormat: true,
+        timeFormat: true
+      }
     });
 
     const components = await Promise.all([
