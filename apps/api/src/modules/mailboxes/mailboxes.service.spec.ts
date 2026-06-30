@@ -11,6 +11,10 @@ const user = {
 };
 
 describe("MailboxesService", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it("lists mailboxes only for the current organization", async () => {
     const prisma = {
       mailbox: {
@@ -33,6 +37,62 @@ describe("MailboxesService", () => {
       where: { organizationId: "org-1" },
       orderBy: { emailAddress: "asc" }
     });
+  });
+
+  it("defers automatic sync outside configured operational hours without calling the provider", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-06-30T23:30:00.000Z"));
+    const prisma = {
+      mailbox: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "mailbox-1",
+            organizationId: "org-1",
+            emailAddress: "support@example.org",
+            autoSyncIntervalSeconds: 60,
+            nextAutoSyncAt: new Date("2026-06-30T23:00:00.000Z")
+          }
+        ]),
+        update: jest.fn().mockResolvedValue({})
+      },
+      systemSetting: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            organizationId: "org-1",
+            emailOperationalHoursEnabled: true,
+            emailOperationalTimezone: "America/Chicago",
+            emailOperationalDays: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
+            emailOperationalStartTime: "06:00",
+            emailOperationalEndTime: "17:00",
+            emailSkipUsFederalHolidays: false,
+            emailCustomClosedDates: []
+          }
+        ])
+      }
+    };
+    const mockMailProvider = {
+      syncInboundMessages: jest.fn()
+    };
+    const service = new MailboxesService(
+      prisma as never,
+      { get: jest.fn().mockReturnValue("mock") } as never,
+      { createFromInboundEmail: jest.fn() } as never,
+      { createInboundEmailAttachment: jest.fn() } as never,
+      { findBlockForSender: jest.fn(), logBlockedInboundEmail: jest.fn() } as never,
+      mockMailProvider as never,
+      {} as never
+    );
+
+    await (service as unknown as { runDueAutoSyncs: () => Promise<void> }).runDueAutoSyncs();
+
+    expect(mockMailProvider.syncInboundMessages).not.toHaveBeenCalled();
+    expect(prisma.mailbox.update).toHaveBeenCalledWith({
+      where: { id: "mailbox-1" },
+      data: {
+        nextAutoSyncAt: expect.any(Date),
+        autoSyncLockedAt: null
+      }
+    });
+    expect(prisma.mailbox.update.mock.calls[0][0].data.nextAutoSyncAt.getTime()).toBeGreaterThan(Date.now());
   });
 
   it("syncs inbound mock messages into tickets and stores the next cursor", async () => {

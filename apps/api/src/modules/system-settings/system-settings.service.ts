@@ -9,6 +9,10 @@ import { UpdateSecuritySettingsDto } from "./dto/update-security-settings.dto";
 
 const BRANDING_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/x-icon", "image/vnd.microsoft.icon"]);
 const BRANDING_MAX_BYTES = 2 * 1024 * 1024;
+const EMAIL_OPERATIONAL_DAYS = new Set(["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]);
+const DEFAULT_EMAIL_OPERATIONAL_DAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"];
+const TIME_OF_DAY_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 @Injectable()
 export class SystemSettingsService {
@@ -206,7 +210,14 @@ export class SystemSettingsService {
         defaultLanguage: input.defaultLanguage.trim() || "en",
         defaultLandingPage: input.defaultLandingPage,
         dateFormat: input.dateFormat,
-        timeFormat: input.timeFormat
+        timeFormat: input.timeFormat,
+        emailOperationalHoursEnabled: input.emailOperationalHoursEnabled ?? false,
+        emailOperationalTimezone: this.normalizedTimezone(input.emailOperationalTimezone, input.defaultTimezone),
+        emailOperationalDays: this.normalizedOperationalDays(input.emailOperationalDays),
+        emailOperationalStartTime: this.normalizedTimeOfDay(input.emailOperationalStartTime, "06:00"),
+        emailOperationalEndTime: this.normalizedTimeOfDay(input.emailOperationalEndTime, "17:00"),
+        emailSkipUsFederalHolidays: input.emailSkipUsFederalHolidays ?? false,
+        emailCustomClosedDates: this.normalizedClosedDates(input.emailCustomClosedDates)
       }
     });
 
@@ -514,6 +525,13 @@ export class SystemSettingsService {
     defaultLandingPage: string;
     dateFormat: string;
     timeFormat: string;
+    emailOperationalHoursEnabled: boolean;
+    emailOperationalTimezone: string;
+    emailOperationalDays: string[];
+    emailOperationalStartTime: string;
+    emailOperationalEndTime: string;
+    emailSkipUsFederalHolidays: boolean;
+    emailCustomClosedDates: string[];
   }) {
     return {
       applicationName: settings.applicationName,
@@ -583,7 +601,14 @@ export class SystemSettingsService {
       defaultLanguage: settings.defaultLanguage,
       defaultLandingPage: settings.defaultLandingPage,
       dateFormat: settings.dateFormat,
-      timeFormat: settings.timeFormat
+      timeFormat: settings.timeFormat,
+      emailOperationalHoursEnabled: settings.emailOperationalHoursEnabled,
+      emailOperationalTimezone: settings.emailOperationalTimezone,
+      emailOperationalDays: settings.emailOperationalDays,
+      emailOperationalStartTime: settings.emailOperationalStartTime,
+      emailOperationalEndTime: settings.emailOperationalEndTime,
+      emailSkipUsFederalHolidays: settings.emailSkipUsFederalHolidays,
+      emailCustomClosedDates: settings.emailCustomClosedDates
     };
   }
 
@@ -618,6 +643,38 @@ export class SystemSettingsService {
   private optionalString(value: string | null | undefined) {
     const trimmed = value?.trim();
     return trimmed || null;
+  }
+
+  private normalizedTimezone(value: string | null | undefined, fallback: string) {
+    const timezone = value?.trim() || fallback?.trim() || "America/Chicago";
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date());
+      return timezone;
+    } catch {
+      return "America/Chicago";
+    }
+  }
+
+  private normalizedOperationalDays(days: string[] | undefined) {
+    const normalized = (days ?? DEFAULT_EMAIL_OPERATIONAL_DAYS)
+      .map((day) => day.trim().toUpperCase())
+      .filter((day, index, values) => EMAIL_OPERATIONAL_DAYS.has(day) && values.indexOf(day) === index);
+    return normalized.length > 0 ? normalized : DEFAULT_EMAIL_OPERATIONAL_DAYS;
+  }
+
+  private normalizedTimeOfDay(value: string | undefined, fallback: string) {
+    const trimmed = value?.trim();
+    return trimmed && TIME_OF_DAY_PATTERN.test(trimmed) ? trimmed : fallback;
+  }
+
+  private normalizedClosedDates(dates: string[] | undefined) {
+    return Array.from(
+      new Set(
+        (dates ?? [])
+          .map((date) => date.trim())
+          .filter((date) => ISO_DATE_PATTERN.test(date))
+      )
+    ).sort();
   }
 
   private booleanEnv(key: string, fallback: boolean) {

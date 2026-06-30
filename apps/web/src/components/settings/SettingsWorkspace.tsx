@@ -351,6 +351,13 @@ interface GeneralSettings {
   defaultLandingPage: string;
   dateFormat: string;
   timeFormat: "12h" | "24h";
+  emailOperationalHoursEnabled: boolean;
+  emailOperationalTimezone: string;
+  emailOperationalDays: string[];
+  emailOperationalStartTime: string;
+  emailOperationalEndTime: string;
+  emailSkipUsFederalHolidays: boolean;
+  emailCustomClosedDates: string[];
 }
 
 interface SecuritySettings {
@@ -565,10 +572,21 @@ const GENERAL_TABS = [
   { key: "assets", label: "Assets" },
   { key: "app", label: "App Branding" },
   { key: "login", label: "Login Branding" },
-  { key: "defaults", label: "Defaults" }
+  { key: "defaults", label: "Defaults" },
+  { key: "mailSync", label: "Mail Sync" }
 ] as const;
 
 type GeneralTab = (typeof GENERAL_TABS)[number]["key"];
+
+const EMAIL_OPERATIONAL_DAY_OPTIONS = [
+  { key: "MONDAY", label: "Mon" },
+  { key: "TUESDAY", label: "Tue" },
+  { key: "WEDNESDAY", label: "Wed" },
+  { key: "THURSDAY", label: "Thu" },
+  { key: "FRIDAY", label: "Fri" },
+  { key: "SATURDAY", label: "Sat" },
+  { key: "SUNDAY", label: "Sun" }
+] as const;
 
 const SECURITY_TABS = [
   { key: "access", label: "Access" },
@@ -648,7 +666,14 @@ const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   defaultLanguage: "en",
   defaultLandingPage: "/dashboard",
   dateFormat: "MMM dd, yyyy",
-  timeFormat: "12h"
+  timeFormat: "12h",
+  emailOperationalHoursEnabled: false,
+  emailOperationalTimezone: "America/Chicago",
+  emailOperationalDays: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
+  emailOperationalStartTime: "06:00",
+  emailOperationalEndTime: "17:00",
+  emailSkipUsFederalHolidays: false,
+  emailCustomClosedDates: []
 };
 
 const DEFAULT_SECURITY_SETTINGS: SecuritySettings = {
@@ -1078,7 +1103,14 @@ export function SettingsWorkspace() {
       defaultLanguage: settings.defaultLanguage,
       defaultLandingPage: settings.defaultLandingPage,
       dateFormat: settings.dateFormat,
-      timeFormat: settings.timeFormat
+      timeFormat: settings.timeFormat,
+      emailOperationalHoursEnabled: settings.emailOperationalHoursEnabled,
+      emailOperationalTimezone: settings.emailOperationalTimezone,
+      emailOperationalDays: settings.emailOperationalDays,
+      emailOperationalStartTime: settings.emailOperationalStartTime,
+      emailOperationalEndTime: settings.emailOperationalEndTime,
+      emailSkipUsFederalHolidays: settings.emailSkipUsFederalHolidays,
+      emailCustomClosedDates: settings.emailCustomClosedDates
     };
   }
 
@@ -2896,6 +2928,110 @@ export function SettingsWorkspace() {
                     <span>Support button URL</span>
                     <input className="input" placeholder="https://..." value={generalDraft.supportButtonUrl ?? ""} onChange={(event) => setGeneralDraft((current) => ({ ...current, supportButtonUrl: event.target.value }))} />
                   </label>
+                </div>
+              </div>
+              ) : null}
+
+              {generalTab === "mailSync" ? (
+              <div className="panel nested-panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>Email Operational Hours</h2>
+                    <p className="muted">Pause automatic inbound mailbox sync outside approved working windows.</p>
+                  </div>
+                  <span className={`status-pill ${generalDraft.emailOperationalHoursEnabled ? "success" : "muted-pill"}`}>
+                    {generalDraft.emailOperationalHoursEnabled ? "Enabled" : "Disabled"}
+                  </span>
+                </div>
+                <div className="email-operational-summary">
+                  Automatic sync skips Graph calls while closed and resumes at the next allowed minute. Manual mailbox Sync still runs when an admin starts it.
+                </div>
+                <div className="client-form-grid settings-section">
+                  <label className="checkbox-row full-span">
+                    <input
+                      type="checkbox"
+                      checked={generalDraft.emailOperationalHoursEnabled}
+                      onChange={(event) => setGeneralDraft((current) => ({ ...current, emailOperationalHoursEnabled: event.target.checked }))}
+                    />
+                    Pause automatic inbound email sync outside operational hours
+                  </label>
+                  <label className="field">
+                    <span>Operational timezone</span>
+                    <input
+                      className="input"
+                      value={generalDraft.emailOperationalTimezone}
+                      placeholder={generalDraft.defaultTimezone}
+                      onChange={(event) => setGeneralDraft((current) => ({ ...current, emailOperationalTimezone: event.target.value }))}
+                    />
+                  </label>
+                  <div className="field">
+                    <span>Operational days</span>
+                    <div className="email-operational-days">
+                      {EMAIL_OPERATIONAL_DAY_OPTIONS.map((day) => (
+                        <label key={day.key}>
+                          <input
+                            type="checkbox"
+                            checked={generalDraft.emailOperationalDays.includes(day.key)}
+                            onChange={(event) =>
+                              setGeneralDraft((current) => ({
+                                ...current,
+                                emailOperationalDays: event.target.checked
+                                  ? [...current.emailOperationalDays, day.key]
+                                  : current.emailOperationalDays.filter((selectedDay) => selectedDay !== day.key)
+                              }))
+                            }
+                          />
+                          <span>{day.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <label className="field">
+                    <span>Start time</span>
+                    <input
+                      className="input"
+                      type="time"
+                      value={generalDraft.emailOperationalStartTime}
+                      onChange={(event) => setGeneralDraft((current) => ({ ...current, emailOperationalStartTime: event.target.value }))}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>End time</span>
+                    <input
+                      className="input"
+                      type="time"
+                      value={generalDraft.emailOperationalEndTime}
+                      onChange={(event) => setGeneralDraft((current) => ({ ...current, emailOperationalEndTime: event.target.value }))}
+                    />
+                  </label>
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={generalDraft.emailSkipUsFederalHolidays}
+                      onChange={(event) => setGeneralDraft((current) => ({ ...current, emailSkipUsFederalHolidays: event.target.checked }))}
+                    />
+                    Skip US federal holidays
+                  </label>
+                  <label className="field full-span">
+                    <span>Additional closed dates</span>
+                    <input
+                      className="input"
+                      placeholder="2026-07-03, 2026-12-24"
+                      value={generalDraft.emailCustomClosedDates.join(", ")}
+                      onChange={(event) =>
+                        setGeneralDraft((current) => ({
+                          ...current,
+                          emailCustomClosedDates: event.target.value
+                            .split(",")
+                            .map((date) => date.trim())
+                            .filter(Boolean)
+                        }))
+                      }
+                    />
+                  </label>
+                  <div className="field-help full-span">
+                    Phase 1 protects automatic inbound sync and email-triggered notifications by not fetching new messages while closed. The existing mailbox fetch date remains available for manual backfill preparation.
+                  </div>
                 </div>
               </div>
               ) : null}

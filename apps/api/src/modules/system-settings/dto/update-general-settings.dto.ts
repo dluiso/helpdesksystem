@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { IsBoolean, IsEmail, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
+import { IsArray, IsBoolean, IsEmail, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 
 export class UpdateGeneralSettingsDto {
   @IsString()
@@ -291,4 +291,37 @@ export class UpdateGeneralSettingsDto {
 
   @IsIn(["12h", "24h"])
   timeFormat!: "12h" | "24h";
+
+  @IsOptional()
+  @IsBoolean()
+  emailOperationalHoursEnabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  emailOperationalTimezone?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  emailOperationalDays?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(5)
+  emailOperationalStartTime?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(5)
+  emailOperationalEndTime?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  emailSkipUsFederalHolidays?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  emailCustomClosedDates?: string[];
 }

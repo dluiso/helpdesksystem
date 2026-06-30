@@ -28,6 +28,36 @@ interface SyncMailboxOptions {
   broadAttachmentBackfill?: boolean;
 }
 
+interface EmailOperationalSchedule {
+  enabled: boolean;
+  timezone: string;
+  days: string[];
+  startTime: string;
+  endTime: string;
+  skipUsFederalHolidays: boolean;
+  customClosedDates: string[];
+}
+
+const DEFAULT_EMAIL_OPERATIONAL_SCHEDULE: EmailOperationalSchedule = {
+  enabled: false,
+  timezone: "America/Chicago",
+  days: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
+  startTime: "06:00",
+  endTime: "17:00",
+  skipUsFederalHolidays: false,
+  customClosedDates: []
+};
+
+const WEEKDAY_KEYS: Record<string, string> = {
+  Sunday: "SUNDAY",
+  Monday: "MONDAY",
+  Tuesday: "TUESDAY",
+  Wednesday: "WEDNESDAY",
+  Thursday: "THURSDAY",
+  Friday: "FRIDAY",
+  Saturday: "SATURDAY"
+};
+
 @Injectable()
 export class MailboxesService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MailboxesService.name);
@@ -122,6 +152,7 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
         take: 10,
         orderBy: { nextAutoSyncAt: "asc" }
       });
+      const schedulesByOrganizationId = await this.getEmailOperationalSchedules(mailboxes);
 
       await Promise.all(
         mailboxes.map(async (mailbox) => {
@@ -131,6 +162,18 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
 
           this.runningAutoSyncs.add(mailbox.id);
           try {
+            const nextAllowedSyncAt = this.nextAllowedEmailSyncAt(now, schedulesByOrganizationId.get(mailbox.organizationId));
+            if (nextAllowedSyncAt.getTime() > now.getTime()) {
+              await this.prisma.mailbox.update({
+                where: { id: mailbox.id },
+                data: {
+                  nextAutoSyncAt: nextAllowedSyncAt,
+                  autoSyncLockedAt: null
+                }
+              });
+              return;
+            }
+
             await this.prisma.mailbox.update({
               where: { id: mailbox.id },
               data: { autoSyncLockedAt: new Date() }
@@ -154,6 +197,162 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       this.logger.warn(`Mailbox auto sync scan failed: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
+  }
+
+  private async getEmailOperationalSchedules(mailboxes: Mailbox[]) {
+    const organizationIds = Array.from(new Set(mailboxes.map((mailbox) => mailbox.organizationId)));
+    if (organizationIds.length === 0) {
+      return new Map<string, EmailOperationalSchedule>();
+    }
+
+    const settingsRows = await this.prisma.systemSetting.findMany({
+      where: { organizationId: { in: organizationIds } },
+      select: {
+        organizationId: true,
+        emailOperationalHoursEnabled: true,
+        emailOperationalTimezone: true,
+        emailOperationalDays: true,
+        emailOperationalStartTime: true,
+        emailOperationalEndTime: true,
+        emailSkipUsFederalHolidays: true,
+        emailCustomClosedDates: true
+      }
+    });
+
+    return new Map(
+      settingsRows.map((settings) => [
+        settings.organizationId,
+        {
+          enabled: settings.emailOperationalHoursEnabled,
+          timezone: settings.emailOperationalTimezone || DEFAULT_EMAIL_OPERATIONAL_SCHEDULE.timezone,
+          days: settings.emailOperationalDays.length > 0 ? settings.emailOperationalDays : DEFAULT_EMAIL_OPERATIONAL_SCHEDULE.days,
+          startTime: settings.emailOperationalStartTime || DEFAULT_EMAIL_OPERATIONAL_SCHEDULE.startTime,
+          endTime: settings.emailOperationalEndTime || DEFAULT_EMAIL_OPERATIONAL_SCHEDULE.endTime,
+          skipUsFederalHolidays: settings.emailSkipUsFederalHolidays,
+          customClosedDates: settings.emailCustomClosedDates
+        }
+      ])
+    );
+  }
+
+  private nextAllowedEmailSyncAt(now: Date, schedule = DEFAULT_EMAIL_OPERATIONAL_SCHEDULE) {
+    if (!schedule.enabled || this.isEmailSyncAllowedAt(now, schedule)) {
+      return now;
+    }
+
+    for (let offsetMinutes = 1; offsetMinutes <= 370 * 24 * 60; offsetMinutes += 1) {
+      const candidate = new Date(now.getTime() + offsetMinutes * 60_000);
+      if (this.isEmailSyncAllowedAt(candidate, schedule)) {
+        return candidate;
+      }
+    }
+
+    return new Date(now.getTime() + 60 * 60_000);
+  }
+
+  private isEmailSyncAllowedAt(date: Date, schedule: EmailOperationalSchedule) {
+    const parts = this.getZonedParts(date, schedule.timezone);
+    const closedDates = new Set(schedule.customClosedDates);
+    if (!schedule.days.includes(parts.weekday) || closedDates.has(parts.dateKey)) {
+      return false;
+    }
+    if (schedule.skipUsFederalHolidays && this.isUsFederalHoliday(parts.dateKey)) {
+      return false;
+    }
+
+    const minutes = parts.hour * 60 + parts.minute;
+    const start = this.timeToMinutes(schedule.startTime, DEFAULT_EMAIL_OPERATIONAL_SCHEDULE.startTime);
+    const end = this.timeToMinutes(schedule.endTime, DEFAULT_EMAIL_OPERATIONAL_SCHEDULE.endTime);
+    if (start === end) {
+      return true;
+    }
+    return start <= end ? minutes >= start && minutes < end : minutes >= start || minutes < end;
+  }
+
+  private getZonedParts(date: Date, timezone: string): { weekday: string; dateKey: string; hour: number; minute: number } {
+    try {
+      const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: timezone,
+        weekday: "long",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      });
+      const values = Object.fromEntries(formatter.formatToParts(date).map((part) => [part.type, part.value]));
+      const hour = Number(values.hour === "24" ? "0" : values.hour);
+      return {
+        weekday: WEEKDAY_KEYS[values.weekday] ?? values.weekday?.toUpperCase() ?? "MONDAY",
+        dateKey: `${values.year}-${values.month}-${values.day}`,
+        hour,
+        minute: Number(values.minute)
+      };
+    } catch {
+      if (timezone !== DEFAULT_EMAIL_OPERATIONAL_SCHEDULE.timezone) {
+        return this.getZonedParts(date, DEFAULT_EMAIL_OPERATIONAL_SCHEDULE.timezone);
+      }
+      throw new Error("Invalid email operational timezone.");
+    }
+  }
+
+  private timeToMinutes(value: string, fallback: string) {
+    const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value) ?? /^([01]\d|2[0-3]):([0-5]\d)$/.exec(fallback);
+    return match ? Number(match[1]) * 60 + Number(match[2]) : 0;
+  }
+
+  private isUsFederalHoliday(dateKey: string) {
+    const year = Number(dateKey.slice(0, 4));
+    return [year - 1, year, year + 1].some((holidayYear) => this.usFederalHolidayKeys(holidayYear).has(dateKey));
+  }
+
+  private usFederalHolidayKeys(year: number) {
+    const keys = new Set<string>();
+    const add = (monthIndex: number, day: number, observed = true) => {
+      keys.add(this.utcDateKey(year, monthIndex, day));
+      if (observed) {
+        keys.add(this.observedDateKey(year, monthIndex, day));
+      }
+    };
+
+    add(0, 1);
+    keys.add(this.utcDateKey(year, 0, this.nthWeekdayOfMonth(year, 0, 1, 3)));
+    keys.add(this.utcDateKey(year, 1, this.nthWeekdayOfMonth(year, 1, 1, 3)));
+    keys.add(this.utcDateKey(year, 4, this.lastWeekdayOfMonth(year, 4, 1)));
+    add(5, 19);
+    add(6, 4);
+    keys.add(this.utcDateKey(year, 8, this.nthWeekdayOfMonth(year, 8, 1, 1)));
+    keys.add(this.utcDateKey(year, 9, this.nthWeekdayOfMonth(year, 9, 1, 2)));
+    add(10, 11);
+    keys.add(this.utcDateKey(year, 10, this.nthWeekdayOfMonth(year, 10, 4, 4)));
+    add(11, 25);
+
+    return keys;
+  }
+
+  private nthWeekdayOfMonth(year: number, monthIndex: number, weekday: number, occurrence: number) {
+    const firstDay = new Date(Date.UTC(year, monthIndex, 1)).getUTCDay();
+    const offset = (weekday - firstDay + 7) % 7;
+    return 1 + offset + (occurrence - 1) * 7;
+  }
+
+  private lastWeekdayOfMonth(year: number, monthIndex: number, weekday: number) {
+    const lastDate = new Date(Date.UTC(year, monthIndex + 1, 0));
+    const offset = (lastDate.getUTCDay() - weekday + 7) % 7;
+    return lastDate.getUTCDate() - offset;
+  }
+
+  private observedDateKey(year: number, monthIndex: number, day: number) {
+    const holiday = new Date(Date.UTC(year, monthIndex, day));
+    const observed = new Date(holiday);
+    if (holiday.getUTCDay() === 6) observed.setUTCDate(holiday.getUTCDate() - 1);
+    if (holiday.getUTCDay() === 0) observed.setUTCDate(holiday.getUTCDate() + 1);
+    return observed.toISOString().slice(0, 10);
+  }
+
+  private utcDateKey(year: number, monthIndex: number, day: number) {
+    return new Date(Date.UTC(year, monthIndex, day)).toISOString().slice(0, 10);
   }
 
   private async syncMailbox(mailbox: Mailbox, options: SyncMailboxOptions = {}): Promise<SyncMailboxResult> {

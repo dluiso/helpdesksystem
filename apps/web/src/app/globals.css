@@ -5494,6 +5494,42 @@ select.public-event-input[multiple] {
   border-top: 1px solid var(--line);
 }
 
+.email-operational-summary {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.email-operational-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.email-operational-days label {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.email-operational-days label:has(input:checked) {
+  border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--line));
+  background: var(--surface-selected);
+  color: var(--brand-primary);
+}
+
 .settings-page {
   display: grid;
   gap: 14px;
