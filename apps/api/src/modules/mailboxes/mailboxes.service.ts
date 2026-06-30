@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Mailbox, MessageDirection, MessageVisibility } from "@prisma/client";
 import { AuthenticatedUser } from "../auth/auth.types";
@@ -26,6 +26,8 @@ export interface SyncMailboxResult {
 
 interface SyncMailboxOptions {
   broadAttachmentBackfill?: boolean;
+  initialSyncFromOverride?: Date | null;
+  preserveSyncState?: boolean;
 }
 
 interface EmailOperationalSchedule {
@@ -125,8 +127,6 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
             : input.autoSyncIntervalSeconds
               ? new Date(Date.now() + input.autoSyncIntervalSeconds * 1000)
               : undefined,
-        initialSyncFrom: input.initialSyncFrom === undefined ? undefined : input.initialSyncFrom ? new Date(input.initialSyncFrom) : null,
-        lastSyncCursor: input.initialSyncFrom === undefined ? undefined : null,
         lastSyncError: null
       }
     });
@@ -136,6 +136,29 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
     const mailbox = await this.getMailboxForUser(mailboxId, user);
     const result = await this.syncMailbox(mailbox);
     this.scheduleBroadAttachmentBackfill(mailbox);
+    return result;
+  }
+
+  async backfillInbound(mailboxId: string, initialSyncFrom: string, user: AuthenticatedUser): Promise<SyncMailboxResult> {
+    const mailbox = await this.getMailboxForUser(mailboxId, user);
+    const backfillFrom = new Date(initialSyncFrom);
+    if (!initialSyncFrom || Number.isNaN(backfillFrom.getTime())) {
+      throw new BadRequestException("A valid backfill start date is required.");
+    }
+
+    const result = await this.syncMailbox(mailbox, {
+      initialSyncFromOverride: backfillFrom,
+      preserveSyncState: true
+    });
+
+    await this.prisma.mailbox.update({
+      where: { id: mailbox.id },
+      data: {
+        initialSyncFrom: backfillFrom,
+        lastSyncError: null
+      }
+    });
+
     return result;
   }
 
@@ -363,8 +386,8 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
       publicEmailAddress: mailbox.publicEmailAddress ?? mailbox.emailAddress,
       connectionMode: mailbox.connectionMode,
       preserveOriginalSenderHeaders: mailbox.preserveOriginalSenderHeaders,
-      lastSyncCursor: mailbox.lastSyncCursor,
-      initialSyncFrom: mailbox.initialSyncFrom,
+      lastSyncCursor: options.initialSyncFromOverride ? null : mailbox.lastSyncCursor,
+      initialSyncFrom: options.initialSyncFromOverride ?? mailbox.initialSyncFrom,
       tenantId: mailbox.tenantId,
       microsoftClientId: mailbox.microsoftClientId,
       encryptedClientSecretReference: mailbox.encryptedClientSecretReference
@@ -496,16 +519,18 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
     attachmentBackfillFailures += backfill.failed;
     attachmentBackfillErrors.push(...backfill.errors);
 
-    await this.prisma.mailbox.update({
-      where: { id: mailbox.id },
-      data: {
-        ...(syncResult.nextSyncCursor !== undefined ? { lastSyncCursor: syncResult.nextSyncCursor } : {}),
-        lastSyncedAt: new Date(),
-        lastSyncError: null,
-        nextAutoSyncAt: mailbox.autoSyncEnabled && mailbox.autoSyncIntervalSeconds ? new Date(Date.now() + mailbox.autoSyncIntervalSeconds * 1000) : mailbox.nextAutoSyncAt,
-        autoSyncLockedAt: null
-      }
-    });
+    if (!options.preserveSyncState) {
+      await this.prisma.mailbox.update({
+        where: { id: mailbox.id },
+        data: {
+          ...(syncResult.nextSyncCursor !== undefined ? { lastSyncCursor: syncResult.nextSyncCursor } : {}),
+          lastSyncedAt: new Date(),
+          lastSyncError: null,
+          nextAutoSyncAt: mailbox.autoSyncEnabled && mailbox.autoSyncIntervalSeconds ? new Date(Date.now() + mailbox.autoSyncIntervalSeconds * 1000) : mailbox.nextAutoSyncAt,
+          autoSyncLockedAt: null
+        }
+      });
+    }
 
     return {
       mailboxId: mailbox.id,

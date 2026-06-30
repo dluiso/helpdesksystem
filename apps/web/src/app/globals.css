@@ -5504,6 +5504,16 @@ select.public-event-input[multiple] {
   line-height: 1.45;
 }
 
+.email-operational-summary strong,
+.email-operational-summary span {
+  display: block;
+}
+
+.email-operational-summary strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
 .email-operational-days {
   display: flex;
   flex-wrap: wrap;
@@ -6766,6 +6776,14 @@ select.public-event-input[multiple] {
   overflow-wrap: anywhere;
 }
 
+.mailbox-sync-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .settings-page .mailbox-form-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
@@ -6780,6 +6798,11 @@ select.public-event-input[multiple] {
   grid-column: 1 / -1;
   color: var(--text-muted);
   font-size: 13px;
+}
+
+.mailbox-operations-panel {
+  display: grid;
+  gap: 10px;
 }
 
 .stack-row {

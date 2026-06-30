@@ -4,6 +4,7 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
 import { RequirePermissions } from "../permissions/decorators/require-permissions.decorator";
 import { PermissionsGuard } from "../permissions/guards/permissions.guard";
+import { RunMailboxBackfillDto } from "./dto/run-mailbox-backfill.dto";
 import { UpdateMailboxDto } from "./dto/update-mailbox.dto";
 import { MailboxesService } from "./mailboxes.service";
 
@@ -28,5 +29,11 @@ export class MailboxesController {
   @RequirePermissions("mailboxes.update")
   syncInbound(@Param("mailboxId") mailboxId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.mailboxesService.syncInbound(mailboxId, user);
+  }
+
+  @Post(":mailboxId/backfill")
+  @RequirePermissions("mailboxes.update")
+  backfillInbound(@Param("mailboxId") mailboxId: string, @Body() body: RunMailboxBackfillDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.mailboxesService.backfillInbound(mailboxId, body.initialSyncFrom, user);
   }
 }

@@ -708,6 +708,120 @@ function normalizeSyncIntervalSeconds(value: string, unit: "seconds" | "minutes"
   return Math.min(86400, Math.max(30, seconds));
 }
 
+function formatDateTime(value: string | null) {
+  return value ? new Date(value).toLocaleString() : "Not scheduled";
+}
+
+function minutesFromTime(value: string) {
+  const [hours, minutes] = value.split(":").map(Number);
+  return (Number.isFinite(hours) ? hours : 0) * 60 + (Number.isFinite(minutes) ? minutes : 0);
+}
+
+function getEmailOperationalParts(settings: GeneralSettings) {
+  try {
+    const values = Object.fromEntries(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: settings.emailOperationalTimezone || settings.defaultTimezone || "America/Chicago",
+        weekday: "long",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      })
+        .formatToParts(new Date())
+        .map((part) => [part.type, part.value])
+    );
+    const weekday = String(values.weekday ?? "").toUpperCase();
+    return {
+      weekday,
+      dateKey: `${values.year}-${values.month}-${values.day}`,
+      minutes: Number(values.hour === "24" ? "0" : values.hour) * 60 + Number(values.minute)
+    };
+  } catch {
+    return null;
+  }
+}
+
+function observedDateKey(year: number, monthIndex: number, day: number) {
+  const holiday = new Date(Date.UTC(year, monthIndex, day));
+  const observed = new Date(holiday);
+  if (holiday.getUTCDay() === 6) observed.setUTCDate(holiday.getUTCDate() - 1);
+  if (holiday.getUTCDay() === 0) observed.setUTCDate(holiday.getUTCDate() + 1);
+  return observed.toISOString().slice(0, 10);
+}
+
+function utcDateKey(year: number, monthIndex: number, day: number) {
+  return new Date(Date.UTC(year, monthIndex, day)).toISOString().slice(0, 10);
+}
+
+function nthWeekdayOfMonth(year: number, monthIndex: number, weekday: number, occurrence: number) {
+  const firstDay = new Date(Date.UTC(year, monthIndex, 1)).getUTCDay();
+  return 1 + ((weekday - firstDay + 7) % 7) + (occurrence - 1) * 7;
+}
+
+function lastWeekdayOfMonth(year: number, monthIndex: number, weekday: number) {
+  const lastDate = new Date(Date.UTC(year, monthIndex + 1, 0));
+  return lastDate.getUTCDate() - ((lastDate.getUTCDay() - weekday + 7) % 7);
+}
+
+function usFederalHolidayKeys(year: number) {
+  const keys = new Set<string>();
+  const add = (monthIndex: number, day: number) => {
+    keys.add(utcDateKey(year, monthIndex, day));
+    keys.add(observedDateKey(year, monthIndex, day));
+  };
+  add(0, 1);
+  keys.add(utcDateKey(year, 0, nthWeekdayOfMonth(year, 0, 1, 3)));
+  keys.add(utcDateKey(year, 1, nthWeekdayOfMonth(year, 1, 1, 3)));
+  keys.add(utcDateKey(year, 4, lastWeekdayOfMonth(year, 4, 1)));
+  add(5, 19);
+  add(6, 4);
+  keys.add(utcDateKey(year, 8, nthWeekdayOfMonth(year, 8, 1, 1)));
+  keys.add(utcDateKey(year, 9, nthWeekdayOfMonth(year, 9, 1, 2)));
+  add(10, 11);
+  keys.add(utcDateKey(year, 10, nthWeekdayOfMonth(year, 10, 4, 4)));
+  add(11, 25);
+  return keys;
+}
+
+function getEmailOperationalState(settings: GeneralSettings) {
+  if (!settings.emailOperationalHoursEnabled) {
+    return {
+      label: "Operational hours off",
+      className: "muted-pill",
+      detail: "Automatic email sync follows each mailbox interval."
+    };
+  }
+
+  const parts = getEmailOperationalParts(settings);
+  if (!parts) {
+    return {
+      label: "Schedule needs review",
+      className: "warning-pill",
+      detail: "Operational timezone could not be evaluated."
+    };
+  }
+
+  const year = Number(parts.dateKey.slice(0, 4));
+  const start = minutesFromTime(settings.emailOperationalStartTime);
+  const end = minutesFromTime(settings.emailOperationalEndTime);
+  const dayAllowed = settings.emailOperationalDays.includes(parts.weekday);
+  const closedDate = settings.emailCustomClosedDates.includes(parts.dateKey);
+  const holiday = settings.emailSkipUsFederalHolidays && [year - 1, year, year + 1].some((holidayYear) => usFederalHolidayKeys(holidayYear).has(parts.dateKey));
+  const inWindow = start === end ? true : start < end ? parts.minutes >= start && parts.minutes < end : parts.minutes >= start || parts.minutes < end;
+  const isOpen = dayAllowed && !closedDate && !holiday && inWindow;
+
+  return {
+    label: isOpen ? "Email sync open" : "Email sync paused",
+    className: isOpen ? "success" : "warning-pill",
+    detail: isOpen
+      ? "Automatic inbound sync is inside the configured working window."
+      : "Automatic inbound sync waits until the next allowed working window."
+  };
+}
+
 function displayLabel(value: string) {
   return value.toLowerCase().replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
@@ -986,6 +1100,7 @@ export function SettingsWorkspace() {
   const activeTeamCount = ticketTeams.filter((team) => team.isActive).length;
   const enabledAiProviderCount = aiProviders.filter((provider) => provider.isEnabled).length;
   const healthStatusLabel = systemHealth?.status ? systemHealth.status.toUpperCase() : loading ? "LOADING" : "NOT CHECKED";
+  const emailOperationalState = getEmailOperationalState(generalDraft);
   const auditPage = Number(auditLogs?.page ?? auditFilters.page);
   const auditPageSize = Number(auditLogs?.pageSize ?? auditFilters.pageSize);
   const auditTotal = auditLogs?.total ?? 0;
@@ -1486,7 +1601,6 @@ export function SettingsWorkspace() {
           preserveOriginalSenderHeaders: draft.preserveOriginalSenderHeaders,
           autoSyncEnabled: draft.autoSyncEnabled,
           autoSyncIntervalSeconds: draft.autoSyncEnabled ? normalizeSyncIntervalSeconds(draft.autoSyncIntervalSeconds, draft.autoSyncUnit) : null,
-          initialSyncFrom: draft.initialSyncFrom || null,
           tenantId: draft.tenantId || null,
           microsoftClientId: draft.microsoftClientId || null,
           encryptedClientSecretReference: draft.encryptedClientSecretReference || null
@@ -1851,6 +1965,36 @@ export function SettingsWorkspace() {
       await loadAttachmentQuarantine(nextFilters);
     } catch {
       setError("Unable to load attachment quarantine.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function backfillMailbox(mailbox: Mailbox) {
+    const draft = mailboxDrafts[mailbox.id];
+    const initialSyncFrom = draft?.initialSyncFrom;
+    if (!initialSyncFrom) {
+      setError("Select a backfill start date before running manual backfill.");
+      return;
+    }
+    if (!window.confirm(`Run a manual mailbox backfill from ${initialSyncFrom}? The daily sync cursor will be preserved.`)) {
+      return;
+    }
+
+    setBusy(mailbox.id);
+    setNotice(null);
+    setError(null);
+    try {
+      const result = await apiFetch<SyncResult>(`/mailboxes/${mailbox.id}/backfill`, {
+        method: "POST",
+        body: JSON.stringify({ initialSyncFrom })
+      });
+      setNotice(
+        `Mailbox backfill completed: ${result.receivedMessages} reviewed, ${result.createdTickets} tickets created, ${result.skippedDuplicates} duplicates skipped, ${result.blockedSpamMessages ?? 0} blocked. Daily sync cursor preserved.`
+      );
+      await loadSettingsData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to run mailbox backfill.");
     } finally {
       setBusy(null);
     }
@@ -2944,7 +3088,8 @@ export function SettingsWorkspace() {
                   </span>
                 </div>
                 <div className="email-operational-summary">
-                  Automatic sync skips Graph calls while closed and resumes at the next allowed minute. Manual mailbox Sync still runs when an admin starts it.
+                  <strong>{emailOperationalState.label}</strong>
+                  <span>{emailOperationalState.detail} Manual mailbox Sync and Manual Backfill still run when an admin starts them.</span>
                 </div>
                 <div className="client-form-grid settings-section">
                   <label className="checkbox-row full-span">
@@ -3030,7 +3175,7 @@ export function SettingsWorkspace() {
                     />
                   </label>
                   <div className="field-help full-span">
-                    Phase 1 protects automatic inbound sync and email-triggered notifications by not fetching new messages while closed. The existing mailbox fetch date remains available for manual backfill preparation.
+                    Operational hours protect automatic inbound sync and email-triggered notifications by not fetching new messages while closed. Mailbox backfill is now a separate manual action.
                   </div>
                 </div>
               </div>
@@ -3070,6 +3215,12 @@ export function SettingsWorkspace() {
                     Last sync: {mailbox.lastSyncedAt ? new Date(mailbox.lastSyncedAt).toLocaleString() : "Never"}
                     {mailbox.autoSyncEnabled ? ` - Auto sync every ${mailbox.autoSyncIntervalSeconds ?? 300}s` : " - Auto sync off"}
                   </span>
+                  <div className="mailbox-sync-status">
+                    <span className={`status-pill ${mailbox.autoSyncEnabled ? emailOperationalState.className : "muted-pill"}`}>
+                      {mailbox.autoSyncEnabled ? emailOperationalState.label : "Auto sync off"}
+                    </span>
+                    <span className="muted">Next automatic sync: {formatDateTime(mailbox.nextAutoSyncAt)}</span>
+                  </div>
                   {mailbox.lastSyncError ? <span className="error">{mailbox.lastSyncError}</span> : null}
                   <div className="client-form-grid mailbox-form-grid">
                     <select
@@ -3174,17 +3325,20 @@ export function SettingsWorkspace() {
                         }))
                       }
                     />
-                    <input
-                      className="input compact-select"
-                      type="date"
-                      value={mailboxDrafts[mailbox.id]?.initialSyncFrom ?? ""}
-                      onChange={(event) =>
-                        setMailboxDrafts((current) => ({
-                          ...current,
-                          [mailbox.id]: { ...current[mailbox.id], initialSyncFrom: event.target.value }
-                        }))
-                      }
-                    />
+                    <label className="field">
+                      <span>Manual backfill from</span>
+                      <input
+                        className="input compact-select"
+                        type="date"
+                        value={mailboxDrafts[mailbox.id]?.initialSyncFrom ?? ""}
+                        onChange={(event) =>
+                          setMailboxDrafts((current) => ({
+                            ...current,
+                            [mailbox.id]: { ...current[mailbox.id], initialSyncFrom: event.target.value }
+                          }))
+                        }
+                      />
+                    </label>
                     <label className="checkbox-row">
                       <input
                         type="checkbox"
@@ -3281,6 +3435,10 @@ export function SettingsWorkspace() {
                     <RotateCw size={16} aria-hidden="true" />
                     <span>Sync</span>
                   </button>
+                  <button className="button secondary" type="button" onClick={() => backfillMailbox(mailbox)} disabled={busy === mailbox.id}>
+                    <RotateCw size={16} aria-hidden="true" />
+                    <span>Backfill</span>
+                  </button>
                 </div>
               </div>
             ))}
@@ -3288,8 +3446,14 @@ export function SettingsWorkspace() {
         </div>
 
         <div className="panel">
-          <h2>Security Defaults</h2>
-          <p className="muted">HttpOnly sessions, attachment restrictions, and audit logging are active design constraints.</p>
+          <h2>Mailbox Operations</h2>
+          <div className="mailbox-operations-panel">
+            <span className={`status-pill ${emailOperationalState.className}`}>{emailOperationalState.label}</span>
+            <p className="muted">{emailOperationalState.detail}</p>
+            <p className="muted">
+              Save updates mailbox configuration only. Manual Backfill reviews older messages from the selected date without replacing the daily sync cursor.
+            </p>
+          </div>
         </div>
       </section>
           ) : null}

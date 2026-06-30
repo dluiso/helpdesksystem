@@ -179,6 +179,90 @@ describe("MailboxesService", () => {
     });
   });
 
+  it("runs manual backfill without replacing the daily sync cursor", async () => {
+    const prisma = {
+      mailbox: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "mailbox-1",
+          organizationId: "org-1",
+          emailAddress: "support@example.org",
+          lastSyncCursor: "daily-cursor",
+          tenantId: null,
+          microsoftClientId: null,
+          encryptedClientSecretReference: null,
+          autoSyncEnabled: true,
+          autoSyncIntervalSeconds: 300,
+          nextAutoSyncAt: new Date("2026-06-30T15:00:00.000Z")
+        }),
+        update: jest.fn().mockResolvedValue({})
+      },
+      ticketMessage: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([])
+      },
+      eventServiceMessage: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn()
+      },
+      eventServiceRequest: {
+        findFirst: jest.fn().mockResolvedValue(null)
+      },
+      eventServiceActivity: {
+        create: jest.fn()
+      }
+    };
+    const ticketsService = {
+      createFromInboundEmail: jest.fn().mockResolvedValue({ ticket: { id: "ticket-1" } })
+    };
+    const mockMailProvider = {
+      syncInboundMessages: jest.fn().mockResolvedValue({
+        messages: [
+          {
+            providerMessageId: "old-message-1",
+            internetMessageId: "<old-message-1@example.org>",
+            conversationId: "conversation-1",
+            from: { email: "requester@example.org", name: "Requester One" },
+            subject: "Old request",
+            bodyText: "Please review"
+          }
+        ],
+        nextSyncCursor: "backfill-cursor"
+      })
+    };
+    const service = new MailboxesService(
+      prisma as never,
+      { get: jest.fn().mockReturnValue("mock") } as never,
+      ticketsService as never,
+      { createInboundEmailAttachment: jest.fn() } as never,
+      { findBlockForSender: jest.fn().mockResolvedValue(null), logBlockedInboundEmail: jest.fn() } as never,
+      mockMailProvider as never,
+      {} as never
+    );
+
+    await expect(service.backfillInbound("mailbox-1", "2026-05-25", user)).resolves.toEqual(
+      expect.objectContaining({
+        receivedMessages: 1,
+        createdTickets: 1,
+        nextSyncCursor: "backfill-cursor"
+      })
+    );
+
+    expect(mockMailProvider.syncInboundMessages).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastSyncCursor: null,
+        initialSyncFrom: new Date("2026-05-25")
+      })
+    );
+    expect(prisma.mailbox.update).toHaveBeenCalledTimes(1);
+    expect(prisma.mailbox.update).toHaveBeenCalledWith({
+      where: { id: "mailbox-1" },
+      data: {
+        initialSyncFrom: new Date("2026-05-25"),
+        lastSyncError: null
+      }
+    });
+  });
+
   it("skips already imported provider messages", async () => {
     const prisma = {
       mailbox: {
