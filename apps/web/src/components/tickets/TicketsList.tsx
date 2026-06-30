@@ -40,6 +40,7 @@ interface TicketListItem {
   assignedGroup: Group | null;
   assignedTeam: TicketTeam | null;
   mergedIntoTicket: { id: string; ticketNumber: string; subject: string } | null;
+  mergedTickets: Array<{ id: string; ticketNumber: string; subject: string; status: string; mergedAt: string | null }>;
   firstReadAt: string | null;
   firstReadBy: User | null;
   deletedAt: string | null;
@@ -231,6 +232,24 @@ function statusClass(value: string) {
 
 function priorityClass(value: string) {
   return `ticket-priority-${value.toLowerCase().replace(/_/g, "-")}`;
+}
+
+function MergedInIndicator({ mergedTickets }: { mergedTickets?: TicketListItem["mergedTickets"] }) {
+  if (!mergedTickets?.length) {
+    return null;
+  }
+
+  const ticketNumbers = mergedTickets.map((ticket) => ticket.ticketNumber);
+  const visibleTicketNumbers = ticketNumbers.slice(0, 3);
+  const hiddenCount = Math.max(0, ticketNumbers.length - visibleTicketNumbers.length);
+  const labelText = `Merged in: ${visibleTicketNumbers.join(", ")}${hiddenCount ? ` +${hiddenCount} more` : ""}`;
+
+  return (
+    <span className="ticket-merged-inline" title={`Merged in: ${ticketNumbers.join(", ")}`}>
+      <GitMerge size={12} aria-hidden="true" />
+      <span>{labelText}</span>
+    </span>
+  );
 }
 
 function formatDate(value: string) {
@@ -1009,20 +1028,23 @@ export function TicketsList() {
         );
       case "status":
         return (
-          <select
-            className={`input inline-ticket-select inline-status-select ${statusClass(ticket.status)}`}
-            value={ticket.status}
-            onChange={(event) => void updateTicketInline(ticket, "status", { status: event.target.value })}
-            disabled={isTicketInlineBusy(ticket) || ticket.status === "MERGED" || trashMode}
-            title="Change status"
-          >
-            {mutableStatuses.map((value) => (
-              <option key={value} value={value}>
-                {label(value)}
-              </option>
-            ))}
-            {ticket.status === "MERGED" ? <option value="MERGED">Merged</option> : null}
-          </select>
+          <div className="ticket-status-stack">
+            <select
+              className={`input inline-ticket-select inline-status-select ${statusClass(ticket.status)}`}
+              value={ticket.status}
+              onChange={(event) => void updateTicketInline(ticket, "status", { status: event.target.value })}
+              disabled={isTicketInlineBusy(ticket) || ticket.status === "MERGED" || trashMode}
+              title="Change status"
+            >
+              {mutableStatuses.map((value) => (
+                <option key={value} value={value}>
+                  {label(value)}
+                </option>
+              ))}
+              {ticket.status === "MERGED" ? <option value="MERGED">Merged</option> : null}
+            </select>
+            <MergedInIndicator mergedTickets={ticket.mergedTickets} />
+          </div>
         );
       case "priority":
         return (

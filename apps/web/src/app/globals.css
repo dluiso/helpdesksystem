@@ -8879,6 +8879,35 @@ a.dashboard-list-row:hover {
   font-weight: 820;
 }
 
+.ticket-status-stack {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.ticket-merged-inline {
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: color-mix(in srgb, var(--brand-primary) 58%, var(--text-muted));
+  font-size: 10px;
+  font-weight: 720;
+  line-height: 1.25;
+}
+
+.ticket-merged-inline svg {
+  flex: 0 0 auto;
+}
+
+.ticket-merged-inline span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .inline-priority-select {
   border-color: color-mix(in srgb, currentColor 14%, var(--line));
 }
