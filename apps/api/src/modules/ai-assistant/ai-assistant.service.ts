@@ -74,6 +74,16 @@ export class AiAssistantService {
     });
   }
 
+  async deleteProvider(providerId: string, user: AuthenticatedUser) {
+    await this.ensureProvider(providerId, user.organizationId);
+
+    await this.prisma.aiProviderConfig.delete({
+      where: { id: providerId }
+    });
+
+    return { deleted: true };
+  }
+
   async createModel(providerId: string, user: AuthenticatedUser, input: UpsertAiModelDto) {
     const provider = await this.ensureProvider(providerId, user.organizationId);
     if (input.isDefault) {

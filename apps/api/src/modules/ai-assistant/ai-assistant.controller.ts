@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
@@ -110,6 +110,12 @@ export class AiConfigurationController {
   @RequirePermissions("ai_assistant.configure")
   updateProvider(@Param("providerId") providerId: string, @CurrentUser() user: AuthenticatedUser, @Body() input: UpsertAiProviderDto) {
     return this.aiAssistantService.updateProvider(providerId, user, input);
+  }
+
+  @Delete("providers/:providerId")
+  @RequirePermissions("ai_assistant.configure")
+  deleteProvider(@Param("providerId") providerId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.aiAssistantService.deleteProvider(providerId, user);
   }
 
   @Post("providers/:providerId/models")

@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Plus, RefreshCcw, RotateCw, TestTube2, Upload, X } from "lucide-react";
+import { Download, Pencil, Plus, RefreshCcw, RotateCw, TestTube2, Trash2, Upload, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { EventServicesConfigPanel } from "@/components/settings/EventServicesConfigPanel";
 import { KnowledgeConfigPanel } from "@/components/settings/KnowledgeConfigPanel";
@@ -1068,6 +1068,7 @@ export function SettingsWorkspace() {
   const [selectedAiActions, setSelectedAiActions] = useState<string[]>([]);
   const [aiBulkDraft, setAiBulkDraft] = useState({ providerConfigId: "", modelConfigId: "", isEnabled: true });
   const [showAiProviderForm, setShowAiProviderForm] = useState(false);
+  const [editingAiProviderId, setEditingAiProviderId] = useState<string | null>(null);
   const [showAutoReplyForm, setShowAutoReplyForm] = useState(false);
   const [editingAutoReplyId, setEditingAutoReplyId] = useState<string | null>(null);
   const [autoReplyDraft, setAutoReplyDraft] = useState({
@@ -2280,7 +2281,39 @@ export function SettingsWorkspace() {
     }
   }
 
-  async function createAiProvider() {
+  function resetAiProviderForm() {
+    setAiProviderDraft({
+      name: "",
+      provider: "OPENAI_COMPATIBLE",
+      baseUrl: "https://api.openai.com/v1",
+      apiKeyReference: "env:OPENAI_API_KEY",
+      defaultModel: "gpt-4o-mini",
+      timeoutMs: "30000",
+      priority: "100",
+      isEnabled: true
+    });
+    setEditingAiProviderId(null);
+    setShowAiProviderForm(false);
+  }
+
+  function startEditAiProvider(provider: AiProviderConfig) {
+    setAiProviderDraft({
+      name: provider.name,
+      provider: provider.provider,
+      baseUrl: provider.baseUrl ?? "",
+      apiKeyReference: provider.apiKeyReference ?? "",
+      defaultModel: provider.defaultModel ?? "",
+      timeoutMs: String(provider.timeoutMs),
+      priority: String(provider.priority),
+      isEnabled: provider.isEnabled
+    });
+    setEditingAiProviderId(provider.id);
+    setShowAiProviderForm(true);
+    setNotice(null);
+    setError(null);
+  }
+
+  async function saveAiProvider() {
     if (!aiProviderDraft.name.trim()) {
       setError("AI provider name is required.");
       return;
@@ -2290,8 +2323,9 @@ export function SettingsWorkspace() {
     setNotice(null);
     setError(null);
     try {
-      await apiFetch("/ai/providers", {
-        method: "POST",
+      const endpoint = editingAiProviderId ? `/ai/providers/${editingAiProviderId}` : "/ai/providers";
+      await apiFetch(endpoint, {
+        method: editingAiProviderId ? "PATCH" : "POST",
         body: JSON.stringify({
           name: aiProviderDraft.name,
           provider: aiProviderDraft.provider,
@@ -2303,21 +2337,35 @@ export function SettingsWorkspace() {
           isEnabled: aiProviderDraft.isEnabled
         })
       });
-      setAiProviderDraft({
-        name: "",
-        provider: "OPENAI_COMPATIBLE",
-        baseUrl: "https://api.openai.com/v1",
-        apiKeyReference: "env:OPENAI_API_KEY",
-        defaultModel: "gpt-4o-mini",
-        timeoutMs: "30000",
-        priority: "100",
-        isEnabled: true
-      });
-      setShowAiProviderForm(false);
+      resetAiProviderForm();
       setNotice("AI provider saved.");
       await loadSettingsData();
-    } catch {
-      setError("Unable to save AI provider. Confirm the AI provider registry migration has been applied.");
+    } catch (requestError) {
+      const detail = requestError instanceof Error ? requestError.message : "";
+      setError(`Unable to save AI provider.${detail ? ` ${detail}` : ""}`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deleteAiProvider(provider: AiProviderConfig) {
+    if (!window.confirm(`Delete AI provider "${provider.name}"? Actions using this provider will fall back to the default provider.`)) {
+      return;
+    }
+
+    setBusy(`ai-provider-delete-${provider.id}`);
+    setNotice(null);
+    setError(null);
+    try {
+      await apiFetch(`/ai/providers/${provider.id}`, { method: "DELETE" });
+      if (editingAiProviderId === provider.id) {
+        resetAiProviderForm();
+      }
+      setNotice("AI provider deleted.");
+      await loadSettingsData();
+    } catch (requestError) {
+      const detail = requestError instanceof Error ? requestError.message : "";
+      setError(`Unable to delete AI provider.${detail ? ` ${detail}` : ""}`);
     } finally {
       setBusy(null);
     }
@@ -4728,7 +4776,15 @@ export function SettingsWorkspace() {
                     <h2>AI Providers</h2>
                     <p className="muted">Register providers, test their API connection, and then assign them to ticket writing actions.</p>
                   </div>
-                  <button className="button" type="button" onClick={() => setShowAiProviderForm(true)} disabled={Boolean(aiConfigError)}>
+                  <button
+                    className="button"
+                    type="button"
+                    onClick={() => {
+                      resetAiProviderForm();
+                      setShowAiProviderForm(true);
+                    }}
+                    disabled={Boolean(aiConfigError)}
+                  >
                     <Plus size={16} aria-hidden="true" />
                     <span>Add Provider</span>
                   </button>
@@ -4738,10 +4794,10 @@ export function SettingsWorkspace() {
                   <div className="ai-provider-form settings-section">
                     <div className="section-heading compact-heading">
                       <div>
-                        <h3>New AI Provider</h3>
+                        <h3>{editingAiProviderId ? "Edit AI Provider" : "New AI Provider"}</h3>
                         <p className="muted">Use environment variable references such as env:GEMINI_API_KEY instead of pasting secrets into the database.</p>
                       </div>
-                      <button className="button ghost" type="button" onClick={() => setShowAiProviderForm(false)}>
+                      <button className="button ghost" type="button" onClick={resetAiProviderForm}>
                         <X size={16} aria-hidden="true" />
                         <span>Cancel</span>
                       </button>
@@ -4777,8 +4833,8 @@ export function SettingsWorkspace() {
                         <input type="checkbox" checked={aiProviderDraft.isEnabled} onChange={(event) => setAiProviderDraft((current) => ({ ...current, isEnabled: event.target.checked }))} />
                         Enabled
                       </label>
-                      <button className="button" type="button" onClick={createAiProvider} disabled={busy === "ai-provider" || Boolean(aiConfigError)}>
-                        Save Provider
+                      <button className="button" type="button" onClick={saveAiProvider} disabled={busy === "ai-provider" || Boolean(aiConfigError)}>
+                        {editingAiProviderId ? "Update Provider" : "Save Provider"}
                       </button>
                     </div>
                   </div>
@@ -4798,6 +4854,19 @@ export function SettingsWorkspace() {
                           <div className="ai-provider-title-row">
                             <strong>{provider.name}</strong>
                             <span className={`status-pill ${provider.isEnabled ? "success" : "muted-pill"}`}>{provider.isEnabled ? "Enabled" : "Disabled"}</span>
+                            <button className="icon-button" type="button" title="Edit provider" aria-label={`Edit ${provider.name}`} onClick={() => startEditAiProvider(provider)} disabled={Boolean(aiConfigError)}>
+                              <Pencil size={15} aria-hidden="true" />
+                            </button>
+                            <button
+                              className="icon-button danger-icon"
+                              type="button"
+                              title="Delete provider"
+                              aria-label={`Delete ${provider.name}`}
+                              onClick={() => deleteAiProvider(provider)}
+                              disabled={busy === `ai-provider-delete-${provider.id}` || Boolean(aiConfigError)}
+                            >
+                              <Trash2 size={15} aria-hidden="true" />
+                            </button>
                           </div>
                           <span className="muted ai-provider-url">{provider.baseUrl ?? "Default provider endpoint"}</span>
                         </div>
