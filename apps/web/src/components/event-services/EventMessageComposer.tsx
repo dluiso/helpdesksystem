@@ -37,9 +37,6 @@ const toolbar = [
 const INLINE_AUTOCOMPLETE_CLASS = "ai-inline-suggestion";
 const AUTOCOMPLETE_MIN_CHARS = 12;
 const AUTOCOMPLETE_DELAY_MS = 450;
-const LIVE_GRAMMAR_MIN_CHARS = 18;
-const LIVE_GRAMMAR_MAX_CHARS = 420;
-const LIVE_GRAMMAR_DELAY_MS = 850;
 
 interface UserOption {
   id: string;
@@ -80,7 +77,6 @@ function textToHtml(value: string) {
 export function EventMessageComposer({ requestId, users, onSaved }: EventMessageComposerProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const autocompleteRequestRef = useRef(0);
-  const grammarRequestRef = useRef(0);
   const signatureHtmlRef = useRef("");
   const signatureTextRef = useRef("");
   const [mode, setMode] = useState<"public" | "internal">("public");
@@ -95,9 +91,6 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
   const [draftText, setDraftText] = useState("");
   const [autocompleteSuggestion, setAutocompleteSuggestion] = useState("");
   const [autocompleteDismissedFor, setAutocompleteDismissedFor] = useState("");
-  const [grammarSuggestion, setGrammarSuggestion] = useState<{ original: string; corrected: string; sourceText: string; hasSignature: boolean } | null>(null);
-  const [grammarDismissedFor, setGrammarDismissedFor] = useState("");
-  const [grammarChecking, setGrammarChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -145,43 +138,6 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
     return () => window.clearTimeout(timeout);
   }, [aiBusy, autocompleteDismissedFor, draftText, preview, requestId, saving]);
 
-  useEffect(() => {
-    if (!requestId || preview || aiBusy || saving || grammarSuggestion) {
-      return;
-    }
-    const sourceText = getTextBeforeCursor();
-    const textAfterCursor = normalizeEditorText(getTextAfterCursor());
-    const hasSignatureAtRequest = Boolean(signatureTextRef.current && textAfterCursor === signatureTextRef.current);
-    const draft = getGrammarDraft(sourceText);
-    if (draft.length < LIVE_GRAMMAR_MIN_CHARS || draft === grammarDismissedFor) {
-      setGrammarChecking(false);
-      return;
-    }
-    const requestNumber = grammarRequestRef.current + 1;
-    const timeout = window.setTimeout(() => {
-      grammarRequestRef.current = requestNumber;
-      setGrammarChecking(true);
-      apiFetch<{ text: string }>(`/event-services/${requestId}/ai/fix-grammar`, {
-        method: "POST",
-        body: JSON.stringify({ draft })
-      })
-        .then((result) => {
-          if (grammarRequestRef.current !== requestNumber) return;
-          const corrected = result.text.trim();
-          if (corrected && normalizeEditorText(corrected) !== normalizeEditorText(draft)) {
-            setGrammarSuggestion({ original: draft, corrected, sourceText, hasSignature: hasSignatureAtRequest });
-          }
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          if (grammarRequestRef.current === requestNumber) {
-            setGrammarChecking(false);
-          }
-        });
-    }, LIVE_GRAMMAR_DELAY_MS);
-    return () => window.clearTimeout(timeout);
-  }, [aiBusy, draftText, grammarDismissedFor, grammarSuggestion, preview, requestId, saving]);
-
   function runCommand(command: string, value?: string) {
     removeInlineAutocomplete();
     setAutocompleteSuggestion("");
@@ -204,6 +160,46 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
     const clone = editor.cloneNode(true) as HTMLElement;
     clone.querySelectorAll(`.${INLINE_AUTOCOMPLETE_CLASS}`).forEach((node) => node.remove());
     return clone.innerText.trim();
+  }
+
+  function getEditorTextWithoutSignature() {
+    return stripSignatureFromText(getEditorText());
+  }
+
+  function stripSignatureFromText(value: string) {
+    const signatureText = signatureTextRef.current;
+    const text = value.trim();
+    if (!signatureText) {
+      return text;
+    }
+
+    const normalizedText = normalizeEditorText(text);
+    const normalizedSignature = normalizeEditorText(signatureText);
+    if (!normalizedSignature || !normalizedText.endsWith(normalizedSignature)) {
+      return text;
+    }
+
+    const lines = text.split(/\r?\n/);
+    for (let index = 0; index < lines.length; index += 1) {
+      const remaining = normalizeEditorText(lines.slice(index).join("\n"));
+      if (remaining === normalizedSignature) {
+        return lines.slice(0, index).join("\n").trim();
+      }
+    }
+
+    return normalizedText === normalizedSignature ? "" : text;
+  }
+
+  function composeDraftWithSignature(draft: string) {
+    const signatureHtml = signatureHtmlRef.current.trim();
+    const normalizedDraft = draft.trim();
+    if (!signatureHtml) {
+      return textToHtml(normalizedDraft);
+    }
+    if (!normalizedDraft) {
+      return signatureHtml;
+    }
+    return `${textToHtml(normalizedDraft)}<br /><br />${signatureHtml}`;
   }
 
   function getTextBeforeCursor() {
@@ -239,27 +235,17 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
   }
 
   function getAutocompleteDraft() {
-    return isCursorAtAutocompleteBoundary() ? getTextBeforeCursor() : "";
-  }
-
-  function getGrammarDraft(sourceText = getTextBeforeCursor()) {
-    if (!isCursorAtAutocompleteBoundary()) return "";
-    const paragraphs = sourceText.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
-    const currentParagraph = paragraphs.at(-1) ?? "";
-    if (!currentParagraph || /^(best regards|regards|thank you),?$/i.test(currentParagraph)) {
+    if (!isCursorAtAutocompleteBoundary() || isCursorAfterSignature()) {
       return "";
     }
-    return currentParagraph.length > LIVE_GRAMMAR_MAX_CHARS ? currentParagraph.slice(-LIVE_GRAMMAR_MAX_CHARS) : currentParagraph;
+    return stripSignatureFromText(getTextBeforeCursor());
   }
 
   function handleEditorInput() {
     autocompleteRequestRef.current += 1;
-    grammarRequestRef.current += 1;
     removeInlineAutocomplete();
     setDraftText(getEditorText());
     setAutocompleteSuggestion("");
-    setGrammarSuggestion(null);
-    setGrammarChecking(false);
   }
 
   function getInlineAutocompleteNode() {
@@ -275,16 +261,21 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
     return !textAfterCursor || Boolean(signatureTextRef.current && textAfterCursor === signatureTextRef.current);
   }
 
+  function isCursorAfterSignature() {
+    const signatureText = signatureTextRef.current;
+    if (!signatureText) {
+      return false;
+    }
+
+    const textBeforeCursor = normalizeEditorText(getTextBeforeCursor());
+    const textAfterCursor = normalizeEditorText(getTextAfterCursor());
+    return !textAfterCursor && textBeforeCursor.endsWith(normalizeEditorText(signatureText));
+  }
+
   function clearAutocomplete() {
     autocompleteRequestRef.current += 1;
     removeInlineAutocomplete();
     setAutocompleteSuggestion("");
-  }
-
-  function clearGrammarSuggestion() {
-    grammarRequestRef.current += 1;
-    setGrammarSuggestion(null);
-    setGrammarChecking(false);
   }
 
   function canInsertInlineAutocomplete() {
@@ -293,7 +284,7 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
       return false;
     }
     const anchorElement = selection.anchorNode instanceof Element ? selection.anchorNode : selection.anchorNode?.parentElement;
-    return Boolean(anchorElement) && isCursorAtAutocompleteBoundary() && !anchorElement?.closest("a, table, img, pre, blockquote");
+    return Boolean(anchorElement) && isCursorAtAutocompleteBoundary() && !isCursorAfterSignature() && !anchorElement?.closest("a, table, img, pre, blockquote");
   }
 
   function showInlineAutocomplete(rawSuggestion: string) {
@@ -328,7 +319,7 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
   function acceptAutocompleteSuggestion() {
     const node = getInlineAutocompleteNode();
     if ((!autocompleteSuggestion && !node) || !editorRef.current) return;
-    const acceptedText = node?.textContent ?? autocompleteSuggestion;
+    const acceptedText = normalizeAcceptedAutocomplete(node?.textContent ?? autocompleteSuggestion);
     node?.remove();
     editorRef.current.focus();
     document.execCommand("insertText", false, acceptedText);
@@ -342,27 +333,12 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
     setAutocompleteSuggestion("");
   }
 
-  function applyGrammarSuggestion() {
-    if (!editorRef.current || !grammarSuggestion) return;
-    const index = grammarSuggestion.sourceText.lastIndexOf(grammarSuggestion.original);
-    const nextReplyText =
-      index === -1
-        ? grammarSuggestion.corrected
-        : `${grammarSuggestion.sourceText.slice(0, index)}${grammarSuggestion.corrected}${grammarSuggestion.sourceText.slice(index + grammarSuggestion.original.length)}`.trimEnd();
-    const signatureHtml = grammarSuggestion.hasSignature ? signatureHtmlRef.current.trim() : "";
-    editorRef.current.innerHTML = signatureHtml ? `${textToHtml(nextReplyText)}<br /><br />${signatureHtml}` : textToHtml(nextReplyText);
-    setDraftText(getEditorText());
-    setGrammarDismissedFor(grammarSuggestion.corrected);
-    setGrammarSuggestion(null);
-    setGrammarChecking(false);
-  }
-
-  function dismissGrammarSuggestion() {
-    if (grammarSuggestion) {
-      setGrammarDismissedFor(grammarSuggestion.original);
+  function normalizeAcceptedAutocomplete(value: string) {
+    const currentText = getTextBeforeCursor();
+    if (/\s$/.test(currentText)) {
+      return value.replace(/^\s+/, "");
     }
-    setGrammarSuggestion(null);
-    setGrammarChecking(false);
+    return value;
   }
 
   function handleEditorKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -380,18 +356,15 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
     }
     if (hasInlineSuggestion && ["Backspace", "Delete", "Enter"].includes(event.key)) {
       clearAutocomplete();
-      clearGrammarSuggestion();
     }
     if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(event.key)) {
       clearAutocomplete();
-      clearGrammarSuggestion();
     }
   }
 
   function handlePaste(event: ClipboardEvent<HTMLDivElement>) {
     removeInlineAutocomplete();
     setAutocompleteSuggestion("");
-    clearGrammarSuggestion();
     const images = Array.from(event.clipboardData.items).filter((item) => item.type.startsWith("image/"));
     if (images.length === 0) return;
     event.preventDefault();
@@ -407,6 +380,11 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
       return "";
     }
     return selection.toString().trim();
+  }
+
+  function selectionIncludesSignature(value: string) {
+    const signatureText = signatureTextRef.current;
+    return Boolean(signatureText && normalizeEditorText(value).endsWith(normalizeEditorText(signatureText)));
   }
 
   async function uploadPastedImage(file: File, index: number) {
@@ -465,9 +443,12 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
   async function runAiAction(action: "paraphrase" | "improve-reply" | "fix-grammar" | "suggest-reply") {
     if (!requestId || !editorRef.current) return;
     clearAutocomplete();
-    clearGrammarSuggestion();
     const selectedText = action === "paraphrase" || action === "fix-grammar" ? getSelectedText() : "";
-    const draft = selectedText || getEditorText();
+    if (selectedText && selectionIncludesSignature(selectedText)) {
+      setError("Select only the draft text above your signature before running this AI tool.");
+      return;
+    }
+    const draft = selectedText || getEditorTextWithoutSignature();
     if (action !== "suggest-reply" && !draft) {
       setError(action === "paraphrase" ? "Select text to paraphrase or write a draft first." : "Write a draft first.");
       return;
@@ -479,10 +460,12 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
         method: "POST",
         body: JSON.stringify({ draft })
       });
+      const resultText = stripSignatureFromText(result.text);
       if (selectedText) {
-        document.execCommand("insertText", false, result.text);
+        document.execCommand("insertText", false, resultText);
       } else {
-        editorRef.current.innerText = result.text;
+        removeInlineAutocomplete();
+        editorRef.current.innerHTML = composeDraftWithSignature(resultText);
       }
       setDraftText(getEditorText());
     } catch (requestError) {
@@ -557,7 +540,7 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
         <button className="icon-button" type="button" title="Attach" aria-label="Attach">
           <Paperclip size={17} aria-hidden="true" />
         </button>
-        <button className="icon-button" type="button" title="Preview" aria-label="Preview" onClick={() => { clearAutocomplete(); clearGrammarSuggestion(); setPreview((value) => !value); }}>
+        <button className="icon-button" type="button" title="Preview" aria-label="Preview" onClick={() => { clearAutocomplete(); setPreview((value) => !value); }}>
           <Eye size={17} aria-hidden="true" />
         </button>
         <button className="button secondary compact-button" type="button" onClick={() => runAiAction("paraphrase")} disabled={Boolean(aiBusy)}>
@@ -589,25 +572,12 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
         ref={editorRef}
         onInput={handleEditorInput}
         onKeyDown={handleEditorKeyDown}
-        onMouseDown={() => { clearAutocomplete(); clearGrammarSuggestion(); }}
+        onMouseDown={clearAutocomplete}
         onPaste={handlePaste}
         role="textbox"
         aria-label={mode === "public" ? "Requester message body" : "Internal event note body"}
         data-placeholder={mode === "public" ? "Write a message to the requester..." : "Write an internal event note..."}
       />
-      {grammarSuggestion ? (
-        <div className="grammar-suggestion">
-          <div><strong>Grammar suggestion</strong><span>{grammarSuggestion.corrected}</span></div>
-          <div className="row-actions">
-            <button className="button secondary small-button" type="button" onClick={dismissGrammarSuggestion}>Dismiss</button>
-            <button className="button small-button" type="button" onClick={applyGrammarSuggestion}>Apply</button>
-          </div>
-        </div>
-      ) : grammarChecking ? (
-        <div className="grammar-suggestion grammar-suggestion-checking">
-          <div><strong>Checking grammar</strong><span>Reviewing the current sentence...</span></div>
-        </div>
-      ) : null}
       {mode === "public" ? (
         <div className="cc-picker">
           <label className="field">

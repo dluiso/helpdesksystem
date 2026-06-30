@@ -2245,38 +2245,6 @@ select.compact-select {
   font-weight: 700;
 }
 
-.grammar-suggestion {
-  position: absolute;
-  z-index: 15;
-  right: 12px;
-  bottom: 12px;
-  max-width: min(720px, calc(100% - 24px));
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
-  border-radius: 8px;
-  background: var(--surface-muted);
-  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.14);
-}
-
-.grammar-suggestion > div:first-child {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.grammar-suggestion span {
-  color: var(--muted);
-}
-
-.grammar-suggestion-checking {
-  color: var(--muted);
-  background: var(--surface-raised);
-}
-
 .info-banner {
   margin-bottom: 16px;
   padding: 12px 14px;
@@ -12086,14 +12054,6 @@ a.dashboard-list-row:hover {
   .attachment-image-preview {
     max-width: 100% !important;
     height: auto !important;
-  }
-
-  .grammar-suggestion {
-    right: 8px;
-    bottom: 8px;
-    left: 8px;
-    max-width: none;
-    flex-direction: column;
   }
 
   .attachment-row,

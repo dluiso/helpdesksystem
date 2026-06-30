@@ -38,9 +38,6 @@ const toolbar = [
 const INLINE_AUTOCOMPLETE_CLASS = "ai-inline-suggestion";
 const AUTOCOMPLETE_MIN_CHARS = 12;
 const AUTOCOMPLETE_DELAY_MS = 450;
-const LIVE_GRAMMAR_MIN_CHARS = 18;
-const LIVE_GRAMMAR_MAX_CHARS = 420;
-const LIVE_GRAMMAR_DELAY_MS = 850;
 
 function normalizeEditorText(value: string) {
   return value.replace(/\s+/g, " ").trim();
@@ -77,7 +74,6 @@ interface TicketReplyEditorProps {
 export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onSaved }: TicketReplyEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const autocompleteRequestRef = useRef(0);
-  const grammarRequestRef = useRef(0);
   const signatureHtmlRef = useRef("");
   const signatureTextRef = useRef("");
   const [mode, setMode] = useState<"public" | "internal">("public");
@@ -92,9 +88,6 @@ export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onS
   const [draftText, setDraftText] = useState("");
   const [autocompleteSuggestion, setAutocompleteSuggestion] = useState("");
   const [autocompleteDismissedFor, setAutocompleteDismissedFor] = useState("");
-  const [grammarSuggestion, setGrammarSuggestion] = useState<{ original: string; corrected: string; sourceText: string; hasSignature: boolean } | null>(null);
-  const [grammarDismissedFor, setGrammarDismissedFor] = useState("");
-  const [grammarChecking, setGrammarChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -153,48 +146,6 @@ export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onS
 
     return () => window.clearTimeout(timeout);
   }, [aiBusy, autocompleteDismissedFor, draftText, preview, saving, ticketId]);
-
-  useEffect(() => {
-    if (!ticketId || preview || aiBusy || saving || grammarSuggestion) {
-      return;
-    }
-
-    const sourceText = getTextBeforeCursor();
-    const textAfterCursor = normalizeEditorText(getTextAfterCursor());
-    const hasSignatureAtRequest = Boolean(signatureTextRef.current && textAfterCursor === signatureTextRef.current);
-    const draft = getGrammarDraft(sourceText);
-    if (draft.length < LIVE_GRAMMAR_MIN_CHARS || draft === grammarDismissedFor) {
-      setGrammarChecking(false);
-      return;
-    }
-
-    const requestId = grammarRequestRef.current + 1;
-    const timeout = window.setTimeout(() => {
-      grammarRequestRef.current = requestId;
-      setGrammarChecking(true);
-      apiFetch<{ text: string }>(`/tickets/${ticketId}/ai/fix-grammar`, {
-        method: "POST",
-        body: JSON.stringify({ draft })
-      })
-        .then((result) => {
-          if (grammarRequestRef.current !== requestId) {
-            return;
-          }
-          const corrected = stripSignatureFromText(result.text).trim();
-          if (corrected && normalizeEditorText(corrected) !== normalizeEditorText(draft)) {
-            setGrammarSuggestion({ original: draft, corrected, sourceText, hasSignature: hasSignatureAtRequest });
-          }
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          if (grammarRequestRef.current === requestId) {
-            setGrammarChecking(false);
-          }
-        });
-    }, LIVE_GRAMMAR_DELAY_MS);
-
-    return () => window.clearTimeout(timeout);
-  }, [aiBusy, draftText, grammarDismissedFor, grammarSuggestion, preview, saving, ticketId]);
 
   function runCommand(command: string, value?: string) {
     removeInlineAutocomplete();
@@ -300,33 +251,17 @@ export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onS
   }
 
   function getAutocompleteDraft() {
-    if (!isCursorAtAutocompleteBoundary() || isCursorAfterSignature() || !isCursorAtPhraseBoundary()) {
+    if (!isCursorAtAutocompleteBoundary() || isCursorAfterSignature()) {
       return "";
     }
     return stripSignatureFromText(getTextBeforeCursor());
   }
 
-  function getGrammarDraft(sourceText = getTextBeforeCursor()) {
-    if (!isCursorAtAutocompleteBoundary() || isCursorAfterSignature()) {
-      return "";
-    }
-    const unsignedText = stripSignatureFromText(sourceText);
-    const paragraphs = unsignedText.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
-    const currentParagraph = paragraphs.at(-1) ?? "";
-    if (!currentParagraph || /^(best regards|regards|thank you),?$/i.test(currentParagraph)) {
-      return "";
-    }
-    return currentParagraph.length > LIVE_GRAMMAR_MAX_CHARS ? currentParagraph.slice(-LIVE_GRAMMAR_MAX_CHARS) : currentParagraph;
-  }
-
   function handleEditorInput() {
     autocompleteRequestRef.current += 1;
-    grammarRequestRef.current += 1;
     removeInlineAutocomplete();
     setDraftText(getEditorText());
     setAutocompleteSuggestion("");
-    setGrammarSuggestion(null);
-    setGrammarChecking(false);
   }
 
   function getInlineAutocompleteNode() {
@@ -343,15 +278,8 @@ export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onS
     setAutocompleteSuggestion("");
   }
 
-  function clearGrammarSuggestion() {
-    grammarRequestRef.current += 1;
-    setGrammarSuggestion(null);
-    setGrammarChecking(false);
-  }
-
   function clearWritingSuggestions() {
     clearAutocomplete();
-    clearGrammarSuggestion();
   }
 
   function isCursorAtAutocompleteBoundary() {
@@ -370,16 +298,6 @@ export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onS
     return !textAfterCursor && textBeforeCursor.endsWith(normalizeEditorText(signatureText));
   }
 
-  function isCursorAtPhraseBoundary() {
-    const textBeforeCursor = getTextBeforeCursor();
-    if (!textBeforeCursor.trim()) {
-      return false;
-    }
-
-    const lastCharacter = textBeforeCursor.at(-1) ?? "";
-    return /[\s.,;:!?)]/.test(lastCharacter);
-  }
-
   function canInsertInlineAutocomplete() {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || !selection.isCollapsed || !editorRef.current?.contains(selection.anchorNode)) {
@@ -391,7 +309,7 @@ export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onS
       return false;
     }
 
-    return isCursorAtAutocompleteBoundary() && !isCursorAfterSignature() && isCursorAtPhraseBoundary() && !anchorElement.closest("a, table, img, pre, blockquote");
+    return isCursorAtAutocompleteBoundary() && !isCursorAfterSignature() && !anchorElement.closest("a, table, img, pre, blockquote");
   }
 
   function showInlineAutocomplete(rawSuggestion: string) {
@@ -448,32 +366,6 @@ export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onS
     setAutocompleteSuggestion("");
   }
 
-  function applyGrammarSuggestion() {
-    if (!editorRef.current || !grammarSuggestion) {
-      return;
-    }
-
-    const index = grammarSuggestion.sourceText.lastIndexOf(grammarSuggestion.original);
-    const nextReplyText =
-      index === -1
-        ? grammarSuggestion.corrected
-        : `${grammarSuggestion.sourceText.slice(0, index)}${grammarSuggestion.corrected}${grammarSuggestion.sourceText.slice(index + grammarSuggestion.original.length)}`.trimEnd();
-    const signatureHtml = grammarSuggestion.hasSignature ? signatureHtmlRef.current.trim() : "";
-    editorRef.current.innerHTML = signatureHtml ? `${textToHtml(nextReplyText)}<br /><br />${signatureHtml}` : textToHtml(nextReplyText);
-    setDraftText(getEditorText());
-    setGrammarDismissedFor(grammarSuggestion.corrected);
-    setGrammarSuggestion(null);
-    setGrammarChecking(false);
-  }
-
-  function dismissGrammarSuggestion() {
-    if (grammarSuggestion) {
-      setGrammarDismissedFor(grammarSuggestion.original);
-    }
-    setGrammarSuggestion(null);
-    setGrammarChecking(false);
-  }
-
   function normalizeAcceptedAutocomplete(value: string) {
     const currentText = getTextBeforeCursor();
     if (/\s$/.test(currentText)) {
@@ -499,7 +391,6 @@ export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onS
     if (hasInlineSuggestion && ["Backspace", "Delete", "Enter"].includes(event.key)) {
       removeInlineAutocomplete();
       setAutocompleteSuggestion("");
-      clearGrammarSuggestion();
     }
     if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(event.key)) {
       clearWritingSuggestions();
@@ -741,7 +632,6 @@ export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onS
       }
       setDraftText(getEditorText());
       setAutocompleteSuggestion("");
-      setGrammarChecking(false);
     } catch (requestError) {
       const detail = requestError instanceof Error ? requestError.message : "";
       setError(`Unable to run AI writing tool.${detail ? ` ${detail}` : ""}`);
@@ -845,29 +735,6 @@ export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onS
           aria-label={mode === "public" ? "Public reply body" : "Internal note body"}
           data-placeholder={mode === "public" ? "Write a customer-facing reply..." : "Write an internal troubleshooting note..."}
         />
-        {grammarSuggestion ? (
-          <div className="grammar-suggestion">
-            <div>
-              <strong>Grammar suggestion</strong>
-              <span>{grammarSuggestion.corrected}</span>
-            </div>
-            <div className="row-actions">
-              <button className="button secondary small-button" type="button" onClick={dismissGrammarSuggestion}>
-                Dismiss
-              </button>
-              <button className="button small-button" type="button" onClick={applyGrammarSuggestion}>
-                Apply
-              </button>
-            </div>
-          </div>
-        ) : grammarChecking ? (
-          <div className="grammar-suggestion grammar-suggestion-checking">
-            <div>
-              <strong>Checking grammar</strong>
-              <span>Reviewing the current sentence...</span>
-            </div>
-          </div>
-        ) : null}
       </div>
       <div className="cc-picker">
         <label className="field">
