@@ -229,7 +229,9 @@ export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onS
     const container = document.createElement("div");
     container.appendChild(fragment);
     container.querySelectorAll(`.${INLINE_AUTOCOMPLETE_CLASS}`).forEach((node) => node.remove());
-    return container.innerText.trim();
+    const text = container.innerText.trimStart();
+    const rawText = container.textContent ?? "";
+    return /\s$/.test(rawText) && !/\s$/.test(text) ? `${text} ` : text;
   }
 
   function getTextAfterCursor() {

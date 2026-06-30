@@ -215,7 +215,9 @@ export function EventMessageComposer({ requestId, users, onSaved }: EventMessage
     const container = document.createElement("div");
     container.appendChild(range.cloneContents());
     container.querySelectorAll(`.${INLINE_AUTOCOMPLETE_CLASS}`).forEach((node) => node.remove());
-    return container.innerText.trim();
+    const text = container.innerText.trimStart();
+    const rawText = container.textContent ?? "";
+    return /\s$/.test(rawText) && !/\s$/.test(text) ? `${text} ` : text;
   }
 
   function getTextAfterCursor() {
