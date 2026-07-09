@@ -4768,6 +4768,12 @@ select.compact-select {
   gap: 12px;
 }
 
+.external-specialist-save-button {
+  grid-column: 2;
+  justify-self: end;
+  min-width: 148px;
+}
+
 .compact-summary {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -12495,6 +12501,11 @@ a.dashboard-list-row:hover {
   .tickets-filter-grid,
   .device-toolbar-panel {
     grid-template-columns: 1fr;
+  }
+
+  .external-specialist-save-button {
+    grid-column: 1;
+    justify-self: end;
   }
 
   .settings-summary-card strong,

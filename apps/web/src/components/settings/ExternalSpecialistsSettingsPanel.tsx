@@ -172,7 +172,7 @@ export function ExternalSpecialistsSettingsPanel() {
               <input type="checkbox" checked={draft.isActive} onChange={(event) => setDraft((current) => ({ ...current, isActive: event.target.checked }))} />
               Available for new assignments
             </label>
-            <button className="button span-2" type="button" onClick={() => void save()} disabled={busy === "save" || !draft.name.trim() || !draft.email.trim()}>
+            <button className="button external-specialist-save-button" type="button" onClick={() => void save()} disabled={busy === "save" || !draft.name.trim() || !draft.email.trim()}>
               {editingSpecialist ? <Save size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}
               <span>{busy === "save" ? "Saving..." : editingSpecialist ? "Save Contact" : "Add Contact"}</span>
             </button>
