@@ -176,11 +176,10 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const [ticketData, userData, teamData, externalData] = await Promise.all([
+      const [ticketData, userData, teamData] = await Promise.all([
         apiFetch<Ticket>(`/tickets/${ticketId}`),
         apiFetch<User[]>("/users"),
-        apiFetch<TicketTeam[]>("/ticket-teams"),
-        apiFetch<ExternalSpecialist[]>("/external-specialists")
+        apiFetch<TicketTeam[]>("/ticket-teams")
       ]);
       setTicket(ticketData);
       if (ticketData.ticketNumber && ticketId !== ticketData.ticketNumber) {
@@ -188,7 +187,9 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       }
       setUsers(userData);
       setTicketTeams(teamData);
-      setExternalSpecialists(externalData);
+      apiFetch<ExternalSpecialist[]>("/external-specialists")
+        .then(setExternalSpecialists)
+        .catch(() => setExternalSpecialists([]));
       if (ticketData.client?.id) {
         try {
           setCcContacts(await apiFetch<Contact[]>(`/clients/${ticketData.client.id}/contacts`));

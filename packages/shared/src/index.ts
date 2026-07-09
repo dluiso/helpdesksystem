@@ -51,6 +51,8 @@ export const INITIAL_PERMISSIONS = [
   "event_services.assign",
   "event_services.manage_forms",
   "event_services.delete",
+  "external_specialists.view",
+  "external_specialists.manage",
   "ticket_messages.view",
   "ticket_messages.create_internal",
   "ticket_messages.create_public",
@@ -113,6 +115,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     (permission) =>
       permission.startsWith("tickets.") ||
       permission.startsWith("event_services.") ||
+      permission.startsWith("external_specialists.") ||
       permission.startsWith("ticket_messages.") ||
       permission.startsWith("ticket_attachments.") ||
       permission.startsWith("knowledge_base.") ||

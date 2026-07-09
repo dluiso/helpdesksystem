@@ -4737,6 +4737,45 @@ select.compact-select {
   grid-column: 1 / -1;
 }
 
+.external-specialists-settings {
+  display: grid;
+  gap: 16px;
+}
+
+.external-specialist-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.compact-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.table-subtext {
+  display: block;
+  margin-top: 3px;
+  max-width: 360px;
+  overflow-wrap: anywhere;
+}
+
+.table-action-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-button.danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 9%, var(--surface));
+}
+
+.event-calendar-external-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .event-calendar-task-form textarea,
 .event-calendar-task-form .checkbox-row,
 .event-calendar-task-form .button {

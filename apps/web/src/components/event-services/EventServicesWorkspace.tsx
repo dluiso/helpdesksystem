@@ -243,12 +243,11 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
       if (value) params.set(key, value);
     });
     try {
-      const [requestData, myTaskData, serviceData, userData, externalData] = await Promise.all([
+      const [requestData, myTaskData, serviceData, userData] = await Promise.all([
         apiFetch<EventServiceRequest[]>(`/event-services?${params.toString()}`),
         apiFetch<EventServiceTaskAssignment[]>("/event-services/my-tasks"),
         apiFetch<EventServiceCatalogItem[]>("/event-services/services"),
-        apiFetch<UserOption[]>("/users"),
-        apiFetch<ExternalSpecialist[]>("/external-specialists")
+        apiFetch<UserOption[]>("/users")
       ]);
       setRequests(requestData);
       setMyTasks(myTaskData);
@@ -261,7 +260,9 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
       });
       setServices(serviceData);
       setUsers(userData);
-      setExternalSpecialists(externalData);
+      apiFetch<ExternalSpecialist[]>("/external-specialists")
+        .then(setExternalSpecialists)
+        .catch(() => setExternalSpecialists([]));
       setSelectedRequestIds((current) => current.filter((id) => requestData.some((request) => request.id === id)));
       if (selectedId && !detailOpen && !requestData.some((request) => request.id === selectedId)) {
         setSelectedId(null);

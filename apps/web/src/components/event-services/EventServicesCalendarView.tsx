@@ -21,6 +21,16 @@ interface EventServiceCatalogItem {
   name: string;
 }
 
+interface ExternalSpecialist {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  company: string | null;
+  notes: string | null;
+  isActive: boolean;
+}
+
 interface EventServiceTask {
   id: string;
   title: string;
@@ -32,6 +42,7 @@ interface EventServiceTask {
   calendarSyncedAt: string | null;
   calendarSyncError: string | null;
   assignedUser: UserOption | null;
+  externalSpecialist: ExternalSpecialist | null;
 }
 
 interface EventServiceCalendarRequest {
@@ -49,6 +60,7 @@ interface EventServiceCalendarRequest {
   priority: Priority;
   services: Array<{ service: EventServiceCatalogItem }>;
   assignees: Array<{ user: UserOption; role: string | null }>;
+  externalSpecialists: Array<{ id: string; role: string | null; externalSpecialist: ExternalSpecialist }>;
   tasks: EventServiceTask[];
 }
 
@@ -77,6 +89,22 @@ function label(value: string) {
 
 function userName(user: UserOption | null) {
   return user ? `${user.firstName} ${user.lastName}`.trim() || user.email : "Unassigned";
+}
+
+function externalName(specialist: ExternalSpecialist | null) {
+  return specialist ? `${specialist.name}${specialist.company ? ` (${specialist.company})` : ""}` : "Unassigned";
+}
+
+function taskAssigneeLabel(task: EventServiceTask) {
+  if (task.assignedUser) return userName(task.assignedUser);
+  if (task.externalSpecialist) return externalName(task.externalSpecialist);
+  return "Unassigned";
+}
+
+function taskAssigneePatch(value: string) {
+  if (value.startsWith("user:")) return { assignedUserId: value.slice(5), externalSpecialistId: null };
+  if (value.startsWith("external:")) return { assignedUserId: null, externalSpecialistId: value.slice(9) };
+  return { assignedUserId: null, externalSpecialistId: null };
 }
 
 function localDateKey(value: Date) {
@@ -145,11 +173,12 @@ export function EventServicesCalendarView() {
   const [requests, setRequests] = useState<EventServiceCalendarRequest[]>([]);
   const [services, setServices] = useState<EventServiceCatalogItem[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
+  const [externalSpecialists, setExternalSpecialists] = useState<ExternalSpecialist[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<CalendarMode>("month");
   const [anchor, setAnchor] = useState(() => new Date());
   const [filters, setFilters] = useState({ status: "", assignedUserId: "", serviceId: "" });
-  const [taskDraft, setTaskDraft] = useState({ title: "", assignedUserId: "", dueAt: "", description: "", syncCalendar: false });
+  const [taskDraft, setTaskDraft] = useState({ title: "", assignee: "", dueAt: "", description: "", syncCalendar: false });
   const [eventDraft, setEventDraft] = useState(emptyEventDraft);
   const [eventDraftOpen, setEventDraftOpen] = useState(false);
   const [assignedUserIds, setAssignedUserIds] = useState<string[]>([]);
@@ -200,6 +229,9 @@ export function EventServicesCalendarView() {
       setRequests(requestData);
       setServices(serviceData);
       setUsers(userData);
+      apiFetch<ExternalSpecialist[]>("/external-specialists")
+        .then(setExternalSpecialists)
+        .catch(() => setExternalSpecialists([]));
       if (requestData.length && (!selectedId || !requestData.some((request) => request.id === selectedId))) {
         setSelectedId(requestData[0].id);
       }
@@ -252,7 +284,7 @@ export function EventServicesCalendarView() {
         body: JSON.stringify({
           title: taskDraft.title,
           description: taskDraft.description || null,
-          assignedUserId: taskDraft.assignedUserId || null,
+          ...taskAssigneePatch(taskDraft.assignee),
           dueAt: taskDraft.dueAt || null
         })
       });
@@ -266,9 +298,17 @@ export function EventServicesCalendarView() {
             notes: taskDraft.description || undefined
           })
         });
+      } else if (taskDraft.syncCalendar && task.externalSpecialist) {
+        await apiFetch(`/event-services/${selected.id}/tasks/${task.id}/external-invite`, {
+          method: "POST",
+          body: JSON.stringify({
+            location: selected.venue ?? undefined,
+            message: taskDraft.description || undefined
+          })
+        });
       }
-      setTaskDraft({ title: "", assignedUserId: "", dueAt: selected.eventDate ? `${selected.eventDate.slice(0, 10)}T${selected.startTime ?? "09:00"}` : "", description: "", syncCalendar: false });
-      setNotice(taskDraft.syncCalendar ? "Task created and sent to Microsoft Calendar." : "Task created.");
+      setTaskDraft({ title: "", assignee: "", dueAt: selected.eventDate ? `${selected.eventDate.slice(0, 10)}T${selected.startTime ?? "09:00"}` : "", description: "", syncCalendar: false });
+      setNotice(taskDraft.syncCalendar ? "Task created and calendar notification sent." : "Task created.");
       await loadCalendar();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to create task.");
@@ -334,6 +374,24 @@ export function EventServicesCalendarView() {
       await loadCalendar();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to update task.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function sendExternalInvite(task: EventServiceTask) {
+    if (!selected || !task.externalSpecialist) return;
+    setBusy(`invite-${task.id}`);
+    setError(null);
+    try {
+      await apiFetch(`/event-services/${selected.id}/tasks/${task.id}/external-invite`, {
+        method: "POST",
+        body: JSON.stringify({ location: selected.venue ?? undefined, message: task.description ?? undefined })
+      });
+      setNotice(`Invite sent to ${task.externalSpecialist.email}.`);
+      await loadCalendar();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to send external invite.");
     } finally {
       setBusy(null);
     }
@@ -462,6 +520,13 @@ export function EventServicesCalendarView() {
                     </label>
                   ))}
                 </div>
+                {selected.externalSpecialists.length ? (
+                  <div className="event-calendar-external-list">
+                    {selected.externalSpecialists.map((assignment) => (
+                      <span className="status-pill muted-pill" key={assignment.id}>{externalName(assignment.externalSpecialist)}</span>
+                    ))}
+                  </div>
+                ) : null}
                 <button className="button secondary" type="button" onClick={() => void saveSpecialists()} disabled={busy === "specialists"}>
                   <Save size={16} aria-hidden="true" />
                   <span>Save Specialists</span>
@@ -471,15 +536,20 @@ export function EventServicesCalendarView() {
                 <h3>Create Task</h3>
                 <div className="event-calendar-task-form">
                   <input className="input" placeholder="Task title" value={taskDraft.title} onChange={(event) => setTaskDraft((current) => ({ ...current, title: event.target.value }))} />
-                  <select className="input" value={taskDraft.assignedUserId} onChange={(event) => setTaskDraft((current) => ({ ...current, assignedUserId: event.target.value }))}>
+                  <select className="input" value={taskDraft.assignee} onChange={(event) => setTaskDraft((current) => ({ ...current, assignee: event.target.value }))}>
                     <option value="">Unassigned</option>
-                    {users.map((user) => <option key={user.id} value={user.id}>{userName(user)}</option>)}
+                    <optgroup label="Internal">
+                      {users.map((user) => <option key={user.id} value={`user:${user.id}`}>{userName(user)}</option>)}
+                    </optgroup>
+                    <optgroup label="External">
+                      {externalSpecialists.filter((specialist) => specialist.isActive).map((specialist) => <option key={specialist.id} value={`external:${specialist.id}`}>{externalName(specialist)}</option>)}
+                    </optgroup>
                   </select>
                   <input className="input" type="datetime-local" value={taskDraft.dueAt} onChange={(event) => setTaskDraft((current) => ({ ...current, dueAt: event.target.value }))} />
                   <textarea className="input" placeholder="Notes" value={taskDraft.description} onChange={(event) => setTaskDraft((current) => ({ ...current, description: event.target.value }))} />
                   <label className="checkbox-row">
                     <input type="checkbox" checked={taskDraft.syncCalendar} onChange={(event) => setTaskDraft((current) => ({ ...current, syncCalendar: event.target.checked }))} />
-                    Add to specialist Microsoft Calendar
+                    Send calendar notification
                   </label>
                   <button className="button" type="button" onClick={() => void createTask()} disabled={busy === "task" || !taskDraft.title.trim()}>
                     <CalendarPlus size={16} aria-hidden="true" />
@@ -493,11 +563,17 @@ export function EventServicesCalendarView() {
                   {selected.tasks.map((task) => (
                     <article className={`event-task-card task-status-${task.status.toLowerCase().replace(/_/g, "-")}`} key={task.id}>
                       <strong>{task.title}</strong>
-                      <span className="muted">{userName(task.assignedUser)} · {task.dueAt ? new Date(task.dueAt).toLocaleString() : "No due date"}</span>
+                      <span className="muted">{taskAssigneeLabel(task)} · {task.dueAt ? new Date(task.dueAt).toLocaleString() : "No due date"}</span>
                       <select className="input compact-select" value={task.status} onChange={(event) => void updateTask(task, event.target.value as TaskStatus)} disabled={busy === `task-${task.id}`}>
                         {taskStatuses.map((status) => <option key={status} value={status}>{label(status)}</option>)}
                       </select>
-                      {task.calendarSyncedAt ? <small className="muted">Calendar: {task.calendarUserEmail}</small> : null}
+                      {task.externalSpecialist ? (
+                        <button className="button secondary" type="button" onClick={() => void sendExternalInvite(task)} disabled={busy === `invite-${task.id}`}>
+                          <CalendarPlus size={14} aria-hidden="true" />
+                          <span>Send Invite</span>
+                        </button>
+                      ) : null}
+                      {task.calendarSyncedAt ? <small className="muted">Calendar notification: {task.calendarUserEmail}</small> : null}
                       {task.calendarSyncError ? <small className="error">{task.calendarSyncError}</small> : null}
                     </article>
                   ))}

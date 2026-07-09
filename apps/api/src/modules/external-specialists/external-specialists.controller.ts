@@ -13,25 +13,25 @@ export class ExternalSpecialistsController {
   constructor(private readonly externalSpecialists: ExternalSpecialistsService) {}
 
   @Get()
-  @RequirePermissions("event_services.view")
+  @RequirePermissions("external_specialists.view")
   list(@CurrentUser() user: AuthenticatedUser) {
     return this.externalSpecialists.list(user);
   }
 
   @Post()
-  @RequirePermissions("event_services.update")
+  @RequirePermissions("external_specialists.manage")
   create(@CurrentUser() user: AuthenticatedUser, @Body() body: UpsertExternalSpecialistDto) {
     return this.externalSpecialists.create(user, body);
   }
 
   @Patch(":specialistId")
-  @RequirePermissions("event_services.update")
+  @RequirePermissions("external_specialists.manage")
   update(@Param("specialistId") specialistId: string, @CurrentUser() user: AuthenticatedUser, @Body() body: UpsertExternalSpecialistDto) {
     return this.externalSpecialists.update(specialistId, user, body);
   }
 
   @Delete(":specialistId")
-  @RequirePermissions("event_services.update")
+  @RequirePermissions("external_specialists.manage")
   archive(@Param("specialistId") specialistId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.externalSpecialists.archive(specialistId, user);
   }
