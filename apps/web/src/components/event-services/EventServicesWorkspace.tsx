@@ -87,10 +87,34 @@ interface EventServicesWorkspaceProps {
 const statuses: EventStatus[] = ["NEW", "UNDER_REVIEW", "SCHEDULED", "ASSIGNED", "IN_PROGRESS", "WAITING_ON_CLIENT", "WAITING_ON_INTERNAL_TEAM", "COMPLETED", "CANCELLED", "CONVERTED_TO_TICKET"];
 const taskStatuses: TaskStatus[] = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE", "CANCELLED"];
 const priorities: Priority[] = ["LOW", "NORMAL", "HIGH", "URGENT", "CRITICAL"];
+const simplifiedStatusOptions: Array<{ status: EventStatus; label: string; description: string }> = [
+  { status: "UNDER_REVIEW", label: "Confirm", description: "Acknowledge that Avidity will review and coordinate the request." },
+  { status: "SCHEDULED", label: "Schedule", description: "Mark the event as scheduled on the operations calendar." },
+  { status: "IN_PROGRESS", label: "Start", description: "Move active work into progress." },
+  { status: "WAITING_ON_CLIENT", label: "Waiting", description: "Pause while waiting for requester details or approval." },
+  { status: "COMPLETED", label: "Complete", description: "Close the operational work as completed." }
+];
+
+const eventStatusLabels: Record<EventStatus, string> = {
+  NEW: "New",
+  UNDER_REVIEW: "Confirmed",
+  SCHEDULED: "Scheduled",
+  ASSIGNED: "Assigned",
+  IN_PROGRESS: "In Progress",
+  WAITING_ON_CLIENT: "Waiting on Requester",
+  WAITING_ON_INTERNAL_TEAM: "Waiting on Team",
+  COMPLETED: "Completed",
+  CANCELLED: "Cancelled",
+  CONVERTED_TO_TICKET: "Converted to Ticket"
+};
 
 function label(value: string) {
   if (value === "TODO") return "To Do";
   return value.toLowerCase().replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function eventStatusLabel(value: EventStatus) {
+  return eventStatusLabels[value] ?? label(value);
 }
 
 function statusClass(value: string) {
@@ -383,6 +407,26 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
     }
   }
 
+  async function quickSetSelectedStatus(status: EventStatus) {
+    if (!selected) return;
+    setBusy(`status-${status}`);
+    setError(null);
+    try {
+      const updated = await apiFetch<EventServiceRequest>(`/event-services/${selected.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status })
+      });
+      setSelected(updated);
+      setDraft((current) => ({ ...current, status: updated.status }));
+      setNotice(`${updated.trackingNumber} marked ${eventStatusLabel(updated.status).toLowerCase()}.`);
+      await loadData();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to update event status.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function createTask() {
     if (!selected || !taskDraft.title.trim()) return;
     setBusy("task");
@@ -400,7 +444,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
     }
   }
 
-  async function updateTask(taskId: string, patch: Partial<{ status: TaskStatus; assignedUserId: string; dueAt: string | null }>) {
+  async function updateTask(taskId: string, patch: Partial<{ status: TaskStatus; assignedUserId: string | null; dueAt: string | null }>) {
     if (!selected) return;
     await apiFetch(`/event-services/${selected.id}/tasks/${taskId}`, {
       method: "PATCH",
@@ -548,7 +592,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
         <label className="event-filter-field"><span>Search</span><input className="input" placeholder="Search tracking, event, requester, venue..." value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} /></label>
         <label className="event-filter-field"><span>Status</span><select className="input" value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}>
           <option value="">All statuses</option>
-          {statuses.map((status) => <option key={status} value={status}>{label(status)}</option>)}
+          {statuses.map((status) => <option key={status} value={status}>{eventStatusLabel(status)}</option>)}
         </select></label>
         <label className="event-filter-field"><span>Service</span><select className="input" value={filters.serviceId} onChange={(event) => setFilters((current) => ({ ...current, serviceId: event.target.value }))}>
           <option value="">All services</option>
@@ -641,7 +685,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                           onChange={(event) => { event.stopPropagation(); void quickUpdateRequest(request, { status: event.target.value as EventStatus }); }}
                           onClick={(event) => event.stopPropagation()}
                         >
-                          {statuses.map((status) => <option key={status} value={status}>{label(status)}</option>)}
+                          {statuses.map((status) => <option key={status} value={status}>{eventStatusLabel(status)}</option>)}
                         </select>
                         <ChevronDown className="event-select-chevron" size={15} aria-hidden="true" />
                       </span>
@@ -669,7 +713,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                 <div>
                   <div className="event-detail-title-row">
                     <h2>{selected.trackingNumber}</h2>
-                    <span className={`status-pill ${statusClass(selected.status)}`}>{label(selected.status)}</span>
+                    <span className={`status-pill ${statusClass(selected.status)}`}>{eventStatusLabel(selected.status)}</span>
                     <span className={`status-pill ${priorityClass(selected.priority)}`}>{label(selected.priority)}</span>
                   </div>
                   <p className="muted">{selected.eventName}</p>
@@ -766,8 +810,22 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                         <p className="muted">Status, priority, specialists, and internal request notes.</p>
                       </div>
                     </div>
+                    <div className="event-status-actions" aria-label="Quick status actions">
+                      {simplifiedStatusOptions.map((option) => (
+                        <button
+                          className={selected.status === option.status ? "active" : ""}
+                          disabled={busy === `status-${option.status}` || selected.status === option.status}
+                          key={option.status}
+                          onClick={() => void quickSetSelectedStatus(option.status)}
+                          title={option.description}
+                          type="button"
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
                     <div className="event-management-grid">
-                      <label>Status<select className="input" value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as EventStatus }))}>{statuses.map((status) => <option key={status} value={status}>{label(status)}</option>)}</select></label>
+                      <label>Status<select className="input" value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as EventStatus }))}>{statuses.map((status) => <option key={status} value={status}>{eventStatusLabel(status)}</option>)}</select></label>
                       <label>Priority<select className="input" value={draft.priority} onChange={(event) => setDraft((current) => ({ ...current, priority: event.target.value as Priority }))}>{priorities.map((priority) => <option key={priority} value={priority}>{label(priority)}</option>)}</select></label>
                     </div>
                     <div className="event-assignee-picker compact">
@@ -798,6 +856,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                       <input className="input" placeholder="Task title" value={taskDraft.title} onChange={(event) => setTaskDraft((current) => ({ ...current, title: event.target.value }))} />
                       <select className="input" value={taskDraft.assignedUserId} onChange={(event) => setTaskDraft((current) => ({ ...current, assignedUserId: event.target.value }))}><option value="">Unassigned</option>{users.map((user) => <option key={user.id} value={user.id}>{userName(user)}</option>)}</select>
                       <input className="input" type="datetime-local" value={taskDraft.dueAt} onChange={(event) => setTaskDraft((current) => ({ ...current, dueAt: event.target.value }))} />
+                      <textarea className="input" placeholder="Task details or calendar notes" value={taskDraft.description} onChange={(event) => setTaskDraft((current) => ({ ...current, description: event.target.value }))} />
                       <button className="button secondary" type="button" onClick={createTask} disabled={busy === "task"}><Plus size={16} />Add Task</button>
                     </div>
                     <div className="event-compact-task-list">
@@ -813,7 +872,11 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                             {task.description ? <p className="muted">{task.description}</p> : null}
                             <span className="muted">Assigned: {userName(task.assignedUser)}</span>
                             <span className="muted">Due: {formatDateTime(task.dueAt)}</span>
-                            <select className="input compact-select" value={task.status} onChange={(event) => void updateTask(task.id, { status: event.target.value as TaskStatus })}>{taskStatuses.map((item) => <option key={item} value={item}>{label(item)}</option>)}</select>
+                            <div className="event-task-edit-grid">
+                              <label>Status<select className="input compact-select" value={task.status} onChange={(event) => void updateTask(task.id, { status: event.target.value as TaskStatus })}>{taskStatuses.map((item) => <option key={item} value={item}>{label(item)}</option>)}</select></label>
+                              <label>Specialist<select className="input compact-select" value={task.assignedUser?.id ?? ""} onChange={(event) => void updateTask(task.id, { assignedUserId: event.target.value || null })}><option value="">Unassigned</option>{users.map((user) => <option key={user.id} value={user.id}>{userName(user)}</option>)}</select></label>
+                              <label>Due<input className="input compact-select" type="datetime-local" value={task.dueAt ? task.dueAt.slice(0, 16) : ""} onChange={(event) => void updateTask(task.id, { dueAt: event.target.value || null })} /></label>
+                            </div>
                             <details className="event-calendar-sync">
                               <summary><CalendarPlus size={14} /> Calendar</summary>
                               <div className="event-calendar-grid">

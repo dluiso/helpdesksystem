@@ -4040,6 +4040,36 @@ select.compact-select {
   resize: vertical;
 }
 
+.event-status-actions {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.event-status-actions button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0 8px;
+  color: var(--text);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.event-status-actions button:hover:not(:disabled),
+.event-status-actions button.active {
+  border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--line));
+  color: var(--brand-primary);
+  background: var(--surface-selected);
+}
+
+.event-status-actions button:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
 .event-assignee-picker.compact {
   grid-template-columns: 1fr;
   padding: 10px;
@@ -4051,6 +4081,11 @@ select.compact-select {
 
 .event-task-create.compact {
   grid-template-columns: 1fr;
+}
+
+.event-task-create.compact textarea {
+  min-height: 72px;
+  resize: vertical;
 }
 
 .event-compact-task-list,
@@ -4074,6 +4109,21 @@ select.compact-select {
 .event-task-card .status-pill {
   flex: 0 0 auto;
   font-size: 11px;
+}
+
+.event-task-edit-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+}
+
+.event-task-edit-grid label {
+  display: grid;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
 }
 
 .event-activity-disclosure {
@@ -12412,6 +12462,7 @@ a.dashboard-list-row:hover {
   .event-create-grid,
   .event-create-picker > div,
   .event-task-create,
+  .event-status-actions,
   .event-task-actions {
     display: grid;
     grid-template-columns: 1fr;
