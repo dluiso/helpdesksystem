@@ -21,14 +21,14 @@ export class RolesService {
   }
 
   async create(user: AuthenticatedUser, input: CreateRoleDto) {
-    await this.ensurePermissionsExist(input.permissionIds ?? []);
+    const permissionIds = await this.resolvePermissionIds(input.permissionIds ?? []);
     try {
       const role = await this.prisma.role.create({
         data: {
           organizationId: user.organizationId,
           name: input.name.trim(),
           description: this.optionalTrim(input.description),
-          permissions: { create: (input.permissionIds ?? []).map((permissionId) => ({ permissionId })) }
+          permissions: { create: permissionIds.map((permissionId) => ({ permissionId })) }
         },
         include: this.roleInclude()
       });
@@ -38,7 +38,7 @@ export class RolesService {
         entityType: "Role",
         entityId: role.id,
         action: "role.created",
-        metadata: { name: role.name, permissionIds: input.permissionIds ?? [] }
+        metadata: { name: role.name, permissionIds }
       });
 
       return role;
@@ -52,17 +52,15 @@ export class RolesService {
 
   async update(roleId: string, user: AuthenticatedUser, input: UpdateRoleDto) {
     const existing = await this.ensureRole(roleId, user.organizationId);
-    if (input.permissionIds) {
-      await this.ensurePermissionsExist(input.permissionIds);
-    }
+    const permissionIds = input.permissionIds ? await this.resolvePermissionIds(input.permissionIds) : undefined;
 
     try {
       const role = await this.prisma.$transaction(async (tx) => {
-        if (input.permissionIds) {
+        if (permissionIds) {
           await tx.rolePermission.deleteMany({ where: { roleId } });
-          if (input.permissionIds.length > 0) {
+          if (permissionIds.length > 0) {
             await tx.rolePermission.createMany({
-              data: input.permissionIds.map((permissionId) => ({ roleId, permissionId })),
+              data: permissionIds.map((permissionId) => ({ roleId, permissionId })),
               skipDuplicates: true
             });
           }
@@ -83,7 +81,7 @@ export class RolesService {
         entityType: "Role",
         entityId: role.id,
         action: "role.updated",
-        metadata: { previousName: existing.name, name: role.name, permissionIds: input.permissionIds ?? undefined }
+        metadata: { previousName: existing.name, name: role.name, permissionIds }
       });
 
       return role;
@@ -121,16 +119,31 @@ export class RolesService {
     return role;
   }
 
-  private async ensurePermissionsExist(permissionIds: string[]) {
-    const uniqueIds = [...new Set(permissionIds)];
-    if (uniqueIds.length === 0) {
-      return;
+  private async resolvePermissionIds(permissionValues: string[]) {
+    const uniqueValues = [...new Set(permissionValues.map((value) => value.trim()).filter(Boolean))];
+    if (uniqueValues.length === 0) {
+      return [];
     }
 
-    const count = await this.prisma.permission.count({ where: { id: { in: uniqueIds } } });
-    if (count !== uniqueIds.length) {
-      throw new BadRequestException("One or more permissions do not exist.");
+    const uuidValues = uniqueValues.filter((value) => this.isUuid(value));
+    const nameValues = uniqueValues.filter((value) => !this.isUuid(value));
+    const permissions = await this.prisma.permission.findMany({
+      where: {
+        OR: [
+          ...(uuidValues.length > 0 ? [{ id: { in: uuidValues } }] : []),
+          ...(nameValues.length > 0 ? [{ name: { in: nameValues } }] : [])
+        ]
+      },
+      select: { id: true, name: true }
+    });
+    const permissionById = new Map(permissions.map((permission) => [permission.id, permission.id]));
+    const permissionByName = new Map(permissions.map((permission) => [permission.name, permission.id]));
+    const resolvedIds = uniqueValues.map((value) => permissionById.get(value) ?? permissionByName.get(value)).filter((value): value is string => Boolean(value));
+
+    if (resolvedIds.length !== uniqueValues.length) {
+      throw new BadRequestException("One or more selected permissions do not exist. Refresh permissions and try again.");
     }
+    return [...new Set(resolvedIds)];
   }
 
   private roleInclude() {
@@ -157,5 +170,9 @@ export class RolesService {
 
   private isUniqueConstraint(error: unknown) {
     return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
+  }
+
+  private isUuid(value: string) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
   }
 }

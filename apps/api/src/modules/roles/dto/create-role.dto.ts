@@ -1,4 +1,4 @@
-import { IsArray, IsOptional, IsString, IsUUID } from "class-validator";
+import { IsArray, IsOptional, IsString } from "class-validator";
 
 export class CreateRoleDto {
   @IsString()
@@ -10,6 +10,6 @@ export class CreateRoleDto {
 
   @IsOptional()
   @IsArray()
-  @IsUUID("4", { each: true })
+  @IsString({ each: true })
   permissionIds?: string[];
 }
