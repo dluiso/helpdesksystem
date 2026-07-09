@@ -3891,6 +3891,205 @@ select.compact-select {
   background: var(--surface-raised);
 }
 
+.event-detail-heading {
+  align-items: start;
+  gap: 14px;
+}
+
+.event-detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.event-detail-title-row h2 {
+  margin: 0;
+}
+
+.event-detail-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 0.36fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.event-detail-main,
+.event-detail-sidebar {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.event-original-request-panel,
+.event-conversation-panel,
+.event-side-panel {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  background: var(--surface-subtle);
+}
+
+.event-original-request-panel {
+  background: var(--surface-raised);
+}
+
+.event-request-summary-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.event-request-summary-list div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.event-request-summary-list dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.event-request-summary-list dd {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.event-request-body,
+.event-custom-fields {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.event-request-body h4,
+.event-custom-fields h4 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.event-request-body p {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.event-conversation-panel .event-message-composer {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 12px;
+  background: var(--surface);
+}
+
+.event-conversation-list {
+  margin: 0;
+}
+
+.event-message-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.event-message-header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.event-message.internal {
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--line));
+  background: color-mix(in srgb, var(--warning) 6%, var(--surface-raised));
+}
+
+.event-detail-empty {
+  margin: 0;
+  padding: 10px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  background: var(--surface);
+}
+
+.event-side-panel .section-heading {
+  margin: 0;
+}
+
+.event-side-panel textarea.input {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.event-assignee-picker.compact {
+  grid-template-columns: 1fr;
+  padding: 10px;
+}
+
+.event-assignee-picker.compact label {
+  min-height: 32px;
+}
+
+.event-task-create.compact {
+  grid-template-columns: 1fr;
+}
+
+.event-compact-task-list,
+.event-comment-list {
+  display: grid;
+  gap: 8px;
+}
+
+.event-task-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.event-task-card-header strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.event-task-card .status-pill {
+  flex: 0 0 auto;
+  font-size: 11px;
+}
+
+.event-activity-disclosure {
+  display: block;
+}
+
+.event-activity-disclosure summary {
+  color: var(--text-strong);
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.event-activity-disclosure > * + * {
+  margin-top: 10px;
+}
+
 .event-detail-tabs {
   display: inline-flex;
   flex-wrap: wrap;
@@ -11048,7 +11247,9 @@ a.dashboard-list-row:hover {
   .event-calendar-layout,
   .event-calendar-facts,
   .event-calendar-task-form,
-  .event-management-grid {
+  .event-management-grid,
+  .event-detail-workbench,
+  .event-request-summary-list {
     grid-template-columns: 1fr;
   }
 
@@ -12313,6 +12514,8 @@ a.dashboard-list-row:hover {
   .event-filter-panel,
   .event-services-layout,
   .event-detail-grid,
+  .event-detail-workbench,
+  .event-request-summary-list,
   .event-management-grid,
   .event-detail-columns,
   .event-admin-grid,
