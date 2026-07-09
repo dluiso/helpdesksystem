@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, CalendarPlus, CheckCircle2, ChevronDown, ClipboardList, ExternalLink, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Send, Trash2, UsersRound, X } from "lucide-react";
+import { CalendarDays, CalendarPlus, CheckCircle2, ChevronDown, ClipboardList, ExternalLink, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Send, Trash2, UserPlus, UsersRound, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { AttachmentPreviewList } from "../tickets/AttachmentPreviewList";
@@ -993,7 +993,18 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                       ))}
                     </div>
                     <div className="event-assignee-picker compact">
-                      <strong>External Specialists</strong>
+                      <div className="event-external-heading">
+                        <strong>External Specialists</strong>
+                        <button
+                          className={`icon-button event-external-add-button${externalCreateOpen ? " active" : ""}`}
+                          type="button"
+                          title={externalCreateOpen ? "Cancel new external specialist" : "Add new external specialist"}
+                          aria-label={externalCreateOpen ? "Cancel new external specialist" : "Add new external specialist"}
+                          onClick={() => setExternalCreateOpen((current) => !current)}
+                        >
+                          {externalCreateOpen ? <X size={15} /> : <UserPlus size={15} />}
+                        </button>
+                      </div>
                       {selected.externalSpecialists.length === 0 ? <span className="muted">No external specialists assigned.</span> : null}
                       {selected.externalSpecialists.map((assignment) => (
                         <label key={assignment.id}>
@@ -1008,10 +1019,6 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                         </select>
                         <button className="button secondary" type="button" onClick={addExternalToEvent} disabled={!externalAssignmentId || busy === "external-assign"}><Plus size={16} />Assign</button>
                       </div>
-                      <button className="button secondary full-width-button" type="button" onClick={() => setExternalCreateOpen((current) => !current)}>
-                        {externalCreateOpen ? <X size={16} /> : <Plus size={16} />}
-                        {externalCreateOpen ? "Cancel New Specialist" : "Add New External Specialist"}
-                      </button>
                       {externalCreateOpen ? <div className="event-external-create-grid">
                         <input className="input" placeholder="Name" value={externalDraft.name} onChange={(event) => setExternalDraft((current) => ({ ...current, name: event.target.value }))} />
                         <input className="input" placeholder="Email" value={externalDraft.email} onChange={(event) => setExternalDraft((current) => ({ ...current, email: event.target.value }))} />

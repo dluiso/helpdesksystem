@@ -4720,6 +4720,27 @@ select.compact-select {
   grid-column: 1 / -1;
 }
 
+.event-external-heading {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.event-external-add-button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--primary);
+}
+
+.event-external-add-button.active {
+  color: var(--danger);
+  background: var(--surface-elevated);
+}
+
 .event-inline-controls {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
