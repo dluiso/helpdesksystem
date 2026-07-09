@@ -15,6 +15,10 @@ export class ListEventServiceRequestsDto {
 
   @IsOptional()
   @IsUUID()
+  externalSpecialistId?: string;
+
+  @IsOptional()
+  @IsUUID()
   serviceId?: string;
 
   @IsOptional()

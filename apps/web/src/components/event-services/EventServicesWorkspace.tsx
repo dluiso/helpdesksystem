@@ -74,6 +74,7 @@ interface EventServiceRequest {
     authorUser: UserOption | null;
     attachments: Array<{ id: string; originalFilename: string; mimeType: string; fileSize: number; isInline?: boolean }>;
   }>;
+  activity?: Array<{ id: string; action: string; metadata: Record<string, unknown> | null; createdAt: string; user: UserOption | null }>;
 }
 
 interface EventServiceTaskAssignment {
@@ -201,6 +202,38 @@ function formatCustomFieldValue(value: unknown) {
   return String(value);
 }
 
+function activityTitle(action: string) {
+  const labels: Record<string, string> = {
+    "event_service_task.external_invite_sent": "External invite sent",
+    "event_service_task.calendar_synced": "Calendar synced",
+    "event_service_task.created": "Task created",
+    "event_service_task.updated": "Task updated",
+    "event_service_external_specialist.assigned": "External specialist assigned",
+    "event_service_external_specialist.removed": "External specialist removed",
+    "event_service_message.sent": "Message sent",
+    "event_service_comment.created": "Internal comment added",
+    "event_service_request.updated": "Request updated",
+    "event_service_request.created_internal": "Request created",
+    "event_service_request.created_public": "Portal request received",
+    "event_service_request.auto_reply_sent": "Auto reply sent"
+  };
+  return labels[action] ?? label(action.replace(/^event_service_/, ""));
+}
+
+function activityDetail(activity: NonNullable<EventServiceRequest["activity"]>[number]) {
+  const metadata = activity.metadata ?? {};
+  if (activity.action === "event_service_task.external_invite_sent") {
+    return `${String(metadata.taskTitle ?? "Task")} sent to ${String(metadata.externalSpecialistEmail ?? metadata.calendarUserEmail ?? "external specialist")}.`;
+  }
+  if (activity.action === "event_service_task.calendar_synced") {
+    return `Calendar notification for ${String(metadata.calendarUserEmail ?? "specialist")}.`;
+  }
+  if (activity.action === "event_service_task.created" || activity.action === "event_service_task.updated") {
+    return String(metadata.title ?? metadata.status ?? "Task workflow changed.");
+  }
+  return activity.user ? `By ${userName(activity.user)}` : "System activity";
+}
+
 export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWorkspaceProps = {}) {
   const detailPage = Boolean(detailTrackingNumber);
   const [activeTab, setActiveTab] = useState<"requests" | "myTasks">("requests");
@@ -216,7 +249,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
   const [services, setServices] = useState<EventServiceCatalogItem[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [externalSpecialists, setExternalSpecialists] = useState<ExternalSpecialist[]>([]);
-  const [filters, setFilters] = useState({ search: "", status: "", assignedUserId: "", serviceId: "" });
+  const [filters, setFilters] = useState({ search: "", status: "", assignedUserId: "", externalSpecialistId: "", serviceId: "" });
   const [draft, setDraft] = useState({ status: "NEW" as EventStatus, priority: "NORMAL" as Priority, assignedUserIds: [] as string[], additionalInfo: "" });
   const [taskDraft, setTaskDraft] = useState({ title: "", assignee: "", description: "", dueAt: "" });
   const [externalDraft, setExternalDraft] = useState({ name: "", email: "", phone: "", company: "" });
@@ -714,6 +747,10 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
           <option value="">All technicians</option>
           {users.map((user) => <option key={user.id} value={user.id}>{userName(user)}</option>)}
         </select></label>
+        <label className="event-filter-field"><span>External</span><select className="input" value={filters.externalSpecialistId} onChange={(event) => setFilters((current) => ({ ...current, externalSpecialistId: event.target.value }))}>
+          <option value="">All external specialists</option>
+          {externalSpecialists.filter((specialist) => specialist.isActive).map((specialist) => <option key={specialist.id} value={specialist.id}>{externalName(specialist)}</option>)}
+        </select></label>
         <button className="button" type="button" onClick={() => void loadData(filters)}>Apply Filters</button>
       </section>
 
@@ -1071,9 +1108,14 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
 
                   <details className="nested-panel event-side-panel event-activity-disclosure">
                     <summary>Activity Snapshot</summary>
-                    {selected.comments?.length || selected.messages?.length ? null : <p className="muted">No visible activity yet.</p>}
-                    {selected.messages?.slice(0, 5).map((message) => <div className="event-comment" key={`message-${message.id}`}><strong>{label(message.direction)} message</strong><p>{message.bodyText}</p><small>{formatDateTime(message.createdAt)}</small></div>)}
-                    {selected.comments?.slice(0, 5).map((comment) => <div className="event-comment" key={`comment-${comment.id}`}><strong>{userName(comment.user)}</strong><p>{comment.body}</p><small>{formatDateTime(comment.createdAt)}</small></div>)}
+                    {selected.activity?.length ? null : <p className="muted">No visible activity yet.</p>}
+                    {selected.activity?.slice(0, 10).map((activity) => (
+                      <div className="event-comment" key={activity.id}>
+                        <strong>{activityTitle(activity.action)}</strong>
+                        <p>{activityDetail(activity)}</p>
+                        <small>{formatDateTime(activity.createdAt)}</small>
+                      </div>
+                    ))}
                   </details>
                 </aside>
               </div>

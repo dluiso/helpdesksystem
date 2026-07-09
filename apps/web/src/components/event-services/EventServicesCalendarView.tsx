@@ -177,7 +177,7 @@ export function EventServicesCalendarView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<CalendarMode>("month");
   const [anchor, setAnchor] = useState(() => new Date());
-  const [filters, setFilters] = useState({ status: "", assignedUserId: "", serviceId: "" });
+  const [filters, setFilters] = useState({ status: "", assignedUserId: "", externalSpecialistId: "", serviceId: "" });
   const [taskDraft, setTaskDraft] = useState({ title: "", assignee: "", dueAt: "", description: "", syncCalendar: false });
   const [eventDraft, setEventDraft] = useState(emptyEventDraft);
   const [eventDraftOpen, setEventDraftOpen] = useState(false);
@@ -450,6 +450,10 @@ export function EventServicesCalendarView() {
         <label className="event-filter-field"><span>Specialist</span><select className="input" value={filters.assignedUserId} onChange={(event) => setFilters((current) => ({ ...current, assignedUserId: event.target.value }))}>
           <option value="">All specialists</option>
           {users.map((user) => <option key={user.id} value={user.id}>{userName(user)}</option>)}
+        </select></label>
+        <label className="event-filter-field"><span>External</span><select className="input" value={filters.externalSpecialistId} onChange={(event) => setFilters((current) => ({ ...current, externalSpecialistId: event.target.value }))}>
+          <option value="">All external specialists</option>
+          {externalSpecialists.filter((specialist) => specialist.isActive).map((specialist) => <option key={specialist.id} value={specialist.id}>{externalName(specialist)}</option>)}
         </select></label>
         <button className="button" type="button" onClick={() => void loadCalendar(filters)}>Apply</button>
       </section>

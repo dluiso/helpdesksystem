@@ -208,19 +208,32 @@ export class EventServicesService {
     if (query.assignedUserId) {
       where.assignees = { some: { userId: query.assignedUserId } };
     }
+    if (query.externalSpecialistId) {
+      where.OR = [
+        ...(Array.isArray(where.OR) ? where.OR : []),
+        { externalSpecialists: { some: { externalSpecialistId: query.externalSpecialistId } } },
+        { tasks: { some: { externalSpecialistId: query.externalSpecialistId } } }
+      ];
+    }
     if (query.serviceId) {
       where.services = { some: { serviceId: query.serviceId } };
     }
     const search = query.search?.trim();
     if (search) {
-      where.OR = [
+      const searchFilter: Prisma.EventServiceRequestWhereInput = { OR: [
         { trackingNumber: { contains: search, mode: "insensitive" } },
         { eventName: { contains: search, mode: "insensitive" } },
         { requesterEmail: { contains: search, mode: "insensitive" } },
         { requesterFirstName: { contains: search, mode: "insensitive" } },
         { requesterLastName: { contains: search, mode: "insensitive" } },
         { venue: { contains: search, mode: "insensitive" } }
-      ];
+      ] };
+      if (where.OR) {
+        where.AND = [{ OR: where.OR }, searchFilter];
+        delete where.OR;
+      } else {
+        where.AND = [...(Array.isArray(where.AND) ? where.AND : []), searchFilter];
+      }
     }
 
     const sortBy = query.sortBy ?? "updatedAt";
@@ -252,6 +265,13 @@ export class EventServicesService {
       where.OR = [
         { assignees: { some: { userId: query.assignedUserId } } },
         { tasks: { some: { assignedUserId: query.assignedUserId } } }
+      ];
+    }
+    if (query.externalSpecialistId) {
+      where.OR = [
+        ...(Array.isArray(where.OR) ? where.OR : []),
+        { externalSpecialists: { some: { externalSpecialistId: query.externalSpecialistId } } },
+        { tasks: { some: { externalSpecialistId: query.externalSpecialistId } } }
       ];
     }
     if (query.serviceId) {
@@ -576,7 +596,14 @@ export class EventServicesService {
       },
       include: { assignedUser: { select: this.userSelect() }, externalSpecialist: true }
     });
-    await this.logActivity(request.id, user.id, "event_service_task.external_invite_sent", { taskId: task.id, externalSpecialistId: task.externalSpecialist.id });
+    await this.logActivity(request.id, user.id, "event_service_task.external_invite_sent", {
+      taskId: task.id,
+      taskTitle: task.title,
+      externalSpecialistId: task.externalSpecialist.id,
+      externalSpecialistName: task.externalSpecialist.name,
+      externalSpecialistEmail: task.externalSpecialist.email,
+      calendarUserEmail: task.externalSpecialist.email
+    });
     return updated;
   }
 

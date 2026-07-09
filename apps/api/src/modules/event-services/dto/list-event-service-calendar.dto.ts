@@ -19,5 +19,9 @@ export class ListEventServiceCalendarDto {
 
   @IsOptional()
   @IsUUID()
+  externalSpecialistId?: string;
+
+  @IsOptional()
+  @IsUUID()
   serviceId?: string;
 }
