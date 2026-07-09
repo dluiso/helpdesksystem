@@ -52,6 +52,20 @@ export class UsersService {
     });
   }
 
+  async listAssignable(user: AuthenticatedUser) {
+    return this.prisma.user.findMany({
+      where: { organizationId: user.organizationId, deletedAt: null, isActive: true },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true
+      },
+      orderBy: [{ firstName: "asc" }, { lastName: "asc" }, { email: "asc" }],
+      take: 250
+    });
+  }
+
   async create(user: AuthenticatedUser, input: CreateUserDto) {
     const email = input.email.trim().toLowerCase();
     await this.ensureEmailAvailable(email);

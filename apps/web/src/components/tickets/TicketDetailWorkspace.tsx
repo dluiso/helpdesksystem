@@ -137,6 +137,16 @@ function externalName(specialist: ExternalSpecialist) {
   return `${specialist.name}${specialist.company ? ` (${specialist.company})` : ""}`;
 }
 
+function mergeUsers(primary: User[], fallback: Array<User | null | undefined>) {
+  const byId = new Map<string, User>();
+  [...primary, ...fallback].forEach((user) => {
+    if (user) {
+      byId.set(user.id, user);
+    }
+  });
+  return [...byId.values()].sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
+}
+
 export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const router = useRouter();
   const [ticket, setTicket] = useState<Ticket | null>(null);
@@ -177,20 +187,23 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const [ticketData, userData, teamData] = await Promise.all([
-        apiFetch<Ticket>(`/tickets/${ticketId}`),
-        apiFetch<User[]>("/users"),
-        apiFetch<TicketTeam[]>("/ticket-teams")
-      ]);
+      const ticketData = await apiFetch<Ticket>(`/tickets/${ticketId}`);
       setTicket(ticketData);
       if (ticketData.ticketNumber && ticketId !== ticketData.ticketNumber) {
         router.replace(`/tickets/${ticketData.ticketNumber}`);
       }
-      setUsers(userData);
+      const [userData, teamData, externalData] = await Promise.all([
+        apiFetch<User[]>("/users/assignable").catch(() => []),
+        apiFetch<TicketTeam[]>("/ticket-teams").catch(() => []),
+        apiFetch<ExternalSpecialist[]>("/external-specialists").catch(() => [])
+      ]);
+      setUsers(mergeUsers(userData, [
+        ticketData.assignedUser,
+        ...(ticketData.assignees ?? []).map((assignment) => assignment.user),
+        ...(ticketData.watchers ?? []).map((watcher) => watcher.user)
+      ]));
       setTicketTeams(teamData);
-      apiFetch<ExternalSpecialist[]>("/external-specialists")
-        .then(setExternalSpecialists)
-        .catch(() => setExternalSpecialists([]));
+      setExternalSpecialists(externalData);
       if (ticketData.client?.id) {
         try {
           setCcContacts(await apiFetch<Contact[]>(`/clients/${ticketData.client.id}/contacts`));

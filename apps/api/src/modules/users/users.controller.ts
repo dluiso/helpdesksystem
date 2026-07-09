@@ -13,6 +13,12 @@ import { UsersService } from "./users.service";
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  @Get("assignable")
+  @RequirePermissions("tickets.assign")
+  listAssignable(@CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.listAssignable(user);
+  }
+
   @Get()
   @RequirePermissions("users.view")
   list(@CurrentUser() user: AuthenticatedUser) {
