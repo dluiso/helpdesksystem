@@ -5,6 +5,33 @@ import { PrismaService } from "../prisma/prisma.service";
 import { CreateRoleDto } from "./dto/create-role.dto";
 import { UpdateRoleDto } from "./dto/update-role.dto";
 
+const KNOWN_PERMISSION_NAMES = new Set([
+  "users.view", "users.create", "users.update", "users.delete",
+  "groups.view", "groups.create", "groups.update", "groups.delete",
+  "roles.view", "roles.create", "roles.update", "roles.delete",
+  "permissions.view",
+  "clients.view", "clients.create", "clients.update", "clients.delete",
+  "client_domains.view", "client_domains.create", "client_domains.update", "client_domains.delete",
+  "contacts.view", "contacts.create", "contacts.update", "contacts.delete",
+  "tickets.view", "tickets.create", "tickets.update", "tickets.assign", "tickets.reply", "tickets.close", "tickets.reopen", "tickets.merge", "tickets.delete",
+  "event_services.view", "event_services.create", "event_services.update", "event_services.assign", "event_services.manage_forms", "event_services.delete",
+  "external_specialists.view", "external_specialists.manage",
+  "ticket_messages.view", "ticket_messages.create_internal", "ticket_messages.create_public",
+  "ticket_attachments.view", "ticket_attachments.upload", "ticket_attachments.download", "ticket_attachments.delete",
+  "mailboxes.view", "mailboxes.create", "mailboxes.update", "mailboxes.delete",
+  "spam.view", "spam.manage",
+  "maintenance.view", "maintenance.manage",
+  "auto_replies.view", "auto_replies.create", "auto_replies.update", "auto_replies.delete",
+  "signatures.view", "signatures.update",
+  "ai_assistant.use", "ai_assistant.configure",
+  "knowledge_base.view", "knowledge_base.create", "knowledge_base.update", "knowledge_base.delete", "knowledge_base.publish",
+  "reports.view", "reports.export", "reports.manage", "reports.send",
+  "devices.view", "devices.create", "devices.update", "devices.delete",
+  "remote_access.view", "remote_access.connect", "remote_access.configure",
+  "audit_logs.view", "audit_logs.export",
+  "system_settings.view", "system_settings.update"
+]);
+
 @Injectable()
 export class RolesService {
   constructor(
@@ -138,6 +165,20 @@ export class RolesService {
     });
     const permissionById = new Map(permissions.map((permission) => [permission.id, permission.id]));
     const permissionByName = new Map(permissions.map((permission) => [permission.name, permission.id]));
+    const missingKnownNames = nameValues.filter((value) => !permissionByName.has(value) && this.isKnownPermissionName(value));
+    for (const permissionName of missingKnownNames) {
+      const permission = await this.prisma.permission.upsert({
+        where: { name: permissionName },
+        update: {},
+        create: {
+          name: permissionName,
+          description: `Allows ${permissionName.replace(".", " ")}`
+        },
+        select: { id: true, name: true }
+      });
+      permissionByName.set(permission.name, permission.id);
+    }
+
     const resolvedIds = uniqueValues.map((value) => permissionById.get(value) ?? permissionByName.get(value)).filter((value): value is string => Boolean(value));
 
     if (resolvedIds.length !== uniqueValues.length) {
@@ -174,5 +215,9 @@ export class RolesService {
 
   private isUuid(value: string) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  }
+
+  private isKnownPermissionName(value: string) {
+    return KNOWN_PERMISSION_NAMES.has(value);
   }
 }
