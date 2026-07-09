@@ -545,9 +545,20 @@ export class EventServicesService {
     const end = new Date(start.getTime() + 60 * 60 * 1000);
     const location = this.optionalTrim(input.location) ?? request.venue ?? "";
     const message = this.optionalTrim(input.message) ?? task.description ?? request.additionalInfo ?? "";
-    const subject = `${request.trackingNumber}: ${task.title}`;
+    const settings = await this.getCalendarSettings(user);
+    const templateValues = {
+      specialistName: task.externalSpecialist.name,
+      specialistEmail: task.externalSpecialist.email,
+      taskTitle: task.title,
+      eventName: request.eventName,
+      trackingNumber: request.trackingNumber,
+      dateTime: start.toLocaleString(),
+      location,
+      notes: message
+    };
+    const subject = this.renderTemplate(settings.eventExternalInviteSubjectTemplate, templateValues) || `${request.trackingNumber}: ${task.title}`;
     const calendarLinks = this.calendarLinks(subject, start, end, location, message);
-    const bodyText = [
+    const defaultBodyText = [
       `Hello ${task.externalSpecialist.name},`,
       "",
       "You have been assigned an event service task.",
@@ -564,8 +575,9 @@ export class EventServicesService {
       "",
       "A calendar file is attached."
     ].filter(Boolean).join("\n");
+    const bodyText = this.renderTemplate(settings.eventExternalInviteBodyTemplate, { ...templateValues, googleCalendarLink: calendarLinks.google, outlookCalendarLink: calendarLinks.outlook }) || defaultBodyText;
     const bodyHtml = this.htmlSanitizer.sanitize(
-      `<p>Hello ${this.escapeHtml(task.externalSpecialist.name)},</p><p>You have been assigned an event service task.</p><p><strong>Task:</strong> ${this.escapeHtml(task.title)}<br><strong>Event:</strong> ${this.escapeHtml(request.eventName)}<br><strong>Tracking:</strong> ${this.escapeHtml(request.trackingNumber)}<br><strong>Date/time:</strong> ${this.escapeHtml(start.toLocaleString())}${location ? `<br><strong>Location:</strong> ${this.escapeHtml(location)}` : ""}</p>${message ? `<p>${this.escapeHtml(message).replace(/\n/g, "<br>")}</p>` : ""}<p><a href="${this.escapeHtml(calendarLinks.google)}">Add to Google Calendar</a><br><a href="${this.escapeHtml(calendarLinks.outlook)}">Add to Outlook Calendar</a></p><p>A calendar file is attached.</p>`
+      `<p>${this.escapeHtml(bodyText).replace(/\n/g, "<br>")}</p>`
     );
 
     const sendResult = await this.mailDelivery.sendTicketReply({
@@ -755,7 +767,9 @@ export class EventServicesService {
         eventCalendarTenantId: true,
         eventCalendarClientId: true,
         eventCalendarClientSecretReference: true,
-        eventCalendarDefaultTimeZone: true
+        eventCalendarDefaultTimeZone: true,
+        eventExternalInviteSubjectTemplate: true,
+        eventExternalInviteBodyTemplate: true
       }
     });
     return {
@@ -763,7 +777,9 @@ export class EventServicesService {
       eventCalendarTenantId: settings?.eventCalendarTenantId ?? null,
       eventCalendarClientId: settings?.eventCalendarClientId ?? null,
       eventCalendarClientSecretReference: settings?.eventCalendarClientSecretReference ?? "env:MICROSOFT_CLIENT_SECRET",
-      eventCalendarDefaultTimeZone: settings?.eventCalendarDefaultTimeZone ?? "America/Chicago"
+      eventCalendarDefaultTimeZone: settings?.eventCalendarDefaultTimeZone ?? "America/Chicago",
+      eventExternalInviteSubjectTemplate: settings?.eventExternalInviteSubjectTemplate ?? null,
+      eventExternalInviteBodyTemplate: settings?.eventExternalInviteBodyTemplate ?? null
     };
   }
 
@@ -775,14 +791,18 @@ export class EventServicesService {
         eventCalendarTenantId: this.optionalTrim(input.eventCalendarTenantId),
         eventCalendarClientId: this.optionalTrim(input.eventCalendarClientId),
         eventCalendarClientSecretReference: this.optionalTrim(input.eventCalendarClientSecretReference),
-        eventCalendarDefaultTimeZone: this.optionalTrim(input.eventCalendarDefaultTimeZone) ?? "America/Chicago"
+        eventCalendarDefaultTimeZone: this.optionalTrim(input.eventCalendarDefaultTimeZone) ?? "America/Chicago",
+        eventExternalInviteSubjectTemplate: this.optionalTrim(input.eventExternalInviteSubjectTemplate),
+        eventExternalInviteBodyTemplate: this.optionalTrim(input.eventExternalInviteBodyTemplate)
       },
       select: {
         eventCalendarSyncEnabled: true,
         eventCalendarTenantId: true,
         eventCalendarClientId: true,
         eventCalendarClientSecretReference: true,
-        eventCalendarDefaultTimeZone: true
+        eventCalendarDefaultTimeZone: true,
+        eventExternalInviteSubjectTemplate: true,
+        eventExternalInviteBodyTemplate: true
       }
     });
   }
@@ -1435,6 +1455,12 @@ export class EventServicesService {
 
   private escapeCalendarText(value: string) {
     return value.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+  }
+
+  private renderTemplate(template: string | null | undefined, values: Record<string, string>) {
+    const source = this.optionalTrim(template);
+    if (!source) return "";
+    return source.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key: string) => values[key] ?? "");
   }
 
   private escapeHtml(value: string) {

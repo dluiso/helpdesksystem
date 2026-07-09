@@ -58,6 +58,8 @@ interface EventCalendarSettings {
   eventCalendarClientId: string | null;
   eventCalendarClientSecretReference: string | null;
   eventCalendarDefaultTimeZone: string | null;
+  eventExternalInviteSubjectTemplate: string | null;
+  eventExternalInviteBodyTemplate: string | null;
 }
 
 const fieldTypes = ["TEXT", "TEXTAREA", "EMAIL", "PHONE", "DATE", "TIME", "SELECT", "MULTI_SELECT", "CHECKBOX", "RADIO", "NUMBER"];
@@ -157,7 +159,9 @@ export function EventServicesConfigPanel() {
     eventCalendarTenantId: "",
     eventCalendarClientId: "",
     eventCalendarClientSecretReference: "env:MICROSOFT_CLIENT_SECRET",
-    eventCalendarDefaultTimeZone: "America/Chicago"
+    eventCalendarDefaultTimeZone: "America/Chicago",
+    eventExternalInviteSubjectTemplate: "{{trackingNumber}}: {{taskTitle}}",
+    eventExternalInviteBodyTemplate: "Hello {{specialistName}},\n\nYou have been assigned an event service task.\n\nTask: {{taskTitle}}\nEvent: {{eventName}}\nTracking: {{trackingNumber}}\nDate/time: {{dateTime}}\nLocation: {{location}}\nNotes: {{notes}}\n\nGoogle Calendar: {{googleCalendarLink}}\nOutlook Calendar: {{outlookCalendarLink}}\n\nA calendar file is attached."
   });
   const [serviceDraft, setServiceDraft] = useState<ServiceDraft>(blankServiceDraft);
   const [serviceEdits, setServiceEdits] = useState<Record<string, ServiceDraft>>({});
@@ -199,7 +203,9 @@ export function EventServicesConfigPanel() {
         eventCalendarTenantId: calendarData.eventCalendarTenantId ?? "",
         eventCalendarClientId: calendarData.eventCalendarClientId ?? "",
         eventCalendarClientSecretReference: calendarData.eventCalendarClientSecretReference ?? "env:MICROSOFT_CLIENT_SECRET",
-        eventCalendarDefaultTimeZone: calendarData.eventCalendarDefaultTimeZone ?? "America/Chicago"
+        eventCalendarDefaultTimeZone: calendarData.eventCalendarDefaultTimeZone ?? "America/Chicago",
+        eventExternalInviteSubjectTemplate: calendarData.eventExternalInviteSubjectTemplate ?? "{{trackingNumber}}: {{taskTitle}}",
+        eventExternalInviteBodyTemplate: calendarData.eventExternalInviteBodyTemplate ?? "Hello {{specialistName}},\n\nYou have been assigned an event service task.\n\nTask: {{taskTitle}}\nEvent: {{eventName}}\nTracking: {{trackingNumber}}\nDate/time: {{dateTime}}\nLocation: {{location}}\nNotes: {{notes}}\n\nGoogle Calendar: {{googleCalendarLink}}\nOutlook Calendar: {{outlookCalendarLink}}\n\nA calendar file is attached."
       });
       setServiceDraft((current) => ({ ...current, sortOrder: Math.max(10, Math.max(0, ...serviceData.map((service) => service.sortOrder)) + 10) }));
       setFieldDraft((current) => ({ ...current, sortOrder: Math.max(10, Math.max(0, ...formData.fields.map((field) => field.sortOrder)) + 10) }));
@@ -370,7 +376,9 @@ export function EventServicesConfigPanel() {
         eventCalendarTenantId: saved.eventCalendarTenantId ?? "",
         eventCalendarClientId: saved.eventCalendarClientId ?? "",
         eventCalendarClientSecretReference: saved.eventCalendarClientSecretReference ?? "env:MICROSOFT_CLIENT_SECRET",
-        eventCalendarDefaultTimeZone: saved.eventCalendarDefaultTimeZone ?? "America/Chicago"
+        eventCalendarDefaultTimeZone: saved.eventCalendarDefaultTimeZone ?? "America/Chicago",
+        eventExternalInviteSubjectTemplate: saved.eventExternalInviteSubjectTemplate ?? "",
+        eventExternalInviteBodyTemplate: saved.eventExternalInviteBodyTemplate ?? ""
       });
       setNotice("Event calendar sync settings saved.");
     } catch (caught) {
@@ -678,6 +686,23 @@ export function EventServicesConfigPanel() {
               <span>Default timezone</span>
               <input className="input" value={calendarSettings.eventCalendarDefaultTimeZone ?? "America/Chicago"} onChange={(event) => setCalendarSettings((current) => ({ ...current, eventCalendarDefaultTimeZone: event.target.value }))} />
             </label>
+          </div>
+          <div className="settings-section">
+            <div className="section-heading compact-heading">
+              <div>
+                <h3>External Invite Template</h3>
+                <p className="muted">Used when an event task is sent to an external specialist.</p>
+              </div>
+            </div>
+            <label className="field">
+              <span>Subject</span>
+              <input className="input" value={calendarSettings.eventExternalInviteSubjectTemplate ?? ""} onChange={(event) => setCalendarSettings((current) => ({ ...current, eventExternalInviteSubjectTemplate: event.target.value }))} />
+            </label>
+            <label className="field">
+              <span>Body</span>
+              <textarea className="input" value={calendarSettings.eventExternalInviteBodyTemplate ?? ""} onChange={(event) => setCalendarSettings((current) => ({ ...current, eventExternalInviteBodyTemplate: event.target.value }))} />
+            </label>
+            <p className="muted">Available placeholders: {"{{specialistName}}"}, {"{{taskTitle}}"}, {"{{eventName}}"}, {"{{trackingNumber}}"}, {"{{dateTime}}"}, {"{{location}}"}, {"{{notes}}"}, {"{{googleCalendarLink}}"}, {"{{outlookCalendarLink}}"}.</p>
           </div>
           <p className="muted">Use environment variable references for secrets. Calendar events are created only when a specialist chooses to sync a task.</p>
           <button className="button" type="button" onClick={saveCalendarSettings} disabled={busy === "calendar"}>Save Calendar Sync</button>

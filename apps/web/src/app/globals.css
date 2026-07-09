@@ -4776,6 +4776,18 @@ select.compact-select {
   gap: 6px;
 }
 
+.event-task-history {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.event-task-history summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
 .event-calendar-task-form textarea,
 .event-calendar-task-form .checkbox-row,
 .event-calendar-task-form .button {

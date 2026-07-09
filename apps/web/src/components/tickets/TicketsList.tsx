@@ -80,6 +80,14 @@ interface TicketTeam {
   isActive: boolean;
 }
 
+interface ExternalSpecialist {
+  id: string;
+  name: string;
+  email: string;
+  company: string | null;
+  isActive: boolean;
+}
+
 interface PaginatedTickets {
   items: TicketListItem[];
   total: number;
@@ -120,6 +128,7 @@ interface TicketViewState {
   scope: string;
   assignedUserId: string;
   assignedTeamId: string;
+  externalSpecialistId: string;
   requester: string;
   statuses: string[];
   priority: string;
@@ -324,6 +333,7 @@ function normalizeTicketViewState(value: unknown): TicketViewState {
     scope: typeof state.scope === "string" ? state.scope : "all",
     assignedUserId: typeof state.assignedUserId === "string" ? state.assignedUserId : "",
     assignedTeamId: typeof state.assignedTeamId === "string" ? state.assignedTeamId : "",
+    externalSpecialistId: typeof state.externalSpecialistId === "string" ? state.externalSpecialistId : "",
     requester: typeof state.requester === "string" ? state.requester : "",
     statuses: [...new Set(nextStatuses)],
     priority: typeof state.priority === "string" ? state.priority : "",
@@ -344,6 +354,7 @@ function hasExplicitTicketUrlFilters(searchParams: URLSearchParams) {
     "scope",
     "assignedUserId",
     "assignedTeamId",
+    "externalSpecialistId",
     "requester",
     "statuses",
     "priority",
@@ -360,12 +371,14 @@ export function TicketsList() {
   const [clients, setClients] = useState<Client[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [ticketTeams, setTicketTeams] = useState<TicketTeam[]>([]);
+  const [externalSpecialists, setExternalSpecialists] = useState<ExternalSpecialist[]>([]);
   const [ticketViews, setTicketViews] = useState<TicketView[]>([]);
   const [selectedViewId, setSelectedViewId] = useState("built-in:all");
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [scope, setScope] = useState("all");
   const [assignedUserId, setAssignedUserId] = useState("");
   const [assignedTeamId, setAssignedTeamId] = useState("");
+  const [externalSpecialistId, setExternalSpecialistId] = useState("");
   const [search, setSearch] = useState("");
   const [clientId, setClientId] = useState("");
   const [requester, setRequester] = useState("");
@@ -425,7 +438,7 @@ export function TicketsList() {
     [columnOrder, visibleColumns]
   );
 
-  const hasActiveFilters = Boolean(search || clientId || requester || selectedStatuses.length > 0 || priority || source || scope !== "all" || assignedUserId || assignedTeamId);
+  const hasActiveFilters = Boolean(search || clientId || requester || selectedStatuses.length > 0 || priority || source || scope !== "all" || assignedUserId || assignedTeamId || externalSpecialistId);
   const selectedCount = selectedTicketIds.length;
   const allVisibleSelected = tickets.length > 0 && tickets.every((ticket) => selectedTicketIds.includes(ticket.id));
   const selectedTickets = useMemo(() => selectedTicketIds.map((id) => tickets.find((ticket) => ticket.id === id)).filter((ticket): ticket is TicketListItem => Boolean(ticket)), [selectedTicketIds, tickets]);
@@ -451,6 +464,9 @@ export function TicketsList() {
       }
       if (assignedTeamId) {
         params.set("assignedTeamId", assignedTeamId);
+      }
+      if (externalSpecialistId) {
+        params.set("externalSpecialistId", externalSpecialistId);
       }
       if (requester.trim()) {
         params.set("requester", requester.trim());
@@ -493,10 +509,14 @@ export function TicketsList() {
       setClients(clientData);
       setUsers(userData);
       setTicketTeams(teamData);
+      apiFetch<ExternalSpecialist[]>("/external-specialists")
+        .then(setExternalSpecialists)
+        .catch(() => setExternalSpecialists([]));
     } catch {
       setClients([]);
       setUsers([]);
       setTicketTeams([]);
+      setExternalSpecialists([]);
     }
   }
 
@@ -524,6 +544,7 @@ export function TicketsList() {
       scope,
       assignedUserId,
       assignedTeamId,
+      externalSpecialistId,
       requester,
       statuses: selectedStatuses,
       priority,
@@ -544,6 +565,7 @@ export function TicketsList() {
     setScope(normalized.scope);
     setAssignedUserId(normalized.assignedUserId);
     setAssignedTeamId(normalized.assignedTeamId);
+    setExternalSpecialistId(normalized.externalSpecialistId);
     setRequester(normalized.requester);
     setSelectedStatuses(normalized.statuses);
     setPriority(normalized.priority);
@@ -857,7 +879,9 @@ export function TicketsList() {
     setSearch("");
     setClientId("");
     setScope("all");
+    setAssignedUserId("");
     setAssignedTeamId("");
+    setExternalSpecialistId("");
     setRequester("");
     setSelectedStatuses([]);
     setPriority("");
@@ -1085,6 +1109,7 @@ export function TicketsList() {
     const initialScope = searchParams.get("scope")?.trim();
     const initialAssignedUserId = searchParams.get("assignedUserId")?.trim();
     const initialAssignedTeamId = searchParams.get("assignedTeamId")?.trim();
+    const initialExternalSpecialistId = searchParams.get("externalSpecialistId")?.trim();
     const initialRequester = searchParams.get("requester")?.trim();
     const initialStatuses = searchParams.get("statuses")?.trim();
     const initialPriority = searchParams.get("priority")?.trim();
@@ -1107,6 +1132,9 @@ export function TicketsList() {
     }
     if (initialAssignedTeamId) {
       setAssignedTeamId(initialAssignedTeamId);
+    }
+    if (initialExternalSpecialistId) {
+      setExternalSpecialistId(initialExternalSpecialistId);
     }
     if (initialRequester) {
       setRequester(initialRequester);
@@ -1176,7 +1204,7 @@ export function TicketsList() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, clientId, scope, assignedUserId, assignedTeamId, requester, selectedStatuses, priority, source, sortBy, sortDirection, trashMode, pageSize]);
+  }, [search, clientId, scope, assignedUserId, assignedTeamId, externalSpecialistId, requester, selectedStatuses, priority, source, sortBy, sortDirection, trashMode, pageSize]);
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {
@@ -1199,7 +1227,7 @@ export function TicketsList() {
     }, 300);
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, clientId, scope, assignedUserId, assignedTeamId, requester, selectedStatuses, priority, source, sortBy, sortDirection, trashMode, page, pageSize]);
+  }, [search, clientId, scope, assignedUserId, assignedTeamId, externalSpecialistId, requester, selectedStatuses, priority, source, sortBy, sortDirection, trashMode, page, pageSize]);
 
   useEffect(() => {
     void loadNewTicketContacts(newTicketClientId);
@@ -1305,6 +1333,14 @@ export function TicketsList() {
             {ticketTeams.filter((team) => team.isActive).map((team) => (
               <option key={team.id} value={team.id}>
                 {team.name}
+              </option>
+            ))}
+          </select>
+          <select className="input" value={externalSpecialistId} onChange={(event) => setExternalSpecialistId(event.target.value)}>
+            <option value="">All external specialists</option>
+            {externalSpecialists.filter((specialist) => specialist.isActive).map((specialist) => (
+              <option key={specialist.id} value={specialist.id}>
+                {specialist.name}{specialist.company ? ` (${specialist.company})` : ""}
               </option>
             ))}
           </select>

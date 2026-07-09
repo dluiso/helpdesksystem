@@ -254,6 +254,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
   const [taskDraft, setTaskDraft] = useState({ title: "", assignee: "", description: "", dueAt: "" });
   const [externalDraft, setExternalDraft] = useState({ name: "", email: "", phone: "", company: "" });
   const [externalAssignmentId, setExternalAssignmentId] = useState("");
+  const [externalCreateOpen, setExternalCreateOpen] = useState(false);
   const [commentDraft, setCommentDraft] = useState("");
   const [calendarDrafts, setCalendarDrafts] = useState<Record<string, { startDate: string; startTime: string; endDate: string; endTime: string; location: string; notes: string }>>({});
   const [loading, setLoading] = useState(true);
@@ -538,6 +539,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
       setExternalSpecialists((current) => [specialist, ...current.filter((item) => item.id !== specialist.id)]);
       setExternalDraft({ name: "", email: "", phone: "", company: "" });
       setExternalAssignmentId(specialist.id);
+      setExternalCreateOpen(false);
       setNotice("External specialist added.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to add external specialist.");
@@ -1006,13 +1008,17 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                         </select>
                         <button className="button secondary" type="button" onClick={addExternalToEvent} disabled={!externalAssignmentId || busy === "external-assign"}><Plus size={16} />Assign</button>
                       </div>
-                      <div className="event-external-create-grid">
+                      <button className="button secondary full-width-button" type="button" onClick={() => setExternalCreateOpen((current) => !current)}>
+                        {externalCreateOpen ? <X size={16} /> : <Plus size={16} />}
+                        {externalCreateOpen ? "Cancel New Specialist" : "Add New External Specialist"}
+                      </button>
+                      {externalCreateOpen ? <div className="event-external-create-grid">
                         <input className="input" placeholder="Name" value={externalDraft.name} onChange={(event) => setExternalDraft((current) => ({ ...current, name: event.target.value }))} />
                         <input className="input" placeholder="Email" value={externalDraft.email} onChange={(event) => setExternalDraft((current) => ({ ...current, email: event.target.value }))} />
                         <input className="input" placeholder="Phone" value={externalDraft.phone} onChange={(event) => setExternalDraft((current) => ({ ...current, phone: event.target.value }))} />
                         <input className="input" placeholder="Company" value={externalDraft.company} onChange={(event) => setExternalDraft((current) => ({ ...current, company: event.target.value }))} />
                         <button className="button secondary span-2" type="button" onClick={createExternalSpecialist} disabled={busy === "external-create" || !externalDraft.name.trim() || !externalDraft.email.trim()}><Plus size={16} />Add External Contact</button>
-                      </div>
+                      </div> : null}
                     </div>
                     <label className="event-management-notes">Internal request notes<textarea className="input" value={draft.additionalInfo} onChange={(event) => setDraft((current) => ({ ...current, additionalInfo: event.target.value }))} /></label>
                     <button className="button full-width-button" type="button" onClick={saveRequest} disabled={busy === "request"}><Save size={16} />Save Management</button>
@@ -1044,6 +1050,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                       {selected.tasks.length === 0 ? <p className="event-detail-empty">No tasks yet.</p> : null}
                       {selected.tasks.map((task) => {
                         const calendarDraft = calendarDrafts[task.id] ?? { startDate: selected.eventDate?.slice(0, 10) ?? "", startTime: selected.startTime ?? "", endDate: selected.eventDate?.slice(0, 10) ?? "", endTime: selected.endTime ?? "", location: selected.venue ?? "", notes: "" };
+                        const taskActivity = selected.activity?.filter((activity) => activity.metadata?.taskId === task.id).slice(0, 4) ?? [];
                         return (
                           <article className={`event-task-card task-status-${task.status.toLowerCase().replace(/_/g, "-")}`} key={task.id}>
                             <div className="event-task-card-header">
@@ -1074,6 +1081,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                                 <input className="input" type="date" value={calendarDraft.endDate} onChange={(event) => updateCalendarDraft(task.id, { endDate: event.target.value })} />
                                 <input className="input" type="time" value={calendarDraft.endTime} onChange={(event) => updateCalendarDraft(task.id, { endTime: event.target.value })} />
                                 <input className="input span-2" placeholder="Location" value={calendarDraft.location} onChange={(event) => updateCalendarDraft(task.id, { location: event.target.value })} />
+                                <textarea className="input span-2" placeholder="Notes to include with calendar notification" value={calendarDraft.notes} onChange={(event) => updateCalendarDraft(task.id, { notes: event.target.value })} />
                               </div>
                               {task.calendarSyncedAt ? <p className="muted">Synced to {task.calendarUserEmail} on {formatDateTime(task.calendarSyncedAt)}</p> : null}
                               {task.calendarSyncError ? <p className="alert error">{task.calendarSyncError}</p> : null}
@@ -1083,6 +1091,18 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                                 <button className="button secondary" type="button" onClick={() => void syncTaskCalendar(task.id)} disabled={busy === `calendar-${task.id}`}>Add to Calendar</button>
                               )}
                             </details>
+                            {taskActivity.length ? (
+                              <details className="event-task-history">
+                                <summary>Task History</summary>
+                                {taskActivity.map((activity) => (
+                                  <div className="event-comment" key={activity.id}>
+                                    <strong>{activityTitle(activity.action)}</strong>
+                                    <p>{activityDetail(activity)}</p>
+                                    <small>{formatDateTime(activity.createdAt)}</small>
+                                  </div>
+                                ))}
+                              </details>
+                            ) : null}
                           </article>
                         );
                       })}

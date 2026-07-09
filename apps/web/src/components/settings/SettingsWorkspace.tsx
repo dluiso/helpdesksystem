@@ -3,7 +3,6 @@
 import { Download, Pencil, Plus, RefreshCcw, RotateCw, TestTube2, Trash2, Upload, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { EventServicesConfigPanel } from "@/components/settings/EventServicesConfigPanel";
-import { ExternalSpecialistsSettingsPanel } from "@/components/settings/ExternalSpecialistsSettingsPanel";
 import { KnowledgeConfigPanel } from "@/components/settings/KnowledgeConfigPanel";
 import { RmmConfigPanel } from "@/components/settings/RmmConfigPanel";
 import { SupportPortalConfigPanel } from "@/components/settings/SupportPortalConfigPanel";
@@ -507,7 +506,6 @@ type ActiveSection =
   | "rmm"
   | "notifications"
   | "events"
-  | "externalSpecialists"
   | "knowledge"
   | "spam"
   | "maintenance"
@@ -2637,9 +2635,6 @@ export function SettingsWorkspace() {
           <button className={activeSection === "events" ? "active" : ""} type="button" onClick={() => setActiveSection("events")}>
             Events Config
           </button>
-          <button className={activeSection === "externalSpecialists" ? "active" : ""} type="button" onClick={() => setActiveSection("externalSpecialists")}>
-            External Specialists
-          </button>
           <button className={activeSection === "knowledge" ? "active" : ""} type="button" onClick={() => setActiveSection("knowledge")}>
             Knowledge Config
           </button>
@@ -4094,8 +4089,6 @@ export function SettingsWorkspace() {
           ) : null}
 
           {activeSection === "events" ? <EventServicesConfigPanel /> : null}
-
-          {activeSection === "externalSpecialists" ? <ExternalSpecialistsSettingsPanel /> : null}
 
           {activeSection === "knowledge" ? <KnowledgeConfigPanel /> : null}
 

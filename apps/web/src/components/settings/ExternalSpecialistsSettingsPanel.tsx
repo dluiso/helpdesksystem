@@ -33,6 +33,7 @@ export function ExternalSpecialistsSettingsPanel() {
   const [specialists, setSpecialists] = useState<ExternalSpecialist[]>([]);
   const [draft, setDraft] = useState(emptyDraft);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -60,10 +61,12 @@ export function ExternalSpecialistsSettingsPanel() {
   function resetDraft() {
     setDraft(emptyDraft);
     setEditingId(null);
+    setFormOpen(false);
   }
 
   function startEdit(specialist: ExternalSpecialist) {
     setEditingId(specialist.id);
+    setFormOpen(true);
     setDraft({
       name: specialist.name,
       email: specialist.email,
@@ -125,6 +128,10 @@ export function ExternalSpecialistsSettingsPanel() {
           <RefreshCw size={16} aria-hidden="true" />
           <span>Refresh</span>
         </button>
+        <button className="button" type="button" onClick={() => { setEditingId(null); setDraft(emptyDraft); setFormOpen(true); }}>
+          <Plus size={16} aria-hidden="true" />
+          <span>Add Specialist</span>
+        </button>
       </div>
 
       {error ? <div className="alert error">{error}</div> : null}
@@ -143,35 +150,35 @@ export function ExternalSpecialistsSettingsPanel() {
         </div>
       </div>
 
-      <div className="settings-section external-specialist-editor">
-        <div className="section-heading compact-heading">
-          <div>
-            <h3>{editingSpecialist ? "Edit Contact" : "Add Contact"}</h3>
-            <p className="muted">{editingSpecialist ? specialistLabel(editingSpecialist) : "Create a reusable external specialist profile."}</p>
-          </div>
-          {editingSpecialist ? (
+      {formOpen ? (
+        <div className="settings-section external-specialist-editor">
+          <div className="section-heading compact-heading">
+            <div>
+              <h3>{editingSpecialist ? "Edit Contact" : "Add Contact"}</h3>
+              <p className="muted">{editingSpecialist ? specialistLabel(editingSpecialist) : "Create a reusable external specialist profile."}</p>
+            </div>
             <button className="button secondary" type="button" onClick={resetDraft}>
               <X size={16} aria-hidden="true" />
-              <span>Cancel Edit</span>
+              <span>Cancel</span>
             </button>
-          ) : null}
+          </div>
+          <div className="event-external-create-grid">
+            <label>Name<input className="input" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label>
+            <label>Email<input className="input" type="email" value={draft.email} onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))} /></label>
+            <label>Phone<input className="input" value={draft.phone} onChange={(event) => setDraft((current) => ({ ...current, phone: event.target.value }))} /></label>
+            <label>Company<input className="input" value={draft.company} onChange={(event) => setDraft((current) => ({ ...current, company: event.target.value }))} /></label>
+            <label className="span-2">Notes<textarea className="input" value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} /></label>
+            <label className="checkbox-row span-2">
+              <input type="checkbox" checked={draft.isActive} onChange={(event) => setDraft((current) => ({ ...current, isActive: event.target.checked }))} />
+              Available for new assignments
+            </label>
+            <button className="button span-2" type="button" onClick={() => void save()} disabled={busy === "save" || !draft.name.trim() || !draft.email.trim()}>
+              {editingSpecialist ? <Save size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}
+              <span>{busy === "save" ? "Saving..." : editingSpecialist ? "Save Contact" : "Add Contact"}</span>
+            </button>
+          </div>
         </div>
-        <div className="event-external-create-grid">
-          <label>Name<input className="input" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label>
-          <label>Email<input className="input" type="email" value={draft.email} onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))} /></label>
-          <label>Phone<input className="input" value={draft.phone} onChange={(event) => setDraft((current) => ({ ...current, phone: event.target.value }))} /></label>
-          <label>Company<input className="input" value={draft.company} onChange={(event) => setDraft((current) => ({ ...current, company: event.target.value }))} /></label>
-          <label className="span-2">Notes<textarea className="input" value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} /></label>
-          <label className="checkbox-row span-2">
-            <input type="checkbox" checked={draft.isActive} onChange={(event) => setDraft((current) => ({ ...current, isActive: event.target.checked }))} />
-            Available for new assignments
-          </label>
-          <button className="button span-2" type="button" onClick={() => void save()} disabled={busy === "save" || !draft.name.trim() || !draft.email.trim()}>
-            {editingSpecialist ? <Save size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}
-            <span>{busy === "save" ? "Saving..." : editingSpecialist ? "Save Contact" : "Add Contact"}</span>
-          </button>
-        </div>
-      </div>
+      ) : null}
 
       <div className="table-scroll settings-section">
         <table className="tickets-table">

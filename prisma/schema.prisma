@@ -367,6 +367,8 @@ model SystemSetting {
   eventCalendarClientId      String?
   eventCalendarClientSecretReference String?
   eventCalendarDefaultTimeZone String @default("America/Chicago")
+  eventExternalInviteSubjectTemplate String?
+  eventExternalInviteBodyTemplate String?
   knowledgeOneNoteImportEnabled Boolean @default(false)
   knowledgeOneNoteTenantId      String?
   knowledgeOneNoteClientId      String?

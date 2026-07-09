@@ -149,6 +149,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const [watcherIds, setWatcherIds] = useState<string[]>([]);
   const [externalAssignmentId, setExternalAssignmentId] = useState("");
   const [externalDraft, setExternalDraft] = useState({ name: "", email: "", phone: "", company: "" });
+  const [externalCreateOpen, setExternalCreateOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
@@ -266,6 +267,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       setExternalSpecialists((current) => [specialist, ...current.filter((item) => item.id !== specialist.id)]);
       setExternalDraft({ name: "", email: "", phone: "", company: "" });
       setExternalAssignmentId(specialist.id);
+      setExternalCreateOpen(false);
       setAssignmentNotice("External specialist added.");
     } catch {
       setError("Unable to add external specialist.");
@@ -723,7 +725,11 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
                 <span>Assign</span>
               </button>
             </div>
-            <div className="event-external-create-grid">
+            <button className="button secondary full-width-button" type="button" onClick={() => setExternalCreateOpen((current) => !current)}>
+              {externalCreateOpen ? <X size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}
+              <span>{externalCreateOpen ? "Cancel New Specialist" : "Add New External Specialist"}</span>
+            </button>
+            {externalCreateOpen ? <div className="event-external-create-grid">
               <input className="input" placeholder="Name" value={externalDraft.name} onChange={(event) => setExternalDraft((current) => ({ ...current, name: event.target.value }))} />
               <input className="input" placeholder="Email" value={externalDraft.email} onChange={(event) => setExternalDraft((current) => ({ ...current, email: event.target.value }))} />
               <input className="input" placeholder="Phone" value={externalDraft.phone} onChange={(event) => setExternalDraft((current) => ({ ...current, phone: event.target.value }))} />
@@ -732,7 +738,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
                 <Plus size={16} aria-hidden="true" />
                 <span>Add External Contact</span>
               </button>
-            </div>
+            </div> : null}
           </div>
           <div className="panel ticket-files-panel">
             <div className="section-heading compact-heading">

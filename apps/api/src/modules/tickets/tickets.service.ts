@@ -85,6 +85,10 @@ export class TicketsService {
             },
             orderBy: { createdAt: "asc" }
           },
+          externalSpecialists: {
+            include: { externalSpecialist: true },
+            orderBy: { createdAt: "asc" }
+          },
           firstReadBy: {
             select: {
               id: true,
@@ -2151,6 +2155,10 @@ export class TicketsService {
 
     if (query.assignedTeamId) {
       filters.push({ assignedTeamId: query.assignedTeamId });
+    }
+
+    if (query.externalSpecialistId) {
+      filters.push({ externalSpecialists: { some: { externalSpecialistId: query.externalSpecialistId } } });
     }
 
     if (requester) {

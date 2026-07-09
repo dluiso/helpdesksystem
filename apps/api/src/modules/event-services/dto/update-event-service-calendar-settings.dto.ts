@@ -23,4 +23,14 @@ export class UpdateEventServiceCalendarSettingsDto {
   @IsString()
   @MaxLength(80)
   eventCalendarDefaultTimeZone?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  eventExternalInviteSubjectTemplate?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  eventExternalInviteBodyTemplate?: string | null;
 }

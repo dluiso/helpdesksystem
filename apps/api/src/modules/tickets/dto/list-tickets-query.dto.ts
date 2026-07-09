@@ -24,6 +24,10 @@ export class ListTicketsQueryDto {
   assignedTeamId?: string;
 
   @IsOptional()
+  @IsUUID("4")
+  externalSpecialistId?: string;
+
+  @IsOptional()
   @IsString()
   @MaxLength(160)
   requester?: string;
