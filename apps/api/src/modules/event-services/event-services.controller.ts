@@ -30,8 +30,10 @@ import { CreateEventServiceCommentDto } from "./dto/create-event-service-comment
 import { CreateEventServiceMessageDto } from "./dto/create-event-service-message.dto";
 import { CreateEventServiceRequestDto } from "./dto/create-event-service-request.dto";
 import { CreateEventServiceTaskDto } from "./dto/create-event-service-task.dto";
+import { AddEventServiceExternalSpecialistDto } from "./dto/add-event-service-external-specialist.dto";
 import { CreatePublicEventServiceRequestDto } from "./dto/create-public-event-service-request.dto";
 import { ListEventServiceCalendarDto } from "./dto/list-event-service-calendar.dto";
+import { SendEventServiceExternalInviteDto } from "./dto/send-event-service-external-invite.dto";
 import { ListEventServiceRequestsDto } from "./dto/list-event-service-requests.dto";
 import { SyncEventServiceTaskCalendarDto } from "./dto/sync-event-service-task-calendar.dto";
 import { UpdateEventServiceCalendarSettingsDto } from "./dto/update-event-service-calendar-settings.dto";
@@ -244,6 +246,27 @@ export class EventServicesController {
   @RequirePermissions("event_services.update")
   syncTaskCalendar(@Param("requestId") requestId: string, @Param("taskId") taskId: string, @CurrentUser() user: AuthenticatedUser, @Body() body: SyncEventServiceTaskCalendarDto) {
     return this.eventServices.syncTaskToCalendar(requestId, taskId, user, body);
+  }
+
+  @Post("event-services/:requestId/tasks/:taskId/external-invite")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.update")
+  sendExternalTaskInvite(@Param("requestId") requestId: string, @Param("taskId") taskId: string, @CurrentUser() user: AuthenticatedUser, @Body() body: SendEventServiceExternalInviteDto) {
+    return this.eventServices.sendExternalTaskInvite(requestId, taskId, user, body);
+  }
+
+  @Post("event-services/:requestId/external-specialists")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.update")
+  addExternalSpecialist(@Param("requestId") requestId: string, @CurrentUser() user: AuthenticatedUser, @Body() body: AddEventServiceExternalSpecialistDto) {
+    return this.eventServices.addExternalSpecialist(requestId, user, body);
+  }
+
+  @Delete("event-services/:requestId/external-specialists/:assignmentId")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("event_services.update")
+  removeExternalSpecialist(@Param("requestId") requestId: string, @Param("assignmentId") assignmentId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.eventServices.removeExternalSpecialist(requestId, assignmentId, user);
   }
 
   @Post("event-services/:requestId/comments")

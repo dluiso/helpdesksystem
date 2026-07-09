@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module";
 import { AuditLogsModule } from "../audit-logs/audit-logs.module";
 import { ContactsModule } from "../contacts/contacts.module";
+import { ExternalSpecialistsModule } from "../external-specialists/external-specialists.module";
 import { MailTransportModule } from "../mailboxes/mail-transport.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { AutoRepliesModule } from "../auto-replies/auto-replies.module";
@@ -13,11 +14,10 @@ import { TicketsController } from "./tickets.controller";
 import { TicketsService } from "./tickets.service";
 
 @Module({
-  imports: [AuthModule, AuditLogsModule, ContactsModule, TicketRoutingModule, MailTransportModule, NotificationsModule, AutoRepliesModule],
+  imports: [AuthModule, AuditLogsModule, ContactsModule, ExternalSpecialistsModule, TicketRoutingModule, MailTransportModule, NotificationsModule, AutoRepliesModule],
   controllers: [TicketsController, SupportPortalController],
   providers: [TicketsService, SupportPortalService, HtmlSanitizerService],
   exports: [TicketsService]
 })
 export class TicketsModule {}
-
 

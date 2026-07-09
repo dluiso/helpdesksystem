@@ -12,6 +12,7 @@ import { ContactsModule } from "./modules/contacts/contacts.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { DevicesModule } from "./modules/devices/devices.module";
 import { EventServicesModule } from "./modules/event-services/event-services.module";
+import { ExternalSpecialistsModule } from "./modules/external-specialists/external-specialists.module";
 import { FileStorageModule } from "./modules/file-storage/file-storage.module";
 import { GroupsModule } from "./modules/groups/groups.module";
 import { HealthModule } from "./modules/health/health.module";
@@ -89,6 +90,7 @@ import { UsersModule } from "./modules/users/users.module";
     ReportsModule,
     DevicesModule,
     EventServicesModule,
+    ExternalSpecialistsModule,
     RemoteAccessModule,
     NotificationsModule
   ]

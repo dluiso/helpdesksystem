@@ -4715,6 +4715,28 @@ select.compact-select {
   flex: 0 0 auto;
 }
 
+.event-assignee-picker.compact .event-inline-controls,
+.event-assignee-picker.compact .event-external-create-grid {
+  grid-column: 1 / -1;
+}
+
+.event-inline-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.event-external-create-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.event-external-create-grid .span-2 {
+  grid-column: 1 / -1;
+}
+
 .event-calendar-task-form textarea,
 .event-calendar-task-form .checkbox-row,
 .event-calendar-task-form .button {

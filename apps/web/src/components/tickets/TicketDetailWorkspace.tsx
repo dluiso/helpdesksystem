@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, BookOpen, Download, ExternalLink, Eye, GitMerge, RefreshCcw, Save, Search, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowLeft, BookOpen, Download, ExternalLink, Eye, GitMerge, Plus, RefreshCcw, Save, Search, Sparkles, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
 import { TicketReplyEditor } from "./TicketReplyEditor";
@@ -29,6 +29,16 @@ interface Group {
 interface TicketTeam {
   id: string;
   name: string;
+  isActive: boolean;
+}
+
+interface ExternalSpecialist {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  company: string | null;
+  notes: string | null;
   isActive: boolean;
 }
 
@@ -95,6 +105,7 @@ interface Ticket {
   assignedTeamId: string | null;
   assignedUser: User | null;
   assignees: Array<{ user: User }>;
+  externalSpecialists: Array<{ id: string; role: string | null; externalSpecialist: ExternalSpecialist }>;
   assignedGroup: Group | null;
   assignedTeam: TicketTeam | null;
   watchers: Array<{ user: User }>;
@@ -122,15 +133,22 @@ function priorityClass(value: string) {
   return `ticket-priority-${value.toLowerCase().replace(/_/g, "-")}`;
 }
 
+function externalName(specialist: ExternalSpecialist) {
+  return `${specialist.name}${specialist.company ? ` (${specialist.company})` : ""}`;
+}
+
 export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const router = useRouter();
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [ccContacts, setCcContacts] = useState<Contact[]>([]);
   const [ticketTeams, setTicketTeams] = useState<TicketTeam[]>([]);
+  const [externalSpecialists, setExternalSpecialists] = useState<ExternalSpecialist[]>([]);
   const [assignedUserIds, setAssignedUserIds] = useState<string[]>([]);
   const [assignedTeamId, setAssignedTeamId] = useState("");
   const [watcherIds, setWatcherIds] = useState<string[]>([]);
+  const [externalAssignmentId, setExternalAssignmentId] = useState("");
+  const [externalDraft, setExternalDraft] = useState({ name: "", email: "", phone: "", company: "" });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
@@ -158,10 +176,11 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const [ticketData, userData, teamData] = await Promise.all([
+      const [ticketData, userData, teamData, externalData] = await Promise.all([
         apiFetch<Ticket>(`/tickets/${ticketId}`),
         apiFetch<User[]>("/users"),
-        apiFetch<TicketTeam[]>("/ticket-teams")
+        apiFetch<TicketTeam[]>("/ticket-teams"),
+        apiFetch<ExternalSpecialist[]>("/external-specialists")
       ]);
       setTicket(ticketData);
       if (ticketData.ticketNumber && ticketId !== ticketData.ticketNumber) {
@@ -169,6 +188,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       }
       setUsers(userData);
       setTicketTeams(teamData);
+      setExternalSpecialists(externalData);
       if (ticketData.client?.id) {
         try {
           setCcContacts(await apiFetch<Contact[]>(`/clients/${ticketData.client.id}/contacts`));
@@ -229,6 +249,62 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       setError("Unable to save assignment.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function createExternalSpecialist() {
+    if (!externalDraft.name.trim() || !externalDraft.email.trim()) return;
+    setToolBusy("external-create");
+    setAssignmentNotice(null);
+    setError(null);
+    try {
+      const specialist = await apiFetch<ExternalSpecialist>("/external-specialists", {
+        method: "POST",
+        body: JSON.stringify(externalDraft)
+      });
+      setExternalSpecialists((current) => [specialist, ...current.filter((item) => item.id !== specialist.id)]);
+      setExternalDraft({ name: "", email: "", phone: "", company: "" });
+      setExternalAssignmentId(specialist.id);
+      setAssignmentNotice("External specialist added.");
+    } catch {
+      setError("Unable to add external specialist.");
+    } finally {
+      setToolBusy(null);
+    }
+  }
+
+  async function addExternalToTicket() {
+    if (!ticket || !externalAssignmentId) return;
+    setToolBusy("external-assign");
+    setAssignmentNotice(null);
+    setError(null);
+    try {
+      const updated = await apiFetch<Ticket>(`/tickets/${ticketId}/external-specialists`, {
+        method: "POST",
+        body: JSON.stringify({ externalSpecialistId: externalAssignmentId })
+      });
+      setTicket(updated);
+      setExternalAssignmentId("");
+      setAssignmentNotice("External specialist assigned.");
+    } catch {
+      setError("Unable to assign external specialist.");
+    } finally {
+      setToolBusy(null);
+    }
+  }
+
+  async function removeExternalFromTicket(assignmentId: string) {
+    setToolBusy(`external-remove-${assignmentId}`);
+    setAssignmentNotice(null);
+    setError(null);
+    try {
+      const updated = await apiFetch<Ticket>(`/tickets/${ticketId}/external-specialists/${assignmentId}`, { method: "DELETE" });
+      setTicket(updated);
+      setAssignmentNotice("External specialist removed.");
+    } catch {
+      setError("Unable to remove external specialist.");
+    } finally {
+      setToolBusy(null);
     }
   }
 
@@ -617,6 +693,46 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
             </button>
             {assignmentNotice ? <span className="status-pill success">{assignmentNotice}</span> : null}
           </form>
+          <div className="panel ticket-assignment-panel">
+            <h3>External Specialists</h3>
+            <div className="checkbox-row vertical">
+              {ticket.externalSpecialists.length === 0 ? <span className="muted">No external specialists assigned.</span> : null}
+              {ticket.externalSpecialists.map((assignment) => (
+                <label key={assignment.id}>
+                  <span>
+                    {externalName(assignment.externalSpecialist)}
+                    <br />
+                    <small>{assignment.externalSpecialist.email}{assignment.externalSpecialist.phone ? ` · ${assignment.externalSpecialist.phone}` : ""}</small>
+                  </span>
+                  <button className="icon-button" type="button" aria-label="Remove external specialist" onClick={() => void removeExternalFromTicket(assignment.id)} disabled={toolBusy === `external-remove-${assignment.id}`}>
+                    <X size={14} aria-hidden="true" />
+                  </button>
+                </label>
+              ))}
+            </div>
+            <div className="event-inline-controls">
+              <select className="input compact-select" value={externalAssignmentId} onChange={(event) => setExternalAssignmentId(event.target.value)}>
+                <option value="">Select external specialist</option>
+                {externalSpecialists.filter((specialist) => specialist.isActive).map((specialist) => (
+                  <option key={specialist.id} value={specialist.id}>{externalName(specialist)}</option>
+                ))}
+              </select>
+              <button className="button secondary" type="button" onClick={addExternalToTicket} disabled={!externalAssignmentId || toolBusy === "external-assign"}>
+                <Plus size={16} aria-hidden="true" />
+                <span>Assign</span>
+              </button>
+            </div>
+            <div className="event-external-create-grid">
+              <input className="input" placeholder="Name" value={externalDraft.name} onChange={(event) => setExternalDraft((current) => ({ ...current, name: event.target.value }))} />
+              <input className="input" placeholder="Email" value={externalDraft.email} onChange={(event) => setExternalDraft((current) => ({ ...current, email: event.target.value }))} />
+              <input className="input" placeholder="Phone" value={externalDraft.phone} onChange={(event) => setExternalDraft((current) => ({ ...current, phone: event.target.value }))} />
+              <input className="input" placeholder="Company" value={externalDraft.company} onChange={(event) => setExternalDraft((current) => ({ ...current, company: event.target.value }))} />
+              <button className="button secondary span-2" type="button" onClick={createExternalSpecialist} disabled={toolBusy === "external-create" || !externalDraft.name.trim() || !externalDraft.email.trim()}>
+                <Plus size={16} aria-hidden="true" />
+                <span>Add External Contact</span>
+              </button>
+            </div>
+          </div>
           <div className="panel ticket-files-panel">
             <div className="section-heading compact-heading">
               <div>

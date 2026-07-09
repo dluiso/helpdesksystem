@@ -4,6 +4,7 @@ import { AuditLogsModule } from "../audit-logs/audit-logs.module";
 import { AuthModule } from "../auth/auth.module";
 import { AutoRepliesModule } from "../auto-replies/auto-replies.module";
 import { FileStorageModule } from "../file-storage/file-storage.module";
+import { ExternalSpecialistsModule } from "../external-specialists/external-specialists.module";
 import { MailTransportModule } from "../mailboxes/mail-transport.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { EventServicesAttachmentsService } from "./event-services-attachments.service";
@@ -12,7 +13,7 @@ import { EventServicesCalendarService } from "./event-services-calendar.service"
 import { EventServicesService } from "./event-services.service";
 
 @Module({
-  imports: [AuthModule, AuditLogsModule, AutoRepliesModule, FileStorageModule, MailTransportModule, NotificationsModule],
+  imports: [AuthModule, AuditLogsModule, AutoRepliesModule, ExternalSpecialistsModule, FileStorageModule, MailTransportModule, NotificationsModule],
   controllers: [EventServicesController],
   providers: [EventServicesService, EventServicesAttachmentsService, EventServicesCalendarService, HtmlSanitizerService],
   exports: [EventServicesService]

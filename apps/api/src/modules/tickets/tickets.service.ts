@@ -3,6 +3,7 @@ import { MessageDirection, MessageVisibility, Prisma, TicketPriority, TicketSour
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { ContactsService } from "../contacts/contacts.service";
+import { ExternalSpecialistsService } from "../external-specialists/external-specialists.service";
 import { MailDeliveryService } from "../mailboxes/mail-delivery.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -12,6 +13,7 @@ import { HtmlSanitizerService } from "../../common/html/html-sanitizer.service";
 import { BulkUpdateTicketsDto } from "./dto/bulk-update-tickets.dto";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
 import { CreateTicketMessageDto } from "./dto/create-ticket-message.dto";
+import { AddTicketExternalSpecialistDto } from "./dto/add-ticket-external-specialist.dto";
 import { ListTicketsQueryDto } from "./dto/list-tickets-query.dto";
 import { MergeTicketsDto } from "./dto/merge-tickets.dto";
 import { UpdateTicketAssignmentDto } from "./dto/update-ticket-assignment.dto";
@@ -44,7 +46,8 @@ export class TicketsService {
     private readonly ticketRouting: TicketRoutingService,
     private readonly mailDelivery: MailDeliveryService,
     private readonly notifications: NotificationsService,
-    private readonly autoReplies: AutoRepliesService
+    private readonly autoReplies: AutoRepliesService,
+    private readonly externalSpecialists: ExternalSpecialistsService = { ensure: async () => { throw new NotFoundException("External specialist was not found."); } } as unknown as ExternalSpecialistsService
   ) {}
 
   async list(user: AuthenticatedUser, query: ListTicketsQueryDto = {}) {
@@ -669,10 +672,14 @@ export class TicketsService {
           },
           orderBy: { mergedAt: "desc" }
         },
-          assignees: {
+        assignees: {
           include: {
             user: { select: { id: true, firstName: true, lastName: true, email: true } }
           },
+          orderBy: { createdAt: "asc" }
+        },
+        externalSpecialists: {
+          include: { externalSpecialist: true },
           orderBy: { createdAt: "asc" }
         },
         firstReadBy: {
@@ -756,6 +763,10 @@ export class TicketsService {
             include: {
               user: { select: { id: true, firstName: true, lastName: true, email: true } }
             },
+            orderBy: { createdAt: "asc" }
+          },
+          externalSpecialists: {
+            include: { externalSpecialist: true },
             orderBy: { createdAt: "asc" }
           },
           firstReadBy: {
@@ -1490,6 +1501,55 @@ export class TicketsService {
     return this.getById(ticketId, user);
   }
 
+  async addExternalSpecialist(ticketId: string, input: AddTicketExternalSpecialistDto, user: AuthenticatedUser) {
+    const ticket = await this.ensureTicketExists(ticketId, user);
+    await this.externalSpecialists.ensure(input.externalSpecialistId, user.organizationId);
+    await this.prisma.ticketExternalSpecialist.upsert({
+      where: {
+        ticketId_externalSpecialistId: {
+          ticketId: ticket.id,
+          externalSpecialistId: input.externalSpecialistId
+        }
+      },
+      create: {
+        ticketId: ticket.id,
+        externalSpecialistId: input.externalSpecialistId,
+        role: this.optionalTrim(input.role),
+        createdByUserId: user.id
+      },
+      update: {
+        role: this.optionalTrim(input.role)
+      }
+    });
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "Ticket",
+      entityId: ticket.id,
+      action: "ticket.external_specialist.assigned",
+      metadata: { externalSpecialistId: input.externalSpecialistId }
+    });
+    return this.getById(ticketId, user);
+  }
+
+  async removeExternalSpecialist(ticketId: string, assignmentId: string, user: AuthenticatedUser) {
+    const ticket = await this.ensureTicketExists(ticketId, user);
+    const assignment = await this.prisma.ticketExternalSpecialist.findFirst({
+      where: { id: assignmentId, ticketId: ticket.id }
+    });
+    if (!assignment) {
+      throw new NotFoundException("External specialist assignment was not found.");
+    }
+    await this.prisma.ticketExternalSpecialist.delete({ where: { id: assignment.id } });
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "Ticket",
+      entityId: ticket.id,
+      action: "ticket.external_specialist.removed",
+      metadata: { externalSpecialistId: assignment.externalSpecialistId }
+    });
+    return this.getById(ticketId, user);
+  }
+
   async closeTicket(ticketId: string, user: AuthenticatedUser) {
     const ticket = await this.ensureTicketExists(ticketId, user);
     const internalTicketId = ticket.id;
@@ -2142,5 +2202,10 @@ export class TicketsService {
           .filter((status): status is TicketStatus => allowed.has(status as TicketStatus))
       )
     ];
+  }
+
+  private optionalTrim(value: string | null | undefined) {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : null;
   }
 }

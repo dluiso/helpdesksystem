@@ -26,6 +26,16 @@ interface EventServiceCatalogItem {
   defaultUserIds: string[];
 }
 
+interface ExternalSpecialist {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  company: string | null;
+  notes: string | null;
+  isActive: boolean;
+}
+
 interface EventServiceRequest {
   id: string;
   trackingNumber: string;
@@ -49,7 +59,8 @@ interface EventServiceRequest {
   client: { id: string; name: string; shortName: string | null } | null;
   services: Array<{ service: EventServiceCatalogItem }>;
   assignees: Array<{ user: UserOption; role: string | null }>;
-  tasks: Array<{ id: string; title: string; description: string | null; status: TaskStatus; dueAt: string | null; calendarEventId: string | null; calendarUserEmail: string | null; calendarSyncedAt: string | null; calendarSyncError: string | null; assignedUser: UserOption | null }>;
+  externalSpecialists: Array<{ id: string; role: string | null; externalSpecialist: ExternalSpecialist }>;
+  tasks: Array<{ id: string; title: string; description: string | null; status: TaskStatus; dueAt: string | null; calendarEventId: string | null; calendarUserEmail: string | null; calendarSyncedAt: string | null; calendarSyncError: string | null; assignedUser: UserOption | null; externalSpecialist: ExternalSpecialist | null }>;
   comments?: Array<{ id: string; body: string; createdAt: string; user: UserOption | null }>;
   messages?: Array<{
     id: string;
@@ -129,6 +140,28 @@ function userName(user: UserOption | null) {
   return user ? `${user.firstName} ${user.lastName}`.trim() || user.email : "Unassigned";
 }
 
+function externalName(specialist: ExternalSpecialist | null) {
+  return specialist ? `${specialist.name}${specialist.company ? ` (${specialist.company})` : ""}` : "Unassigned";
+}
+
+function taskAssigneeValue(task: EventServiceRequest["tasks"][number]) {
+  if (task.assignedUser) return `user:${task.assignedUser.id}`;
+  if (task.externalSpecialist) return `external:${task.externalSpecialist.id}`;
+  return "";
+}
+
+function taskAssigneeLabel(task: EventServiceRequest["tasks"][number]) {
+  if (task.assignedUser) return userName(task.assignedUser);
+  if (task.externalSpecialist) return externalName(task.externalSpecialist);
+  return "Unassigned";
+}
+
+function taskAssigneePatch(value: string) {
+  if (value.startsWith("user:")) return { assignedUserId: value.slice(5), externalSpecialistId: null };
+  if (value.startsWith("external:")) return { assignedUserId: null, externalSpecialistId: value.slice(9) };
+  return { assignedUserId: null, externalSpecialistId: null };
+}
+
 function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString() : "No date";
 }
@@ -182,9 +215,12 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
   const [recycledRequests, setRecycledRequests] = useState<EventServiceRequest[]>([]);
   const [services, setServices] = useState<EventServiceCatalogItem[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
+  const [externalSpecialists, setExternalSpecialists] = useState<ExternalSpecialist[]>([]);
   const [filters, setFilters] = useState({ search: "", status: "", assignedUserId: "", serviceId: "" });
   const [draft, setDraft] = useState({ status: "NEW" as EventStatus, priority: "NORMAL" as Priority, assignedUserIds: [] as string[], additionalInfo: "" });
-  const [taskDraft, setTaskDraft] = useState({ title: "", assignedUserId: "", description: "", dueAt: "" });
+  const [taskDraft, setTaskDraft] = useState({ title: "", assignee: "", description: "", dueAt: "" });
+  const [externalDraft, setExternalDraft] = useState({ name: "", email: "", phone: "", company: "" });
+  const [externalAssignmentId, setExternalAssignmentId] = useState("");
   const [commentDraft, setCommentDraft] = useState("");
   const [calendarDrafts, setCalendarDrafts] = useState<Record<string, { startDate: string; startTime: string; endDate: string; endTime: string; location: string; notes: string }>>({});
   const [loading, setLoading] = useState(true);
@@ -195,7 +231,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
   const summary = useMemo(() => ({
     total: requests.length,
     newRequests: requests.filter((item) => item.status === "NEW").length,
-    assigned: requests.filter((item) => item.assignees.length > 0 || item.tasks.some((task) => task.assignedUser)).length,
+    assigned: requests.filter((item) => item.assignees.length > 0 || item.externalSpecialists.length > 0 || item.tasks.some((task) => task.assignedUser || task.externalSpecialist)).length,
     completed: requests.filter((item) => item.status === "COMPLETED").length
   }), [requests]);
 
@@ -207,11 +243,12 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
       if (value) params.set(key, value);
     });
     try {
-      const [requestData, myTaskData, serviceData, userData] = await Promise.all([
+      const [requestData, myTaskData, serviceData, userData, externalData] = await Promise.all([
         apiFetch<EventServiceRequest[]>(`/event-services?${params.toString()}`),
         apiFetch<EventServiceTaskAssignment[]>("/event-services/my-tasks"),
         apiFetch<EventServiceCatalogItem[]>("/event-services/services"),
-        apiFetch<UserOption[]>("/users")
+        apiFetch<UserOption[]>("/users"),
+        apiFetch<ExternalSpecialist[]>("/external-specialists")
       ]);
       setRequests(requestData);
       setMyTasks(myTaskData);
@@ -224,6 +261,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
       });
       setServices(serviceData);
       setUsers(userData);
+      setExternalSpecialists(externalData);
       setSelectedRequestIds((current) => current.filter((id) => requestData.some((request) => request.id === id)));
       if (selectedId && !detailOpen && !requestData.some((request) => request.id === selectedId)) {
         setSelectedId(null);
@@ -433,9 +471,9 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
     try {
       await apiFetch(`/event-services/${selected.id}/tasks`, {
         method: "POST",
-        body: JSON.stringify({ ...taskDraft, assignedUserId: taskDraft.assignedUserId || null, dueAt: taskDraft.dueAt || null })
+        body: JSON.stringify({ title: taskDraft.title, description: taskDraft.description, dueAt: taskDraft.dueAt || null, ...taskAssigneePatch(taskDraft.assignee) })
       });
-      setTaskDraft({ title: "", assignedUserId: "", description: "", dueAt: "" });
+      setTaskDraft({ title: "", assignee: "", description: "", dueAt: "" });
       await loadSelected(selected.id);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to create task.");
@@ -444,7 +482,7 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
     }
   }
 
-  async function updateTask(taskId: string, patch: Partial<{ status: TaskStatus; assignedUserId: string | null; dueAt: string | null }>) {
+  async function updateTask(taskId: string, patch: Partial<{ status: TaskStatus; assignedUserId: string | null; externalSpecialistId: string | null; dueAt: string | null }>) {
     if (!selected) return;
     await apiFetch(`/event-services/${selected.id}/tasks/${taskId}`, {
       method: "PATCH",
@@ -452,6 +490,79 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
     });
     await loadSelected(selected.id);
     await loadData();
+  }
+
+  async function createExternalSpecialist() {
+    if (!externalDraft.name.trim() || !externalDraft.email.trim()) return;
+    setBusy("external-create");
+    setError(null);
+    try {
+      const specialist = await apiFetch<ExternalSpecialist>("/external-specialists", {
+        method: "POST",
+        body: JSON.stringify(externalDraft)
+      });
+      setExternalSpecialists((current) => [specialist, ...current.filter((item) => item.id !== specialist.id)]);
+      setExternalDraft({ name: "", email: "", phone: "", company: "" });
+      setExternalAssignmentId(specialist.id);
+      setNotice("External specialist added.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to add external specialist.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function addExternalToEvent() {
+    if (!selected || !externalAssignmentId) return;
+    setBusy("external-assign");
+    setError(null);
+    try {
+      await apiFetch(`/event-services/${selected.id}/external-specialists`, {
+        method: "POST",
+        body: JSON.stringify({ externalSpecialistId: externalAssignmentId })
+      });
+      setExternalAssignmentId("");
+      await loadSelected(selected.id);
+      setNotice("External specialist assigned to event.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to assign external specialist.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removeExternalFromEvent(assignmentId: string) {
+    if (!selected) return;
+    setBusy(`external-remove-${assignmentId}`);
+    setError(null);
+    try {
+      await apiFetch(`/event-services/${selected.id}/external-specialists/${assignmentId}`, { method: "DELETE" });
+      await loadSelected(selected.id);
+      setNotice("External specialist removed.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to remove external specialist.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function sendExternalTaskInvite(taskId: string) {
+    if (!selected) return;
+    const calendarDraft = calendarDrafts[taskId] ?? { location: selected.venue ?? "", notes: "" };
+    setBusy(`external-invite-${taskId}`);
+    setError(null);
+    try {
+      await apiFetch(`/event-services/${selected.id}/tasks/${taskId}/external-invite`, {
+        method: "POST",
+        body: JSON.stringify({ location: calendarDraft.location, message: calendarDraft.notes })
+      });
+      await loadSelected(selected.id);
+      setNotice("External calendar invite sent.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to send external calendar invite.");
+    } finally {
+      setBusy(null);
+    }
   }
 
   function updateMyTaskDraft(taskId: string, patch: Partial<{ status: TaskStatus; comment: string }>) {
@@ -841,6 +952,30 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                         </label>
                       ))}
                     </div>
+                    <div className="event-assignee-picker compact">
+                      <strong>External Specialists</strong>
+                      {selected.externalSpecialists.length === 0 ? <span className="muted">No external specialists assigned.</span> : null}
+                      {selected.externalSpecialists.map((assignment) => (
+                        <label key={assignment.id}>
+                          <span>{externalName(assignment.externalSpecialist)}<br /><small>{assignment.externalSpecialist.email}</small></span>
+                          <button className="icon-button" type="button" aria-label="Remove external specialist" onClick={() => void removeExternalFromEvent(assignment.id)} disabled={busy === `external-remove-${assignment.id}`}><X size={14} /></button>
+                        </label>
+                      ))}
+                      <div className="event-inline-controls">
+                        <select className="input compact-select" value={externalAssignmentId} onChange={(event) => setExternalAssignmentId(event.target.value)}>
+                          <option value="">Select external specialist</option>
+                          {externalSpecialists.filter((specialist) => specialist.isActive).map((specialist) => <option key={specialist.id} value={specialist.id}>{externalName(specialist)}</option>)}
+                        </select>
+                        <button className="button secondary" type="button" onClick={addExternalToEvent} disabled={!externalAssignmentId || busy === "external-assign"}><Plus size={16} />Assign</button>
+                      </div>
+                      <div className="event-external-create-grid">
+                        <input className="input" placeholder="Name" value={externalDraft.name} onChange={(event) => setExternalDraft((current) => ({ ...current, name: event.target.value }))} />
+                        <input className="input" placeholder="Email" value={externalDraft.email} onChange={(event) => setExternalDraft((current) => ({ ...current, email: event.target.value }))} />
+                        <input className="input" placeholder="Phone" value={externalDraft.phone} onChange={(event) => setExternalDraft((current) => ({ ...current, phone: event.target.value }))} />
+                        <input className="input" placeholder="Company" value={externalDraft.company} onChange={(event) => setExternalDraft((current) => ({ ...current, company: event.target.value }))} />
+                        <button className="button secondary span-2" type="button" onClick={createExternalSpecialist} disabled={busy === "external-create" || !externalDraft.name.trim() || !externalDraft.email.trim()}><Plus size={16} />Add External Contact</button>
+                      </div>
+                    </div>
                     <label className="event-management-notes">Internal request notes<textarea className="input" value={draft.additionalInfo} onChange={(event) => setDraft((current) => ({ ...current, additionalInfo: event.target.value }))} /></label>
                     <button className="button full-width-button" type="button" onClick={saveRequest} disabled={busy === "request"}><Save size={16} />Save Management</button>
                   </section>
@@ -854,7 +989,15 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                     </div>
                     <div className="event-task-create compact">
                       <input className="input" placeholder="Task title" value={taskDraft.title} onChange={(event) => setTaskDraft((current) => ({ ...current, title: event.target.value }))} />
-                      <select className="input" value={taskDraft.assignedUserId} onChange={(event) => setTaskDraft((current) => ({ ...current, assignedUserId: event.target.value }))}><option value="">Unassigned</option>{users.map((user) => <option key={user.id} value={user.id}>{userName(user)}</option>)}</select>
+                      <select className="input" value={taskDraft.assignee} onChange={(event) => setTaskDraft((current) => ({ ...current, assignee: event.target.value }))}>
+                        <option value="">Unassigned</option>
+                        <optgroup label="Internal">
+                          {users.map((user) => <option key={user.id} value={`user:${user.id}`}>{userName(user)}</option>)}
+                        </optgroup>
+                        <optgroup label="External">
+                          {externalSpecialists.filter((specialist) => specialist.isActive).map((specialist) => <option key={specialist.id} value={`external:${specialist.id}`}>{externalName(specialist)}</option>)}
+                        </optgroup>
+                      </select>
                       <input className="input" type="datetime-local" value={taskDraft.dueAt} onChange={(event) => setTaskDraft((current) => ({ ...current, dueAt: event.target.value }))} />
                       <textarea className="input" placeholder="Task details or calendar notes" value={taskDraft.description} onChange={(event) => setTaskDraft((current) => ({ ...current, description: event.target.value }))} />
                       <button className="button secondary" type="button" onClick={createTask} disabled={busy === "task"}><Plus size={16} />Add Task</button>
@@ -870,11 +1013,19 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                               <span className={`status-pill task-status-${task.status.toLowerCase().replace(/_/g, "-")}`}>{label(task.status)}</span>
                             </div>
                             {task.description ? <p className="muted">{task.description}</p> : null}
-                            <span className="muted">Assigned: {userName(task.assignedUser)}</span>
+                            <span className="muted">Assigned: {taskAssigneeLabel(task)}</span>
                             <span className="muted">Due: {formatDateTime(task.dueAt)}</span>
                             <div className="event-task-edit-grid">
                               <label>Status<select className="input compact-select" value={task.status} onChange={(event) => void updateTask(task.id, { status: event.target.value as TaskStatus })}>{taskStatuses.map((item) => <option key={item} value={item}>{label(item)}</option>)}</select></label>
-                              <label>Specialist<select className="input compact-select" value={task.assignedUser?.id ?? ""} onChange={(event) => void updateTask(task.id, { assignedUserId: event.target.value || null })}><option value="">Unassigned</option>{users.map((user) => <option key={user.id} value={user.id}>{userName(user)}</option>)}</select></label>
+                              <label>Specialist<select className="input compact-select" value={taskAssigneeValue(task)} onChange={(event) => void updateTask(task.id, taskAssigneePatch(event.target.value))}>
+                                <option value="">Unassigned</option>
+                                <optgroup label="Internal">
+                                  {users.map((user) => <option key={user.id} value={`user:${user.id}`}>{userName(user)}</option>)}
+                                </optgroup>
+                                <optgroup label="External">
+                                  {externalSpecialists.filter((specialist) => specialist.isActive).map((specialist) => <option key={specialist.id} value={`external:${specialist.id}`}>{externalName(specialist)}</option>)}
+                                </optgroup>
+                              </select></label>
                               <label>Due<input className="input compact-select" type="datetime-local" value={task.dueAt ? task.dueAt.slice(0, 16) : ""} onChange={(event) => void updateTask(task.id, { dueAt: event.target.value || null })} /></label>
                             </div>
                             <details className="event-calendar-sync">
@@ -888,7 +1039,11 @@ export function EventServicesWorkspace({ detailTrackingNumber }: EventServicesWo
                               </div>
                               {task.calendarSyncedAt ? <p className="muted">Synced to {task.calendarUserEmail} on {formatDateTime(task.calendarSyncedAt)}</p> : null}
                               {task.calendarSyncError ? <p className="alert error">{task.calendarSyncError}</p> : null}
-                              <button className="button secondary" type="button" onClick={() => void syncTaskCalendar(task.id)} disabled={busy === `calendar-${task.id}`}>Add to Calendar</button>
+                              {task.externalSpecialist ? (
+                                <button className="button secondary" type="button" onClick={() => void sendExternalTaskInvite(task.id)} disabled={busy === `external-invite-${task.id}`}>Send External Invite</button>
+                              ) : (
+                                <button className="button secondary" type="button" onClick={() => void syncTaskCalendar(task.id)} disabled={busy === `calendar-${task.id}`}>Add to Calendar</button>
+                              )}
                             </details>
                           </article>
                         );

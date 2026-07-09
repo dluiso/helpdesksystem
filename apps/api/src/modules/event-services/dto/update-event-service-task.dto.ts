@@ -21,6 +21,10 @@ export class UpdateEventServiceTaskDto {
   assignedUserId?: string | null;
 
   @IsOptional()
+  @IsUUID()
+  externalSpecialistId?: string | null;
+
+  @IsOptional()
   @IsString()
   @MaxLength(80)
   dueAt?: string | null;

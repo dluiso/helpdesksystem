@@ -6,6 +6,7 @@ import { RequirePermissions } from "../permissions/decorators/require-permission
 import { PermissionsGuard } from "../permissions/guards/permissions.guard";
 import { BulkTicketIdsDto } from "./dto/bulk-ticket-ids.dto";
 import { BulkUpdateTicketsDto } from "./dto/bulk-update-tickets.dto";
+import { AddTicketExternalSpecialistDto } from "./dto/add-ticket-external-specialist.dto";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
 import { CreateTicketMessageDto } from "./dto/create-ticket-message.dto";
 import { ListTicketsQueryDto } from "./dto/list-tickets-query.dto";
@@ -112,6 +113,18 @@ export class TicketsController {
   @RequirePermissions("tickets.update")
   updateWatchers(@Param("ticketId") ticketId: string, @Body() body: UpdateTicketWatchersDto, @CurrentUser() user: AuthenticatedUser) {
     return this.ticketsService.updateWatchers(ticketId, body.userIds ?? [], user);
+  }
+
+  @Post(":ticketId/external-specialists")
+  @RequirePermissions("tickets.update")
+  addExternalSpecialist(@Param("ticketId") ticketId: string, @Body() body: AddTicketExternalSpecialistDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.ticketsService.addExternalSpecialist(ticketId, body, user);
+  }
+
+  @Delete(":ticketId/external-specialists/:assignmentId")
+  @RequirePermissions("tickets.update")
+  removeExternalSpecialist(@Param("ticketId") ticketId: string, @Param("assignmentId") assignmentId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.ticketsService.removeExternalSpecialist(ticketId, assignmentId, user);
   }
 
   @Post(":ticketId/close")

@@ -253,6 +253,7 @@ model Organization {
   eventServiceServices EventServiceService[]
   eventServiceForms    EventServiceForm[]
   eventServiceSequences EventServiceSequence[]
+  externalSpecialists  ExternalSpecialist[]
   supportPortalForms   SupportPortalForm[]
   deviceViews          UserDeviceView[]
   auditLogs            AuditLog[]
@@ -463,6 +464,7 @@ model User {
   createdSpamBlockEntries SpamBlockEntry[] @relation("SpamBlockEntryCreatedBy")
   assignedEventServiceRequests EventServiceAssignee[]
   assignedEventServiceTasks EventServiceTask[] @relation("EventServiceTaskAssignedUser")
+  ticketExternalSpecialists TicketExternalSpecialist[]
   createdEventServiceComments EventServiceComment[]
   eventServiceActivity EventServiceActivity[]
   eventServiceMessages EventServiceMessage[]
@@ -865,6 +867,7 @@ model Ticket {
   messagesMergedFromThisTicket TicketMessage[] @relation("MergedFromTicketMessages")
   attachments                TicketAttachment[]
   assignees                  TicketAssignee[]
+  externalSpecialists        TicketExternalSpecialist[]
   watchers                   TicketWatcher[]
   notifications              Notification[]
   aiRequestLogs              AiRequestLog[]
@@ -1864,6 +1867,7 @@ model EventServiceRequest {
   assignedTeam       TicketTeam?               @relation("EventServiceAssignedTeam", fields: [assignedTeamId], references: [id], onDelete: SetNull)
   services           EventServiceRequestService[]
   assignees          EventServiceAssignee[]
+  externalSpecialists EventServiceExternalSpecialist[]
   tasks              EventServiceTask[]
   comments           EventServiceComment[]
   messages           EventServiceMessage[]
@@ -1907,10 +1911,65 @@ model EventServiceAssignee {
   @@map("event_service_assignees")
 }
 
+model ExternalSpecialist {
+  id             String                         @id @default(uuid()) @db.Uuid
+  organizationId String                         @db.Uuid
+  name           String
+  email          String
+  phone          String?
+  company        String?
+  notes          String?
+  isActive       Boolean                        @default(true)
+  deletedAt      DateTime?
+  createdAt      DateTime                       @default(now())
+  updatedAt      DateTime                       @updatedAt
+  organization   Organization                   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  eventRequests  EventServiceExternalSpecialist[]
+  eventTasks     EventServiceTask[]
+  tickets        TicketExternalSpecialist[]
+
+  @@unique([organizationId, email])
+  @@index([organizationId, isActive])
+  @@index([deletedAt])
+  @@map("external_specialists")
+}
+
+model EventServiceExternalSpecialist {
+  id                   String              @id @default(uuid()) @db.Uuid
+  requestId            String              @db.Uuid
+  externalSpecialistId String              @db.Uuid
+  role                 String?
+  createdAt            DateTime            @default(now())
+  request              EventServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  externalSpecialist   ExternalSpecialist  @relation(fields: [externalSpecialistId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, externalSpecialistId])
+  @@index([externalSpecialistId])
+  @@map("event_service_external_specialists")
+}
+
+model TicketExternalSpecialist {
+  id                   String             @id @default(uuid()) @db.Uuid
+  ticketId             String             @db.Uuid
+  externalSpecialistId String             @db.Uuid
+  role                 String?
+  createdAt            DateTime           @default(now())
+  createdByUserId      String?            @db.Uuid
+  ticket               Ticket             @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  externalSpecialist   ExternalSpecialist @relation(fields: [externalSpecialistId], references: [id], onDelete: Cascade)
+  createdBy            User?              @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([ticketId, externalSpecialistId])
+  @@index([externalSpecialistId])
+  @@index([createdByUserId])
+  @@map("ticket_external_specialists")
+}
+
 model EventServiceTask {
   id              String                 @id @default(uuid()) @db.Uuid
   requestId       String                 @db.Uuid
   assignedUserId  String?                @db.Uuid
+  externalSpecialistId String?           @db.Uuid
   title           String
   description     String?
   status          EventServiceTaskStatus @default(TODO)
@@ -1925,9 +1984,11 @@ model EventServiceTask {
   updatedAt       DateTime               @updatedAt
   request         EventServiceRequest    @relation(fields: [requestId], references: [id], onDelete: Cascade)
   assignedUser    User?                  @relation("EventServiceTaskAssignedUser", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  externalSpecialist ExternalSpecialist? @relation(fields: [externalSpecialistId], references: [id], onDelete: SetNull)
 
   @@index([requestId, sortOrder])
   @@index([assignedUserId])
+  @@index([externalSpecialistId])
   @@map("event_service_tasks")
 }
 

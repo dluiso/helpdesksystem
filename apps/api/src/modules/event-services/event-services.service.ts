@@ -5,6 +5,7 @@ import { HtmlSanitizerService } from "../../common/html/html-sanitizer.service";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { AutoRepliesService } from "../auto-replies/auto-replies.service";
+import { ExternalSpecialistsService } from "../external-specialists/external-specialists.service";
 import { MailDeliveryService } from "../mailboxes/mail-delivery.service";
 import { NotificationsService, NotificationEventType } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -12,6 +13,8 @@ import { CreateEventServiceCommentDto } from "./dto/create-event-service-comment
 import { CreateEventServiceMessageDto } from "./dto/create-event-service-message.dto";
 import { CreateEventServiceRequestDto } from "./dto/create-event-service-request.dto";
 import { CreateEventServiceTaskDto } from "./dto/create-event-service-task.dto";
+import { AddEventServiceExternalSpecialistDto } from "./dto/add-event-service-external-specialist.dto";
+import { SendEventServiceExternalInviteDto } from "./dto/send-event-service-external-invite.dto";
 import { SyncEventServiceTaskCalendarDto } from "./dto/sync-event-service-task-calendar.dto";
 import { CreatePublicEventServiceRequestDto } from "./dto/create-public-event-service-request.dto";
 import { ListEventServiceCalendarDto } from "./dto/list-event-service-calendar.dto";
@@ -39,6 +42,7 @@ export class EventServicesService {
     private readonly auditLogs: AuditLogsService,
     private readonly notifications: NotificationsService,
     private readonly autoReplies: AutoRepliesService,
+    private readonly externalSpecialists: ExternalSpecialistsService,
     private readonly htmlSanitizer: HtmlSanitizerService,
     private readonly attachments: EventServicesAttachmentsService,
     private readonly calendar: EventServicesCalendarService
@@ -409,8 +413,12 @@ export class EventServicesService {
 
   async createTask(requestId: string, user: AuthenticatedUser, input: CreateEventServiceTaskDto) {
     await this.get(requestId, user);
+    this.ensureSingleTaskAssignee(input.assignedUserId, input.externalSpecialistId);
     if (input.assignedUserId) {
       await this.ensureUser(input.assignedUserId, user.organizationId);
+    }
+    if (input.externalSpecialistId) {
+      await this.externalSpecialists.ensure(input.externalSpecialistId, user.organizationId);
     }
     const task = await this.prisma.eventServiceTask.create({
       data: {
@@ -418,9 +426,10 @@ export class EventServicesService {
         title: input.title.trim(),
         description: this.optionalTrim(input.description),
         assignedUserId: input.assignedUserId ?? null,
+        externalSpecialistId: input.externalSpecialistId ?? null,
         dueAt: this.parseOptionalDate(input.dueAt)
       },
-      include: { assignedUser: { select: this.userSelect() } }
+      include: { assignedUser: { select: this.userSelect() }, externalSpecialist: true }
     });
     await this.logActivity(requestId, user.id, "event_service_task.created", { taskId: task.id, title: task.title });
     if (task.assignedUserId) {
@@ -431,8 +440,12 @@ export class EventServicesService {
 
   async updateTask(requestId: string, taskId: string, user: AuthenticatedUser, input: UpdateEventServiceTaskDto) {
     await this.get(requestId, user);
+    this.ensureSingleTaskAssignee(input.assignedUserId, input.externalSpecialistId);
     if (input.assignedUserId) {
       await this.ensureUser(input.assignedUserId, user.organizationId);
+    }
+    if (input.externalSpecialistId) {
+      await this.externalSpecialists.ensure(input.externalSpecialistId, user.organizationId);
     }
     const task = await this.prisma.eventServiceTask.update({
       where: { id: taskId },
@@ -440,14 +453,131 @@ export class EventServicesService {
         title: input.title?.trim(),
         description: input.description === undefined ? undefined : this.optionalTrim(input.description),
         status: input.status,
-        assignedUserId: input.assignedUserId === undefined ? undefined : input.assignedUserId,
+        assignedUserId: input.assignedUserId === undefined ? (input.externalSpecialistId ? null : undefined) : input.assignedUserId,
+        externalSpecialistId: input.externalSpecialistId === undefined ? (input.assignedUserId ? null : undefined) : input.externalSpecialistId,
         dueAt: input.dueAt === undefined ? undefined : this.parseOptionalDate(input.dueAt)
       },
-      include: { assignedUser: { select: this.userSelect() } }
+      include: { assignedUser: { select: this.userSelect() }, externalSpecialist: true }
     });
     await this.logActivity(requestId, user.id, "event_service_task.updated", { taskId, status: task.status });
     await this.notifyAssignedUsers(requestId, "Event task updated", `${task.title} is ${this.statusLabel(task.status)}`, "eventTaskUpdated", user.id, taskId);
     return task;
+  }
+
+  async addExternalSpecialist(requestId: string, user: AuthenticatedUser, input: AddEventServiceExternalSpecialistDto) {
+    await this.get(requestId, user);
+    await this.externalSpecialists.ensure(input.externalSpecialistId, user.organizationId);
+    const assignment = await this.prisma.eventServiceExternalSpecialist.upsert({
+      where: {
+        requestId_externalSpecialistId: {
+          requestId,
+          externalSpecialistId: input.externalSpecialistId
+        }
+      },
+      create: {
+        requestId,
+        externalSpecialistId: input.externalSpecialistId,
+        role: this.optionalTrim(input.role)
+      },
+      update: {
+        role: this.optionalTrim(input.role)
+      },
+      include: { externalSpecialist: true }
+    });
+    await this.logActivity(requestId, user.id, "event_service_external_specialist.assigned", { externalSpecialistId: input.externalSpecialistId });
+    return assignment;
+  }
+
+  async removeExternalSpecialist(requestId: string, assignmentId: string, user: AuthenticatedUser) {
+    await this.get(requestId, user);
+    const assignment = await this.prisma.eventServiceExternalSpecialist.findFirst({
+      where: { id: assignmentId, requestId }
+    });
+    if (!assignment) {
+      throw new NotFoundException("External specialist assignment was not found.");
+    }
+    await this.prisma.eventServiceExternalSpecialist.delete({ where: { id: assignmentId } });
+    await this.prisma.eventServiceTask.updateMany({
+      where: { requestId, externalSpecialistId: assignment.externalSpecialistId },
+      data: { externalSpecialistId: null }
+    });
+    await this.logActivity(requestId, user.id, "event_service_external_specialist.removed", { externalSpecialistId: assignment.externalSpecialistId });
+    return { deleted: true };
+  }
+
+  async sendExternalTaskInvite(requestId: string, taskId: string, user: AuthenticatedUser, input: SendEventServiceExternalInviteDto) {
+    const request = await this.get(requestId, user);
+    const task = await this.prisma.eventServiceTask.findFirst({
+      where: { id: taskId, requestId },
+      include: { externalSpecialist: true }
+    });
+    if (!task) {
+      throw new NotFoundException("Event task was not found.");
+    }
+    if (!task.externalSpecialist) {
+      throw new BadRequestException("Assign this task to an external specialist before sending an external invite.");
+    }
+
+    const start = task.dueAt ?? this.requestStartDate(request);
+    if (!start) {
+      throw new BadRequestException("Set a task due date or event date before sending a calendar invite.");
+    }
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    const location = this.optionalTrim(input.location) ?? request.venue ?? "";
+    const message = this.optionalTrim(input.message) ?? task.description ?? request.additionalInfo ?? "";
+    const subject = `${request.trackingNumber}: ${task.title}`;
+    const calendarLinks = this.calendarLinks(subject, start, end, location, message);
+    const bodyText = [
+      `Hello ${task.externalSpecialist.name},`,
+      "",
+      "You have been assigned an event service task.",
+      "",
+      `Task: ${task.title}`,
+      `Event: ${request.eventName}`,
+      `Tracking: ${request.trackingNumber}`,
+      `Date/time: ${start.toLocaleString()}`,
+      location ? `Location: ${location}` : null,
+      message ? `Notes: ${message}` : null,
+      "",
+      `Google Calendar: ${calendarLinks.google}`,
+      `Outlook Calendar: ${calendarLinks.outlook}`,
+      "",
+      "A calendar file is attached."
+    ].filter(Boolean).join("\n");
+    const bodyHtml = this.htmlSanitizer.sanitize(
+      `<p>Hello ${this.escapeHtml(task.externalSpecialist.name)},</p><p>You have been assigned an event service task.</p><p><strong>Task:</strong> ${this.escapeHtml(task.title)}<br><strong>Event:</strong> ${this.escapeHtml(request.eventName)}<br><strong>Tracking:</strong> ${this.escapeHtml(request.trackingNumber)}<br><strong>Date/time:</strong> ${this.escapeHtml(start.toLocaleString())}${location ? `<br><strong>Location:</strong> ${this.escapeHtml(location)}` : ""}</p>${message ? `<p>${this.escapeHtml(message).replace(/\n/g, "<br>")}</p>` : ""}<p><a href="${this.escapeHtml(calendarLinks.google)}">Add to Google Calendar</a><br><a href="${this.escapeHtml(calendarLinks.outlook)}">Add to Outlook Calendar</a></p><p>A calendar file is attached.</p>`
+    );
+
+    const sendResult = await this.mailDelivery.sendTicketReply({
+      organizationId: user.organizationId,
+      to: [task.externalSpecialist.email],
+      subject,
+      bodyText,
+      bodyHtml,
+      rawAttachments: [
+        {
+          originalFilename: `${request.trackingNumber}-${task.title.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "event-task"}.ics`,
+          mimeType: "text/calendar",
+          sizeBytes: Buffer.byteLength(this.icsContent(subject, start, end, location, message)),
+          contentBytes: Buffer.from(this.icsContent(subject, start, end, location, message), "utf8")
+        }
+      ]
+    });
+    if (!sendResult) {
+      throw new BadRequestException("Outbound email is disabled for the active mailbox.");
+    }
+
+    const updated = await this.prisma.eventServiceTask.update({
+      where: { id: task.id },
+      data: {
+        calendarUserEmail: task.externalSpecialist.email,
+        calendarSyncedAt: new Date(),
+        calendarSyncError: null
+      },
+      include: { assignedUser: { select: this.userSelect() }, externalSpecialist: true }
+    });
+    await this.logActivity(request.id, user.id, "event_service_task.external_invite_sent", { taskId: task.id, externalSpecialistId: task.externalSpecialist.id });
+    return updated;
   }
 
   async updateMyTask(taskId: string, user: AuthenticatedUser, input: UpdateMyEventServiceTaskDto) {
@@ -672,7 +802,7 @@ export class EventServicesService {
           calendarSyncedAt: new Date(),
           calendarSyncError: null
         },
-        include: { assignedUser: { select: this.userSelect() } }
+        include: { assignedUser: { select: this.userSelect() }, externalSpecialist: true }
       });
       await this.logActivity(request.id, user.id, "event_service_task.calendar_synced", { taskId: task.id, calendarEventId: event.id, calendarUserEmail: task.assignedUser.email });
       return updated;
@@ -847,7 +977,8 @@ export class EventServicesService {
       linkedTicket: { select: { id: true, ticketNumber: true, subject: true } },
       services: { include: { service: true }, orderBy: { service: { name: "asc" } } },
       assignees: { include: { user: { select: this.userSelect() } }, orderBy: { createdAt: "asc" } },
-      tasks: { include: { assignedUser: { select: this.userSelect() } }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+      externalSpecialists: { include: { externalSpecialist: true }, orderBy: { createdAt: "asc" } },
+      tasks: { include: { assignedUser: { select: this.userSelect() }, externalSpecialist: true }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
       ...(includeDetail
         ? {
             comments: { include: { user: { select: this.userSelect() } }, orderBy: { createdAt: "desc" } },
@@ -1180,6 +1311,12 @@ export class EventServicesService {
     return status.toLowerCase().replace(/_/g, " ");
   }
 
+  private ensureSingleTaskAssignee(assignedUserId?: string | null, externalSpecialistId?: string | null) {
+    if (assignedUserId && externalSpecialistId) {
+      throw new BadRequestException("Assign a task to either an internal user or an external specialist, not both.");
+    }
+  }
+
   private optionalTrim(value: string | null | undefined) {
     const trimmed = value?.trim();
     return trimmed ? trimmed : null;
@@ -1211,6 +1348,66 @@ export class EventServicesService {
     const hour = Number.isFinite(hourValue) ? hourValue : 9;
     const minute = Number.isFinite(minuteValue) ? minuteValue : 0;
     return `${String((hour + 1) % 24).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+
+  private requestStartDate(request: { eventDate: Date | null; startTime: string | null }) {
+    if (!request.eventDate) {
+      return null;
+    }
+    const date = request.eventDate.toISOString().slice(0, 10);
+    const time = request.startTime ?? "09:00";
+    return new Date(`${date}T${time}:00`);
+  }
+
+  private calendarLinks(subject: string, start: Date, end: Date, location: string, details: string) {
+    const dates = `${this.calendarStamp(start)}/${this.calendarStamp(end)}`;
+    const params = new URLSearchParams({
+      text: subject,
+      dates,
+      details,
+      location
+    });
+    const outlookParams = new URLSearchParams({
+      subject,
+      startdt: start.toISOString(),
+      enddt: end.toISOString(),
+      body: details,
+      location
+    });
+    return {
+      google: `https://calendar.google.com/calendar/render?action=TEMPLATE&${params.toString()}`,
+      outlook: `https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent&${outlookParams.toString()}`
+    };
+  }
+
+  private icsContent(subject: string, start: Date, end: Date, location: string, description: string) {
+    const now = this.calendarStamp(new Date());
+    const uid = `${now}-${Math.random().toString(36).slice(2)}@avidity-one`;
+    return [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//Avidity One//Event Services//EN",
+      "CALSCALE:GREGORIAN",
+      "METHOD:PUBLISH",
+      "BEGIN:VEVENT",
+      `UID:${uid}`,
+      `DTSTAMP:${now}`,
+      `DTSTART:${this.calendarStamp(start)}`,
+      `DTEND:${this.calendarStamp(end)}`,
+      `SUMMARY:${this.escapeCalendarText(subject)}`,
+      location ? `LOCATION:${this.escapeCalendarText(location)}` : null,
+      description ? `DESCRIPTION:${this.escapeCalendarText(description)}` : null,
+      "END:VEVENT",
+      "END:VCALENDAR"
+    ].filter(Boolean).join("\r\n");
+  }
+
+  private calendarStamp(value: Date) {
+    return value.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  }
+
+  private escapeCalendarText(value: string) {
+    return value.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
   }
 
   private escapeHtml(value: string) {
