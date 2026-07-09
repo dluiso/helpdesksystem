@@ -37,6 +37,13 @@ const iconMap = {
   Settings
 };
 
+const routePermissions = [
+  ...dashboardNavigation
+    .filter((item) => item.permission)
+    .map((item) => ({ href: item.href, permission: item.permission as string })),
+  { href: "/event-services/external-specialists", permission: "external_specialists.view" }
+].sort((a, b) => b.href.length - a.href.length);
+
 function brandingFontFamily(value?: string) {
   if (value === "serif") return "Georgia, 'Times New Roman', serif";
   if (value === "mono") return "'SFMono-Regular', Consolas, monospace";
@@ -87,6 +94,20 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     setMobileNavOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    const currentRoute = routePermissions.find((route) => pathname === route.href || pathname.startsWith(`${route.href}/`));
+    if (!currentRoute || userPermissions.has(currentRoute.permission)) {
+      return;
+    }
+
+    const fallbackHref = navigation.find((item) => item.href !== pathname)?.href ?? "/profile";
+    window.location.replace(fallbackHref);
+  }, [navigation, pathname, user, userPermissions]);
 
   const logoBackgroundStyle = {
     background: branding.brandLogoTransparentBackground ? "transparent" : (branding.brandLogoBackgroundColor ?? "#ffffff")

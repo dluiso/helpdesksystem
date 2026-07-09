@@ -8,7 +8,7 @@ import { ForgotPasswordDto } from "./dto/forgot-password.dto";
 import { LoginDto } from "./dto/login.dto";
 import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { VerifyMfaLoginDto } from "./dto/verify-mfa-login.dto";
-import { AuthenticatedRequest, AuthenticatedUser } from "./auth.types";
+import { AuthenticatedUser } from "./auth.types";
 import { SessionAuthGuard } from "./guards/session-auth.guard";
 
 @Controller("auth")
@@ -67,14 +67,15 @@ export class AuthController {
   }
 
   @Post("logout")
-  @UseGuards(SessionAuthGuard)
-  async logout(@Req() request: AuthenticatedRequest, @Res({ passthrough: true }) response: Response) {
-    await this.authService.logout(request.sessionToken, {
-      ipAddress: getRequestIp(request),
-      userAgent: request.header("user-agent") ?? null
-    });
-
-    response.clearCookie(this.authService.getCookieName(), this.authService.getClearCookieOptions());
+  async logout(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    try {
+      await this.authService.logout(request.cookies?.[this.authService.getCookieName()] as string | undefined, {
+        ipAddress: getRequestIp(request),
+        userAgent: request.header("user-agent") ?? null
+      });
+    } finally {
+      response.clearCookie(this.authService.getCookieName(), this.authService.getClearCookieOptions());
+    }
     return { ok: true };
   }
 
