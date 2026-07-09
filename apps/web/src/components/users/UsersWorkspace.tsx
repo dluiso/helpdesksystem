@@ -81,6 +81,73 @@ const emptyRoleForm = {
 
 type ActiveTab = "users" | "groups" | "roles";
 
+const permissionScopeLabels: Record<string, string> = {
+  ai_assistant: "AI Assistant",
+  audit_logs: "Audit Logs",
+  auto_replies: "Auto Replies",
+  client_domains: "Client Domains",
+  clients: "Clients",
+  contacts: "Contacts",
+  devices: "Devices",
+  event_services: "Event Services",
+  external_specialists: "External Specialists",
+  groups: "Access Groups",
+  knowledge_base: "Knowledge Base",
+  mailboxes: "Mailboxes",
+  maintenance: "Maintenance",
+  permissions: "Permission Catalog",
+  remote_access: "Remote Access",
+  reports: "Reports",
+  roles: "Roles",
+  signatures: "Signatures",
+  spam: "Spam Management",
+  system_settings: "System Settings",
+  ticket_attachments: "Ticket Attachments",
+  ticket_messages: "Ticket Messages",
+  tickets: "Tickets",
+  users: "Users"
+};
+
+const permissionScopeOrder = [
+  "tickets",
+  "ticket_messages",
+  "ticket_attachments",
+  "event_services",
+  "external_specialists",
+  "clients",
+  "contacts",
+  "client_domains",
+  "devices",
+  "remote_access",
+  "knowledge_base",
+  "reports",
+  "ai_assistant",
+  "mailboxes",
+  "auto_replies",
+  "spam",
+  "maintenance",
+  "users",
+  "groups",
+  "roles",
+  "permissions",
+  "system_settings",
+  "audit_logs",
+  "signatures"
+];
+
+const permissionActionOrder = ["view", "create", "update", "assign", "reply", "close", "reopen", "merge", "upload", "download", "publish", "send", "export", "manage", "configure", "connect", "delete"];
+const sensitivePermissionScopes = new Set(["users", "groups", "roles", "permissions", "system_settings", "audit_logs", "mailboxes"]);
+
+function permissionScopeLabel(scope: string) {
+  return permissionScopeLabels[scope] ?? scope.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function permissionActionRank(permissionName: string) {
+  const action = permissionName.split(".")[1] ?? "";
+  const index = permissionActionOrder.indexOf(action);
+  return index === -1 ? permissionActionOrder.length : index;
+}
+
 export function UsersWorkspace() {
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [groups, setGroups] = useState<GroupRecord[]>([]);
@@ -104,8 +171,24 @@ export function UsersWorkspace() {
       const [scope] = permission.name.split(".");
       grouped.set(scope, [...(grouped.get(scope) ?? []), permission]);
     }
-    return [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b));
+    return [...grouped.entries()]
+      .map(([scope, scopePermissions]) => ({
+        scope,
+        label: permissionScopeLabel(scope),
+        isSensitive: sensitivePermissionScopes.has(scope),
+        permissions: [...scopePermissions].sort((a, b) => permissionActionRank(a.name) - permissionActionRank(b.name) || a.name.localeCompare(b.name))
+      }))
+      .sort((a, b) => {
+        const scopeA = permissionScopeOrder.indexOf(a.scope);
+        const scopeB = permissionScopeOrder.indexOf(b.scope);
+        const rankA = scopeA === -1 ? permissionScopeOrder.length : scopeA;
+        const rankB = scopeB === -1 ? permissionScopeOrder.length : scopeB;
+        return rankA - rankB || a.label.localeCompare(b.label);
+      });
   }, [permissions]);
+  const permissionIds = useMemo(() => new Set(permissions.map((permission) => permission.id)), [permissions]);
+  const permissionIdByName = useMemo(() => new Map(permissions.map((permission) => [permission.name, permission.id])), [permissions]);
+  const selectedRolePermissionCount = normalizeRolePermissionIds(roleForm.permissionIds).permissionIds.length;
 
   async function loadAccessData() {
     setLoading(true);
@@ -256,12 +339,18 @@ export function UsersWorkspace() {
     setNotice(null);
     try {
       const isEditing = Boolean(roleForm.id);
+      const normalizedPermissionIds = normalizeRolePermissionIds(roleForm.permissionIds);
+      if (normalizedPermissionIds.invalidValues.length > 0) {
+        setRoleForm((current) => ({ ...current, permissionIds: normalizedPermissionIds.permissionIds }));
+        setError("Unable to save role. One or more selected permissions are no longer valid. Review the selection and try again.");
+        return;
+      }
       await apiFetch(isEditing ? `/roles/${roleForm.id}` : "/roles", {
         method: isEditing ? "PATCH" : "POST",
         body: JSON.stringify({
           name: roleForm.name,
           description: roleForm.description || null,
-          permissionIds: roleForm.permissionIds
+          permissionIds: normalizedPermissionIds.permissionIds
         })
       });
       setNotice(isEditing ? "Role updated." : "Role created.");
@@ -360,6 +449,39 @@ export function UsersWorkspace() {
       ...current,
       permissionIds: checked ? [...new Set([...current.permissionIds, permissionId])] : current.permissionIds.filter((id) => id !== permissionId)
     }));
+  }
+
+  function toggleRolePermissionScope(scopePermissionIds: string[], checked: boolean) {
+    setRoleForm((current) => ({
+      ...current,
+      permissionIds: checked
+        ? [...new Set([...current.permissionIds, ...scopePermissionIds])]
+        : current.permissionIds.filter((id) => !scopePermissionIds.includes(id))
+    }));
+  }
+
+  function openNewRoleForm() {
+    setRoleForm(emptyRoleForm);
+    setShowRoleForm(true);
+    setActiveTab("roles");
+  }
+
+  function normalizeRolePermissionIds(values: string[]) {
+    const nextIds: string[] = [];
+    const invalidValues: string[] = [];
+    for (const value of values) {
+      if (permissionIds.has(value)) {
+        nextIds.push(value);
+        continue;
+      }
+      const permissionId = permissionIdByName.get(value);
+      if (permissionId) {
+        nextIds.push(permissionId);
+        continue;
+      }
+      invalidValues.push(value);
+    }
+    return { permissionIds: [...new Set(nextIds)], invalidValues };
   }
 
   function userRoleNames(user: UserRecord) {
@@ -532,7 +654,7 @@ export function UsersWorkspace() {
                   <h2>Roles & Permissions</h2>
                   <p className="muted">Roles define permission bundles. Assign roles to groups to control module access.</p>
                 </div>
-                <button className="button" type="button" onClick={() => setShowRoleForm(true)}>Add Role</button>
+                <button className="button" type="button" onClick={openNewRoleForm}>Add Role</button>
               </div>
 
               {showRoleForm ? (
@@ -546,17 +668,46 @@ export function UsersWorkspace() {
                     <input className="input" placeholder="Description" value={roleForm.description} onChange={(event) => setRoleForm((current) => ({ ...current, description: event.target.value }))} />
                   </div>
                   <div className="permission-grid">
-                    {permissionGroups.map(([scope, scopePermissions]) => (
-                      <div className="permission-group" key={scope}>
-                        <strong>{scope.replace(/_/g, " ")}</strong>
-                        {scopePermissions.map((permission) => (
-                          <label className="checkbox-row" key={permission.id}>
-                            <input type="checkbox" checked={roleForm.permissionIds.includes(permission.id)} onChange={(event) => toggleRolePermission(permission.id, event.target.checked)} />
-                            <span>{permission.name}</span>
-                          </label>
-                        ))}
-                      </div>
-                    ))}
+                    {permissionGroups.map((group) => {
+                      const scopePermissionIds = group.permissions.map((permission) => permission.id);
+                      const selectedCount = scopePermissionIds.filter((permissionId) => roleForm.permissionIds.includes(permissionId)).length;
+                      const allSelected = selectedCount === scopePermissionIds.length && scopePermissionIds.length > 0;
+                      const partiallySelected = selectedCount > 0 && !allSelected;
+                      return (
+                        <div className={`permission-group${group.isSensitive ? " sensitive" : ""}`} key={group.scope}>
+                          <div className="permission-group-heading">
+                            <div>
+                              <strong>{group.label}</strong>
+                              <small>{selectedCount}/{scopePermissionIds.length} selected{group.isSensitive ? " · Sensitive" : ""}</small>
+                            </div>
+                            <label className="checkbox-row permission-select-all">
+                              <input
+                                type="checkbox"
+                                checked={allSelected}
+                                ref={(input) => {
+                                  if (input) input.indeterminate = partiallySelected;
+                                }}
+                                onChange={(event) => toggleRolePermissionScope(scopePermissionIds, event.target.checked)}
+                              />
+                              <span>All</span>
+                            </label>
+                          </div>
+                          {group.permissions.map((permission) => (
+                            <label className="checkbox-row" key={permission.id} title={permission.description ?? permission.name}>
+                              <input type="checkbox" checked={roleForm.permissionIds.includes(permission.id)} onChange={(event) => toggleRolePermission(permission.id, event.target.checked)} />
+                              <span>{permission.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      );
+                    })}
+                    {permissions.length === 0 ? (
+                      <p className="muted">No permissions are available. Refresh access data and try again.</p>
+                    ) : null}
+                  </div>
+                  <div className="role-permission-summary">
+                    <span>{selectedRolePermissionCount} permission{selectedRolePermissionCount === 1 ? "" : "s"} selected</span>
+                    <span>Sensitive modules include users, groups, roles, settings, audit logs, and mailboxes.</span>
                   </div>
                   <button className="button" type="submit" disabled={saving}>{roleForm.id ? "Save Role" : "Create Role"}</button>
                 </form>

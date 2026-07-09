@@ -7053,8 +7053,52 @@ select.public-event-input[multiple] {
   background: var(--surface-raised);
 }
 
-.permission-group > strong {
-  text-transform: capitalize;
+.permission-group.sensitive {
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--line));
+}
+
+.permission-group-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.permission-group-heading > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.permission-group-heading strong {
+  font-size: 14px;
+}
+
+.permission-group-heading small {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.permission-select-all {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  background: var(--surface-elevated);
+}
+
+.role-permission-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 750;
 }
 
 .access-table td:first-child strong,

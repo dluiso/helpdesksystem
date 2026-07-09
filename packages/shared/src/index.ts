@@ -93,6 +93,7 @@ export const INITIAL_PERMISSIONS = [
   "remote_access.connect",
   "remote_access.configure",
   "audit_logs.view",
+  "audit_logs.export",
   "system_settings.view",
   "system_settings.update"
 ] as const;
@@ -108,6 +109,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
       !permission.startsWith("spam.") &&
       !permission.startsWith("roles.") &&
       permission !== "permissions.view" &&
+      permission !== "audit_logs.export" &&
       permission !== "ai_assistant.configure" &&
       !["users.create", "users.update", "users.delete", "groups.create", "groups.update", "groups.delete"].includes(permission)
   ),

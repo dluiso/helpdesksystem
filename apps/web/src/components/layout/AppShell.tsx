@@ -142,7 +142,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <div className="nav-submenu" aria-label="Event & Services subnavigation">
                     <Link className={pathname === "/event-services" ? "active" : ""} href="/event-services" aria-current={pathname === "/event-services" ? "page" : undefined}>Requests</Link>
                     <Link className={pathname === "/event-services/calendar" ? "active" : ""} href="/event-services/calendar" aria-current={pathname === "/event-services/calendar" ? "page" : undefined}>Calendar View</Link>
-                    <Link className={pathname === "/event-services/external-specialists" ? "active" : ""} href="/event-services/external-specialists" aria-current={pathname === "/event-services/external-specialists" ? "page" : undefined}>External Specialists</Link>
+                    {userPermissions.has("external_specialists.view") ? (
+                      <Link className={pathname === "/event-services/external-specialists" ? "active" : ""} href="/event-services/external-specialists" aria-current={pathname === "/event-services/external-specialists" ? "page" : undefined}>External Specialists</Link>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
