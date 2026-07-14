@@ -1,9 +1,9 @@
-import { BadRequestException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, Injectable, InternalServerErrorException, UnauthorizedException } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
 import { ConfigService } from "@nestjs/config";
 import { User } from "@prisma/client";
 import argon2 from "argon2";
-import { createHash, randomBytes } from "crypto";
+import { createHash, createPublicKey, randomBytes, timingSafeEqual, verify } from "crypto";
 import { CookieOptions } from "express";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { MailDeliveryService } from "../mailboxes/mail-delivery.service";
@@ -13,13 +13,41 @@ import { AuthenticatedUser } from "./auth.types";
 import { ForgotPasswordDto } from "./dto/forgot-password.dto";
 import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { VerifyMfaLoginDto } from "./dto/verify-mfa-login.dto";
-import { decryptSecret, generateSecurityToken, hashSecurityToken, verifyTotpCode } from "./auth-security.util";
+import { decryptSecret, encryptSecret, generateSecurityToken, hashSecurityToken, verifyTotpCode } from "./auth-security.util";
 
 interface RequestContext {
   ipAddress?: string | null;
   userAgent?: string | null;
   trustedDeviceToken?: string | null;
 }
+
+type LoginUser = User & {
+  groups: Array<{ group: { roles: Array<{ role: { name: string } }> } }>;
+};
+
+interface MicrosoftSsoSettings {
+  organizationId: string;
+  enabled: boolean;
+  tenantId: string | null;
+  clientId: string | null;
+  clientSecret: string | null;
+}
+
+interface MicrosoftIdTokenClaims {
+  iss?: string;
+  aud?: string | string[];
+  exp?: number;
+  nbf?: number;
+  nonce?: string;
+  tid?: string;
+  oid?: string;
+  preferred_username?: string;
+  email?: string;
+  upn?: string;
+}
+
+const MICROSOFT_SSO_SCOPES = ["openid", "profile", "email"];
+const MICROSOFT_SSO_CHALLENGE_TTL_MS = 10 * 60 * 1000;
 
 @Injectable()
 export class AuthService {
@@ -38,6 +66,10 @@ export class AuthService {
     return `${this.getCookieName()}_mfa_device`;
   }
 
+  getMicrosoftMfaChallengeCookieName(): string {
+    return `${this.getCookieName()}_microsoft_mfa`;
+  }
+
   getCookieOptions(): CookieOptions {
     return {
       ...this.getBaseCookieOptions(),
@@ -53,6 +85,13 @@ export class AuthService {
     return {
       ...this.getBaseCookieOptions(),
       expires: expiresAt
+    };
+  }
+
+  getMicrosoftMfaChallengeCookieOptions(): CookieOptions {
+    return {
+      ...this.getBaseCookieOptions(),
+      maxAge: 5 * 60 * 1000
     };
   }
 
@@ -106,6 +145,77 @@ export class AuthService {
       throw new UnauthorizedException("Invalid email or password.");
     }
 
+    return this.completeAuthenticatedLogin(user, context, "password");
+  }
+
+  async startMicrosoftLogin(context: RequestContext) {
+    const settings = await this.getMicrosoftSsoSettings();
+    this.requireMicrosoftSsoConfiguration(settings);
+
+    const state = generateSecurityToken();
+    const nonce = generateSecurityToken();
+    const codeVerifier = generateSecurityToken(48);
+    await this.prisma.microsoftSsoLoginChallenge.create({
+      data: {
+        organizationId: settings.organizationId,
+        stateHash: hashSecurityToken(state),
+        nonce,
+        codeVerifierEncrypted: encryptSecret(codeVerifier, this.getSecretEncryptionKey()),
+        expiresAt: new Date(Date.now() + MICROSOFT_SSO_CHALLENGE_TTL_MS),
+        ipAddress: context.ipAddress,
+        userAgent: context.userAgent
+      }
+    });
+
+    const authorizationUrl = new URL(`https://login.microsoftonline.com/${encodeURIComponent(settings.tenantId!)}/oauth2/v2.0/authorize`);
+    authorizationUrl.searchParams.set("client_id", settings.clientId!);
+    authorizationUrl.searchParams.set("response_type", "code");
+    authorizationUrl.searchParams.set("redirect_uri", this.microsoftSsoRedirectUri());
+    authorizationUrl.searchParams.set("response_mode", "query");
+    authorizationUrl.searchParams.set("scope", MICROSOFT_SSO_SCOPES.join(" "));
+    authorizationUrl.searchParams.set("state", state);
+    authorizationUrl.searchParams.set("nonce", nonce);
+    authorizationUrl.searchParams.set("code_challenge", createHash("sha256").update(codeVerifier).digest("base64url"));
+    authorizationUrl.searchParams.set("code_challenge_method", "S256");
+
+    return { authorizationUrl: authorizationUrl.toString() };
+  }
+
+  async completeMicrosoftLogin(input: { code?: string; state?: string; error?: string; errorDescription?: string }, context: RequestContext) {
+    if (input.error || !input.code || !input.state) {
+      await this.auditLogs.create({
+        entityType: "User",
+        action: "auth.microsoft_login_failure",
+        ipAddress: context.ipAddress,
+        userAgent: context.userAgent,
+        metadata: { reason: input.error ? "provider_error" : "missing_callback_parameters" }
+      });
+      throw new UnauthorizedException("Microsoft sign-in was not completed.");
+    }
+
+    const challenge = await this.prisma.microsoftSsoLoginChallenge.findUnique({
+      where: { stateHash: hashSecurityToken(input.state) }
+    });
+    if (!challenge || challenge.usedAt || challenge.expiresAt <= new Date()) {
+      throw new UnauthorizedException("Microsoft sign-in request is invalid or expired.");
+    }
+    const consumed = await this.prisma.microsoftSsoLoginChallenge.updateMany({
+      where: { id: challenge.id, usedAt: null },
+      data: { usedAt: new Date() }
+    });
+    if (consumed.count !== 1) {
+      throw new UnauthorizedException("Microsoft sign-in request is invalid or expired.");
+    }
+
+    const settings = await this.getMicrosoftSsoSettings(challenge.organizationId);
+    this.requireMicrosoftSsoConfiguration(settings);
+    const token = await this.exchangeMicrosoftCode(settings, input.code, decryptSecret(challenge.codeVerifierEncrypted, this.getSecretEncryptionKey()));
+    const identity = await this.validateMicrosoftIdToken(token.idToken, settings, challenge.nonce);
+    const user = await this.resolveMicrosoftUser(challenge.organizationId, identity, context);
+    return this.completeAuthenticatedLogin(user, context, "microsoft");
+  }
+
+  private async completeAuthenticatedLogin(user: LoginUser, context: RequestContext, provider: "password" | "microsoft") {
     if (await this.userRequiresMfa(user)) {
       if (!user.mfaEnabled || !user.totpSecretEncrypted) {
         await this.auditLogs.create({
@@ -115,7 +225,7 @@ export class AuthService {
           action: "auth.login_failure",
           ipAddress: context.ipAddress,
           userAgent: context.userAgent,
-          metadata: { email, reason: "mfa_required_not_configured" }
+          metadata: { email: user.email, reason: "mfa_required_not_configured", provider }
         });
         throw new UnauthorizedException("Multi-factor authentication is required for this account.");
       }
@@ -128,15 +238,12 @@ export class AuthService {
           entityId: user.id,
           action: "auth.login_success_trusted_device",
           ipAddress: context.ipAddress,
-          userAgent: context.userAgent
+          userAgent: context.userAgent,
+          metadata: { provider }
         });
-
-        return {
-          mfaRequired: false,
-          sessionToken,
-          user: await this.buildAuthenticatedUser(user.id)
-        };
+        return { mfaRequired: false, sessionToken, user: await this.buildAuthenticatedUser(user.id) };
       }
+
       const challengeToken = generateSecurityToken();
       await this.prisma.mfaLoginChallenge.create({
         data: {
@@ -148,36 +255,208 @@ export class AuthService {
           userAgent: context.userAgent
         }
       });
-
       await this.auditLogs.create({
         userId: user.id,
         entityType: "User",
         entityId: user.id,
         action: "auth.mfa_challenge_created",
         ipAddress: context.ipAddress,
-        userAgent: context.userAgent
+        userAgent: context.userAgent,
+        metadata: { provider }
       });
-
       const settings = await this.getSecuritySettings(user.organizationId);
       return { mfaRequired: true, challengeToken, trustedDeviceDays: settings.mfaTrustedDeviceDays };
     }
 
     const sessionToken = await this.createSession(user.id, context);
-
     await this.auditLogs.create({
       userId: user.id,
       entityType: "User",
       entityId: user.id,
       action: "auth.login_success",
       ipAddress: context.ipAddress,
-      userAgent: context.userAgent
+      userAgent: context.userAgent,
+      metadata: { provider }
     });
+    return { mfaRequired: false, sessionToken, user: await this.buildAuthenticatedUser(user.id) };
+  }
 
+  private async getMicrosoftSsoSettings(organizationId?: string): Promise<MicrosoftSsoSettings> {
+    const settings = organizationId
+      ? await this.prisma.systemSetting.findUnique({ where: { organizationId } })
+      : await this.prisma.systemSetting.findFirst({ orderBy: { createdAt: "asc" } });
     return {
-      mfaRequired: false,
-      sessionToken,
-      user: await this.buildAuthenticatedUser(user.id)
+      organizationId: settings?.organizationId ?? "",
+      enabled: settings?.microsoftSsoEnabled ?? false,
+      tenantId: settings?.microsoftSsoTenantId || this.config.get<string>("MICROSOFT_TENANT_ID") || null,
+      clientId: settings?.microsoftSsoClientId || this.config.get<string>("MICROSOFT_CLIENT_ID") || null,
+      clientSecret: this.resolveEnvironmentReference(settings?.microsoftSsoClientSecretReference) || this.config.get<string>("MICROSOFT_CLIENT_SECRET") || null
     };
+  }
+
+  private requireMicrosoftSsoConfiguration(settings: MicrosoftSsoSettings) {
+    if (!settings.enabled) {
+      throw new BadRequestException("Microsoft sign-in is not enabled.");
+    }
+    if (!settings.organizationId || !settings.tenantId || !settings.clientId || !settings.clientSecret) {
+      throw new InternalServerErrorException("Microsoft sign-in is not fully configured.");
+    }
+  }
+
+  private async exchangeMicrosoftCode(settings: MicrosoftSsoSettings, code: string, codeVerifier: string) {
+    const body = new URLSearchParams({
+      client_id: settings.clientId!,
+      client_secret: settings.clientSecret!,
+      code,
+      redirect_uri: this.microsoftSsoRedirectUri(),
+      grant_type: "authorization_code",
+      code_verifier: codeVerifier
+    });
+    const response = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(settings.tenantId!)}/oauth2/v2.0/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body
+    });
+    if (!response.ok) {
+      throw new UnauthorizedException("Microsoft sign-in could not be verified.");
+    }
+    const token = (await response.json()) as { id_token?: string };
+    if (!token.id_token) {
+      throw new UnauthorizedException("Microsoft sign-in did not return an identity token.");
+    }
+    return { idToken: token.id_token };
+  }
+
+  private async validateMicrosoftIdToken(idToken: string, settings: MicrosoftSsoSettings, nonce: string) {
+    const [headerPart, payloadPart, signaturePart] = idToken.split(".");
+    if (!headerPart || !payloadPart || !signaturePart) {
+      throw new UnauthorizedException("Microsoft identity token is invalid.");
+    }
+    let header: { alg?: string; kid?: string };
+    let claims: MicrosoftIdTokenClaims;
+    try {
+      header = JSON.parse(Buffer.from(headerPart, "base64url").toString("utf8")) as { alg?: string; kid?: string };
+      claims = JSON.parse(Buffer.from(payloadPart, "base64url").toString("utf8")) as MicrosoftIdTokenClaims;
+    } catch {
+      throw new UnauthorizedException("Microsoft identity token is invalid.");
+    }
+    if (header.alg !== "RS256" || !header.kid) {
+      throw new UnauthorizedException("Microsoft identity token is invalid.");
+    }
+
+    const discoveryResponse = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(settings.tenantId!)}/v2.0/.well-known/openid-configuration`);
+    if (!discoveryResponse.ok) {
+      throw new InternalServerErrorException("Microsoft OpenID configuration is unavailable.");
+    }
+    const discovery = (await discoveryResponse.json()) as { issuer?: string; jwks_uri?: string };
+    if (!discovery.issuer || !discovery.jwks_uri) {
+      throw new InternalServerErrorException("Microsoft OpenID configuration is invalid.");
+    }
+    const keysResponse = await fetch(discovery.jwks_uri);
+    if (!keysResponse.ok) {
+      throw new InternalServerErrorException("Microsoft signing keys are unavailable.");
+    }
+    const keys = (await keysResponse.json()) as { keys?: Array<Record<string, string>> };
+    const jwk = keys.keys?.find((key) => key.kid === header.kid && key.kty === "RSA");
+    if (!jwk) {
+      throw new UnauthorizedException("Microsoft identity token signing key is unavailable.");
+    }
+    const signatureValid = verify("RSA-SHA256", Buffer.from(`${headerPart}.${payloadPart}`), createPublicKey({ key: jwk, format: "jwk" }), Buffer.from(signaturePart, "base64url"));
+    if (!signatureValid) {
+      throw new UnauthorizedException("Microsoft identity token is invalid.");
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+    if (
+      claims.iss !== discovery.issuer ||
+      !audiences.includes(settings.clientId!) ||
+      !claims.exp || claims.exp <= now ||
+      (claims.nbf !== undefined && claims.nbf > now + 60) ||
+      claims.tid !== settings.tenantId ||
+      !claims.oid ||
+      !claims.nonce ||
+      !this.constantTimeEquals(claims.nonce, nonce)
+    ) {
+      throw new UnauthorizedException("Microsoft identity token is invalid.");
+    }
+
+    const principalName = claims.preferred_username || claims.email || claims.upn || null;
+    return { tenantId: claims.tid, objectId: claims.oid, principalName };
+  }
+
+  private async resolveMicrosoftUser(organizationId: string, identity: { tenantId: string; objectId: string; principalName: string | null }, context: RequestContext): Promise<LoginUser> {
+    let user = await this.prisma.user.findUnique({
+      where: { microsoftTenantId_microsoftObjectId: { microsoftTenantId: identity.tenantId, microsoftObjectId: identity.objectId } },
+      include: { groups: { include: { group: { include: { roles: { include: { role: true } } } } } } }
+    });
+    let linkedNow = false;
+    if (!user) {
+      const email = identity.principalName?.trim().toLowerCase();
+      if (!email) {
+        throw new UnauthorizedException("Microsoft account is not authorized to access this application.");
+      }
+      const matchedUser = await this.prisma.user.findUnique({
+        where: { email },
+        include: { groups: { include: { group: { include: { roles: { include: { role: true } } } } } } }
+      });
+      if (!matchedUser || matchedUser.organizationId !== organizationId || matchedUser.deletedAt || !matchedUser.isActive) {
+        await this.auditLogs.create({
+          entityType: "User",
+          action: "auth.microsoft_login_failure",
+          ipAddress: context.ipAddress,
+          userAgent: context.userAgent,
+          metadata: { reason: "no_matching_active_user" }
+        });
+        throw new UnauthorizedException("Microsoft account is not authorized to access this application.");
+      }
+      user = await this.prisma.user.update({
+        where: { id: matchedUser.id },
+        data: {
+          microsoftTenantId: identity.tenantId,
+          microsoftObjectId: identity.objectId,
+          microsoftPrincipalName: identity.principalName,
+          microsoftLinkedAt: new Date()
+        },
+        include: { groups: { include: { group: { include: { roles: { include: { role: true } } } } } } }
+      });
+      linkedNow = true;
+    } else if (user.organizationId !== organizationId || user.deletedAt || !user.isActive) {
+      throw new UnauthorizedException("Microsoft account is not authorized to access this application.");
+    } else if (identity.principalName && user.microsoftPrincipalName !== identity.principalName) {
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { microsoftPrincipalName: identity.principalName },
+        include: { groups: { include: { group: { include: { roles: { include: { role: true } } } } } } }
+      });
+    }
+    if (linkedNow) {
+      await this.auditLogs.create({
+        userId: user.id,
+        entityType: "User",
+        entityId: user.id,
+        action: "auth.microsoft_identity_linked",
+        ipAddress: context.ipAddress,
+        userAgent: context.userAgent,
+        metadata: { tenantId: identity.tenantId, principalName: identity.principalName }
+      });
+    }
+    return user;
+  }
+
+  private microsoftSsoRedirectUri() {
+    const appUrl = (this.config.get<string>("APP_URL") ?? "http://localhost:3000").replace(/\/+$/, "");
+    return `${appUrl}/api/auth/microsoft/callback`;
+  }
+
+  private resolveEnvironmentReference(value: string | null | undefined) {
+    return value?.startsWith("env:") ? this.config.get<string>(value.slice(4)) ?? null : null;
+  }
+
+  private constantTimeEquals(left: string, right: string) {
+    const leftBuffer = Buffer.from(left);
+    const rightBuffer = Buffer.from(right);
+    return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
   }
 
   async verifyMfaLogin(input: VerifyMfaLoginDto, context: RequestContext) {

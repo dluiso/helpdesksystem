@@ -27,6 +27,24 @@ export class UpdateSecuritySettingsDto {
   mfaTrustedDeviceDays!: number;
 
   @IsBoolean()
+  microsoftSsoEnabled!: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  microsoftSsoTenantId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  microsoftSsoClientId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  microsoftSsoClientSecretReference?: string | null;
+
+  @IsBoolean()
   turnstileEnabled!: boolean;
 
   @IsOptional()

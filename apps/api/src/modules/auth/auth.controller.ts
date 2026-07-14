@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Post, Query, Req, Res, UnauthorizedException, UseGuards } from "@nestjs/common";
 import { ThrottlerGuard } from "@nestjs/throttler";
 import { Request, Response } from "express";
 import { getRequestIp } from "../../common/request-ip";
@@ -46,6 +46,61 @@ export class AuthController {
       response.cookie(this.authService.getTrustedDeviceCookieName(), result.trustedDeviceToken, this.authService.getTrustedDeviceCookieOptions(result.trustedDeviceExpiresAt));
     }
     return { user: result.user };
+  }
+
+  @Get("microsoft/login")
+  @UseGuards(ThrottlerGuard)
+  async startMicrosoftLogin(@Req() request: Request, @Res() response: Response) {
+    const result = await this.authService.startMicrosoftLogin({
+      ipAddress: getRequestIp(request),
+      userAgent: request.header("user-agent") ?? null
+    });
+    response.redirect(result.authorizationUrl);
+  }
+
+  @Get("microsoft/callback")
+  @UseGuards(ThrottlerGuard)
+  async completeMicrosoftLogin(
+    @Query("code") code: string | undefined,
+    @Query("state") state: string | undefined,
+    @Query("error") error: string | undefined,
+    @Query("error_description") errorDescription: string | undefined,
+    @Req() request: Request,
+    @Res() response: Response
+  ) {
+    try {
+      const result = await this.authService.completeMicrosoftLogin(
+        { code, state, error, errorDescription },
+        {
+          ipAddress: getRequestIp(request),
+          userAgent: request.header("user-agent") ?? null,
+          trustedDeviceToken: request.cookies?.[this.authService.getTrustedDeviceCookieName()] as string | undefined
+        }
+      );
+      if (result.mfaRequired && result.challengeToken) {
+        response.cookie(this.authService.getMicrosoftMfaChallengeCookieName(), result.challengeToken, this.authService.getMicrosoftMfaChallengeCookieOptions());
+        response.redirect("/login?microsoft=mfa");
+        return;
+      }
+      if (result.sessionToken) {
+        response.cookie(this.authService.getCookieName(), result.sessionToken, this.authService.getCookieOptions());
+      }
+      response.redirect("/dashboard");
+    } catch {
+      response.redirect("/login?microsoft=failed");
+    }
+  }
+
+  @Get("microsoft/mfa-challenge")
+  @UseGuards(ThrottlerGuard)
+  getMicrosoftMfaChallenge(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const cookieName = this.authService.getMicrosoftMfaChallengeCookieName();
+    const challengeToken = request.cookies?.[cookieName] as string | undefined;
+    response.clearCookie(cookieName, this.authService.getClearCookieOptions());
+    if (!challengeToken) {
+      throw new UnauthorizedException("Microsoft sign-in challenge is unavailable.");
+    }
+    return { challengeToken };
   }
 
   @Post("forgot-password")

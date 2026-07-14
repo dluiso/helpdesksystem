@@ -91,4 +91,46 @@ describe("AuthService", () => {
     expect(service.getCookieOptions().maxAge).toBe(12 * 60 * 60 * 1000);
     expect(service.getClearCookieOptions().maxAge).toBeUndefined();
   });
+
+  it("starts Microsoft sign-in with a server-stored PKCE challenge", async () => {
+    const microsoftConfig = {
+      get: jest.fn((key: string) => {
+        const values: Record<string, string> = {
+          SESSION_SECRET: "a-strong-session-secret-with-at-least-32-characters",
+          MICROSOFT_TENANT_ID: "tenant-1",
+          MICROSOFT_CLIENT_ID: "client-1",
+          MICROSOFT_CLIENT_SECRET: "secret-1"
+        };
+        return values[key];
+      })
+    };
+    const prisma = {
+      systemSetting: {
+        findFirst: jest.fn().mockResolvedValue({ organizationId: "org-1", microsoftSsoEnabled: true })
+      },
+      microsoftSsoLoginChallenge: {
+        create: jest.fn().mockResolvedValue({ id: "challenge-1" })
+      }
+    };
+    const service = new AuthService(prisma as never, microsoftConfig as never, auditLogs as never, moduleRef as never);
+
+    const result = await service.startMicrosoftLogin({ ipAddress: "127.0.0.1", userAgent: "jest" });
+    const url = new URL(result.authorizationUrl);
+
+    expect(url.origin).toBe("https://login.microsoftonline.com");
+    expect(url.searchParams.get("client_id")).toBe("client-1");
+    expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+    expect(url.searchParams.get("state")).toEqual(expect.any(String));
+    expect(url.searchParams.get("nonce")).toEqual(expect.any(String));
+    expect(url.searchParams.get("code_verifier")).toBeNull();
+    expect(prisma.microsoftSsoLoginChallenge.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          organizationId: "org-1",
+          stateHash: expect.any(String),
+          codeVerifierEncrypted: expect.stringMatching(/^v1:/)
+        })
+      })
+    );
+  });
 });

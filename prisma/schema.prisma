@@ -249,6 +249,7 @@ model Organization {
   mfaLoginChallenges   MfaLoginChallenge[]
   mfaSetupChallenges   MfaSetupChallenge[]
   mfaTrustedDevices    MfaTrustedDevice[]
+  microsoftSsoLoginChallenges MicrosoftSsoLoginChallenge[]
   eventServiceRequests EventServiceRequest[]
   eventServiceServices EventServiceService[]
   eventServiceForms    EventServiceForm[]
@@ -345,6 +346,10 @@ model SystemSetting {
   mfaRequiredForAdmins       Boolean  @default(false)
   mfaRequiredForAllUsers     Boolean  @default(false)
   mfaTrustedDeviceDays       Int      @default(30)
+  microsoftSsoEnabled        Boolean  @default(false)
+  microsoftSsoTenantId       String?
+  microsoftSsoClientId       String?
+  microsoftSsoClientSecretReference String?
   turnstileEnabled           Boolean  @default(false)
   turnstileSiteKey           String?
   turnstileSecretReference   String?
@@ -422,6 +427,10 @@ model User {
   mfaEnabled          Boolean   @default(false)
   totpSecretEncrypted String?
   recoveryCodesHash   String[]  @default([])
+  microsoftTenantId   String?
+  microsoftObjectId   String?
+  microsoftPrincipalName String?
+  microsoftLinkedAt   DateTime?
   lastLoginAt         DateTime?
   deletedAt           DateTime?
   createdAt           DateTime  @default(now())
@@ -473,7 +482,26 @@ model User {
 
   @@index([organizationId])
   @@index([deletedAt])
+  @@unique([microsoftTenantId, microsoftObjectId])
   @@map("users")
+}
+
+model MicrosoftSsoLoginChallenge {
+  id                    String   @id @default(uuid()) @db.Uuid
+  organizationId        String   @db.Uuid
+  stateHash             String   @unique
+  nonce                 String
+  codeVerifierEncrypted String
+  expiresAt             DateTime
+  usedAt                DateTime?
+  ipAddress             String?
+  userAgent             String?
+  createdAt             DateTime @default(now())
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([expiresAt])
+  @@map("microsoft_sso_login_challenges")
 }
 
 model Session {

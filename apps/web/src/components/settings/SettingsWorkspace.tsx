@@ -367,6 +367,10 @@ interface SecuritySettings {
   mfaRequiredForAdmins: boolean;
   mfaRequiredForAllUsers: boolean;
   mfaTrustedDeviceDays: number;
+  microsoftSsoEnabled: boolean;
+  microsoftSsoTenantId: string;
+  microsoftSsoClientId: string;
+  microsoftSsoClientSecretReference: string;
   turnstileEnabled: boolean;
   turnstileSiteKey: string;
   turnstileSecretReference: string;
@@ -683,6 +687,10 @@ const DEFAULT_SECURITY_SETTINGS: SecuritySettings = {
   mfaRequiredForAdmins: false,
   mfaRequiredForAllUsers: false,
   mfaTrustedDeviceDays: 30,
+  microsoftSsoEnabled: false,
+  microsoftSsoTenantId: "",
+  microsoftSsoClientId: "",
+  microsoftSsoClientSecretReference: "",
   turnstileEnabled: false,
   turnstileSiteKey: "",
   turnstileSecretReference: "",
@@ -1245,6 +1253,10 @@ export function SettingsWorkspace() {
       mfaRequiredForAdmins: settings.mfaRequiredForAdmins,
       mfaRequiredForAllUsers: settings.mfaRequiredForAllUsers,
       mfaTrustedDeviceDays: Number(settings.mfaTrustedDeviceDays) || DEFAULT_SECURITY_SETTINGS.mfaTrustedDeviceDays,
+      microsoftSsoEnabled: settings.microsoftSsoEnabled,
+      microsoftSsoTenantId: String(settings.microsoftSsoTenantId ?? "").trim() || null,
+      microsoftSsoClientId: String(settings.microsoftSsoClientId ?? "").trim() || null,
+      microsoftSsoClientSecretReference: String(settings.microsoftSsoClientSecretReference ?? "").trim() || null,
       turnstileEnabled: settings.turnstileEnabled,
       turnstileSiteKey: settings.turnstileSiteKey.trim() || null,
       turnstileSecretReference: turnstileSecretReference || null,
@@ -4638,6 +4650,33 @@ export function SettingsWorkspace() {
                             onChange={(event) => setSecurityDraft((current) => ({ ...current, mfaTrustedDeviceDays: Number(event.target.value) }))}
                           />
                         </label>
+                      </div>
+                    </div>
+                    <div className="panel subtle-panel">
+                      <h3>Microsoft Entra ID Sign-In</h3>
+                      <p className="muted">Allow active Avidity users to sign in with their existing Microsoft account. Roles and permissions remain assigned in Avidity.</p>
+                      <div className="stack settings-section">
+                        <label className="checkbox-row">
+                          <input
+                            type="checkbox"
+                            checked={securityDraft.microsoftSsoEnabled}
+                            onChange={(event) => setSecurityDraft((current) => ({ ...current, microsoftSsoEnabled: event.target.checked }))}
+                          />
+                          Enable Microsoft sign-in
+                        </label>
+                        <label>
+                          Tenant ID
+                          <input className="input" value={securityDraft.microsoftSsoTenantId} onChange={(event) => setSecurityDraft((current) => ({ ...current, microsoftSsoTenantId: event.target.value }))} placeholder="Uses MICROSOFT_TENANT_ID when blank" />
+                        </label>
+                        <label>
+                          Client ID
+                          <input className="input" value={securityDraft.microsoftSsoClientId} onChange={(event) => setSecurityDraft((current) => ({ ...current, microsoftSsoClientId: event.target.value }))} placeholder="Uses MICROSOFT_CLIENT_ID when blank" />
+                        </label>
+                        <label>
+                          Client secret reference
+                          <input className="input" value={securityDraft.microsoftSsoClientSecretReference} onChange={(event) => setSecurityDraft((current) => ({ ...current, microsoftSsoClientSecretReference: event.target.value }))} placeholder="env:MICROSOFT_SSO_CLIENT_SECRET or MICROSOFT_CLIENT_SECRET" />
+                        </label>
+                        <p className="field-help">Configure the Microsoft redirect URI as https://one.aviditytechnologies.com/api/auth/microsoft/callback. A user must already exist and be active in Avidity before Microsoft sign-in is allowed.</p>
                       </div>
                     </div>
                     <div className="settings-actions security-module-actions">

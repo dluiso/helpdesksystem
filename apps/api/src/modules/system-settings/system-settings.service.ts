@@ -111,7 +111,8 @@ export class SystemSettingsService {
         turnstileEnabled: true,
         turnstileSiteKey: true,
         turnstileProtectLogin: true,
-        turnstileProtectPasswordReset: true
+        turnstileProtectPasswordReset: true,
+        microsoftSsoEnabled: true
       }
     });
 
@@ -119,7 +120,8 @@ export class SystemSettingsService {
       passwordResetEnabled: settings?.passwordResetEnabled ?? true,
       turnstileSiteKey: settings?.turnstileEnabled ? settings.turnstileSiteKey : null,
       turnstileProtectLogin: Boolean(settings?.turnstileEnabled && settings.turnstileProtectLogin && settings.turnstileSiteKey),
-      turnstileProtectPasswordReset: Boolean(settings?.turnstileEnabled && settings.turnstileProtectPasswordReset && settings.turnstileSiteKey)
+      turnstileProtectPasswordReset: Boolean(settings?.turnstileEnabled && settings.turnstileProtectPasswordReset && settings.turnstileSiteKey),
+      microsoftSsoEnabled: Boolean(settings?.microsoftSsoEnabled)
     };
   }
 
@@ -239,8 +241,22 @@ export class SystemSettingsService {
 
   async updateSecuritySettings(user: AuthenticatedUser, input: UpdateSecuritySettingsDto) {
     const turnstileSecretReference = this.optionalString(input.turnstileSecretReference);
+    const microsoftSsoTenantId = this.optionalString(input.microsoftSsoTenantId);
+    const microsoftSsoClientId = this.optionalString(input.microsoftSsoClientId);
+    const microsoftSsoClientSecretReference = this.optionalString(input.microsoftSsoClientSecretReference);
     if (input.turnstileEnabled && !turnstileSecretReference?.startsWith("env:")) {
       throw new BadRequestException("Cloudflare Turnstile secret reference must use an environment reference such as env:TURNSTILE_SECRET_KEY.");
+    }
+    if (microsoftSsoClientSecretReference && !microsoftSsoClientSecretReference.startsWith("env:")) {
+      throw new BadRequestException("Microsoft SSO secret reference must use an environment reference such as env:MICROSOFT_SSO_CLIENT_SECRET.");
+    }
+    if (input.microsoftSsoEnabled) {
+      const tenantId = microsoftSsoTenantId || this.config.get<string>("MICROSOFT_TENANT_ID");
+      const clientId = microsoftSsoClientId || this.config.get<string>("MICROSOFT_CLIENT_ID");
+      const clientSecret = this.resolveEnvironmentReference(microsoftSsoClientSecretReference) || this.config.get<string>("MICROSOFT_CLIENT_SECRET");
+      if (!tenantId || !clientId || !clientSecret) {
+        throw new BadRequestException("Microsoft SSO requires a tenant ID, client ID, and an environment-backed client secret.");
+      }
     }
 
     const updated = await this.prisma.systemSetting.update({
@@ -252,6 +268,10 @@ export class SystemSettingsService {
         mfaRequiredForAdmins: input.mfaRequiredForAdmins,
         mfaRequiredForAllUsers: input.mfaRequiredForAllUsers,
         mfaTrustedDeviceDays: input.mfaTrustedDeviceDays,
+        microsoftSsoEnabled: input.microsoftSsoEnabled,
+        microsoftSsoTenantId,
+        microsoftSsoClientId,
+        microsoftSsoClientSecretReference,
         turnstileEnabled: input.turnstileEnabled,
         turnstileSiteKey: this.optionalString(input.turnstileSiteKey),
         turnstileSecretReference,
@@ -271,6 +291,10 @@ export class SystemSettingsService {
         mfaRequiredForAdmins: updated.mfaRequiredForAdmins,
         mfaRequiredForAllUsers: updated.mfaRequiredForAllUsers,
         mfaTrustedDeviceDays: updated.mfaTrustedDeviceDays,
+        microsoftSsoEnabled: updated.microsoftSsoEnabled,
+        microsoftSsoTenantConfigured: Boolean(updated.microsoftSsoTenantId || this.config.get<string>("MICROSOFT_TENANT_ID")),
+        microsoftSsoClientConfigured: Boolean(updated.microsoftSsoClientId || this.config.get<string>("MICROSOFT_CLIENT_ID")),
+        hasMicrosoftSsoSecretReference: Boolean(updated.microsoftSsoClientSecretReference),
         turnstileEnabled: updated.turnstileEnabled,
         turnstileProtectLogin: updated.turnstileProtectLogin,
         turnstileProtectPasswordReset: updated.turnstileProtectPasswordReset,
@@ -619,6 +643,10 @@ export class SystemSettingsService {
     mfaRequiredForAdmins: boolean;
     mfaRequiredForAllUsers: boolean;
     mfaTrustedDeviceDays: number;
+    microsoftSsoEnabled: boolean;
+    microsoftSsoTenantId: string | null;
+    microsoftSsoClientId: string | null;
+    microsoftSsoClientSecretReference: string | null;
     turnstileEnabled: boolean;
     turnstileSiteKey: string | null;
     turnstileSecretReference: string | null;
@@ -632,6 +660,10 @@ export class SystemSettingsService {
       mfaRequiredForAdmins: settings.mfaRequiredForAdmins,
       mfaRequiredForAllUsers: settings.mfaRequiredForAllUsers,
       mfaTrustedDeviceDays: settings.mfaTrustedDeviceDays,
+      microsoftSsoEnabled: settings.microsoftSsoEnabled,
+      microsoftSsoTenantId: settings.microsoftSsoTenantId ?? "",
+      microsoftSsoClientId: settings.microsoftSsoClientId ?? "",
+      microsoftSsoClientSecretReference: settings.microsoftSsoClientSecretReference ?? "",
       turnstileEnabled: settings.turnstileEnabled,
       turnstileSiteKey: settings.turnstileSiteKey,
       turnstileSecretReference: settings.turnstileSecretReference,
@@ -643,6 +675,10 @@ export class SystemSettingsService {
   private optionalString(value: string | null | undefined) {
     const trimmed = value?.trim();
     return trimmed || null;
+  }
+
+  private resolveEnvironmentReference(value: string | null) {
+    return value?.startsWith("env:") ? this.config.get<string>(value.slice(4)) ?? null : null;
   }
 
   private normalizedTimezone(value: string | null | undefined, fallback: string) {

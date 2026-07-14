@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { LogIn } from "lucide-react";
+import { Building2, LogIn } from "lucide-react";
 import Script from "next/script";
 import { apiFetch } from "@/lib/api";
 import { useBranding } from "@/components/providers/BrandingProvider";
@@ -29,7 +29,7 @@ export default function LoginPage() {
   const [mfaTrustedDeviceDays, setMfaTrustedDeviceDays] = useState(30);
   const [trustDevice, setTrustDevice] = useState(false);
   const [mode, setMode] = useState<"login" | "forgot">("login");
-  const [publicAuth, setPublicAuth] = useState<{ passwordResetEnabled: boolean; turnstileSiteKey: string | null; turnstileProtectLogin: boolean; turnstileProtectPasswordReset: boolean } | null>(null);
+  const [publicAuth, setPublicAuth] = useState<{ passwordResetEnabled: boolean; turnstileSiteKey: string | null; turnstileProtectLogin: boolean; turnstileProtectPasswordReset: boolean; microsoftSsoEnabled: boolean } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -39,9 +39,29 @@ export default function LoginPage() {
   const showLoginBrandTitle = branding.showLoginBrandTitle !== false;
 
   useEffect(() => {
-    void apiFetch<{ passwordResetEnabled: boolean; turnstileSiteKey: string | null; turnstileProtectLogin: boolean; turnstileProtectPasswordReset: boolean }>("/system-settings/public-auth")
+    void apiFetch<{ passwordResetEnabled: boolean; turnstileSiteKey: string | null; turnstileProtectLogin: boolean; turnstileProtectPasswordReset: boolean; microsoftSsoEnabled: boolean }>("/system-settings/public-auth")
       .then((settings) => setPublicAuth(settings))
-      .catch(() => setPublicAuth({ passwordResetEnabled: false, turnstileSiteKey: null, turnstileProtectLogin: false, turnstileProtectPasswordReset: false }));
+      .catch(() => setPublicAuth({ passwordResetEnabled: false, turnstileSiteKey: null, turnstileProtectLogin: false, turnstileProtectPasswordReset: false, microsoftSsoEnabled: false }));
+  }, []);
+
+  useEffect(() => {
+    const microsoftStatus = new URLSearchParams(window.location.search).get("microsoft");
+    if (!microsoftStatus) return;
+    window.history.replaceState({}, "", "/login");
+    if (microsoftStatus === "failed") {
+      setError("Microsoft sign-in was not completed. Confirm your account is active and authorized, then try again.");
+      return;
+    }
+    if (microsoftStatus === "mfa") {
+      setLoading(true);
+      void apiFetch<{ challengeToken: string }>("/auth/microsoft/mfa-challenge")
+        .then((result) => {
+          setMfaChallengeToken(result.challengeToken);
+          setMfaCode("");
+        })
+        .catch(() => setError("Microsoft sign-in verification expired. Start again."))
+        .finally(() => setLoading(false));
+    }
   }, []);
 
   function resetTurnstile() {
@@ -304,6 +324,12 @@ export default function LoginPage() {
             <LogIn size={16} aria-hidden="true" />
             <span>{loading ? "Signing in" : "Sign in"}</span>
           </button>
+          {publicAuth?.microsoftSsoEnabled ? (
+            <a className="button secondary" href="/api/auth/microsoft/login">
+              <Building2 size={16} aria-hidden="true" />
+              <span>Sign in with Microsoft</span>
+            </a>
+          ) : null}
           {publicAuth?.passwordResetEnabled ? (
             <button className="button ghost" type="button" onClick={() => setMode("forgot")}>Forgot password?</button>
           ) : null}
