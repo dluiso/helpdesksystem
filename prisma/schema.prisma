@@ -232,6 +232,12 @@ enum ProjectDecisionStatus {
   CANCELLED
 }
 
+enum ProjectDecisionAlertReason {
+  UNASSIGNED
+  OVERDUE
+  PROJECT_AT_RISK
+}
+
 enum EventServiceFieldType {
   TEXT
   TEXTAREA
@@ -514,6 +520,7 @@ model User {
   ownedProjects        Project[] @relation("ProjectOwner")
   assignedProjectMilestones ProjectMilestone[] @relation("ProjectMilestoneAssignee")
   assignedProjectDecisions ProjectDecision[] @relation("ProjectDecisionOwner")
+  projectDecisionAlerts ProjectDecisionAlert[] @relation("ProjectDecisionAlertRecipient")
 
   @@index([organizationId])
   @@index([deletedAt])
@@ -2125,10 +2132,26 @@ model ProjectDecision {
   updatedAt   DateTime              @updatedAt
   project     Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   owner       User?                 @relation("ProjectDecisionOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  alerts      ProjectDecisionAlert[]
 
   @@index([projectId, status, dueAt])
   @@index([ownerId])
   @@map("project_decisions")
+}
+
+model ProjectDecisionAlert {
+  id              String                     @id @default(uuid()) @db.Uuid
+  decisionId      String                     @db.Uuid
+  recipientUserId String                     @db.Uuid
+  reason          ProjectDecisionAlertReason
+  alertDate       DateTime                   @db.Date
+  createdAt       DateTime                   @default(now())
+  decision        ProjectDecision            @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  recipient       User                       @relation("ProjectDecisionAlertRecipient", fields: [recipientUserId], references: [id], onDelete: Restrict)
+
+  @@unique([decisionId, reason, alertDate, recipientUserId])
+  @@index([recipientUserId, createdAt])
+  @@map("project_decision_alerts")
 }
 
 model ProjectWorkItem {

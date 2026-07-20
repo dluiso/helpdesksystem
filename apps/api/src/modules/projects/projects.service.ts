@@ -1,18 +1,35 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma, ProjectDecisionStatus, ProjectMilestoneStatus, ProjectStatus } from "@prisma/client";
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { Prisma, ProjectDecisionAlertReason, ProjectDecisionStatus, ProjectHealth, ProjectMilestoneStatus, ProjectStatus } from "@prisma/client";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { AddProjectDependencyDto, AddProjectWorkItemDto, CreateProjectDecisionDto, CreateProjectDto, CreateProjectMilestoneDto, UpdateProjectDecisionDto, UpdateProjectDto, UpdateProjectMilestoneDto } from "./dto/project.dto";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DECISION_ALERT_SCAN_INTERVAL_MS = 15 * 60 * 1000;
 
 @Injectable()
-export class ProjectsService {
+export class ProjectsService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(ProjectsService.name);
+  private decisionAlertTimer?: NodeJS.Timeout;
+
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogs: AuditLogsService
+    private readonly auditLogs: AuditLogsService,
+    private readonly notifications: NotificationsService
   ) {}
+
+  onModuleInit() {
+    void this.runDecisionAlertScanSafely();
+    this.decisionAlertTimer = setInterval(() => {
+      void this.runDecisionAlertScanSafely();
+    }, DECISION_ALERT_SCAN_INTERVAL_MS);
+  }
+
+  onModuleDestroy() {
+    if (this.decisionAlertTimer) clearInterval(this.decisionAlertTimer);
+  }
 
   async list(user: AuthenticatedUser) {
     const [items, clients, assignableUsers] = await Promise.all([
@@ -272,6 +289,61 @@ export class ProjectsService {
     return { deleted: true };
   }
 
+  async runDecisionAlertScan(now = new Date()) {
+    const decisions = await this.prisma.projectDecision.findMany({
+      where: {
+        status: { notIn: [ProjectDecisionStatus.RESOLVED, ProjectDecisionStatus.CANCELLED] },
+        project: { deletedAt: null, status: { notIn: [ProjectStatus.COMPLETED, ProjectStatus.CANCELLED] } }
+      },
+      select: {
+        id: true,
+        title: true,
+        dueAt: true,
+        owner: { select: { id: true, firstName: true, lastName: true } },
+        project: { select: { id: true, name: true, health: true, owner: { select: { id: true, firstName: true, lastName: true } } } }
+      }
+    });
+    const alertDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    let sent = 0;
+
+    for (const decision of decisions) {
+      const recipient = decision.owner ?? decision.project.owner;
+      if (!recipient) continue;
+      const reasons: ProjectDecisionAlertReason[] = [];
+      if (!decision.owner) reasons.push(ProjectDecisionAlertReason.UNASSIGNED);
+      if (decision.dueAt && decision.dueAt < now) reasons.push(ProjectDecisionAlertReason.OVERDUE);
+      if (decision.project.health !== ProjectHealth.ON_TRACK) reasons.push(ProjectDecisionAlertReason.PROJECT_AT_RISK);
+
+      for (const reason of reasons) {
+        try {
+          await this.prisma.projectDecisionAlert.create({ data: { decisionId: decision.id, recipientUserId: recipient.id, reason, alertDate } });
+        } catch (error) {
+          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") continue;
+          this.logger.warn(`Unable to record project decision alert for ${decision.id}: ${error instanceof Error ? error.message : "Unknown error"}`);
+          continue;
+        }
+        await this.notifications.notifyUser({
+          userId: recipient.id,
+          eventType: "projectDecisionAlert",
+          title: `Project decision needs attention: ${decision.title}`,
+          body: `${this.decisionAlertReasonLabel(reason)}\nProject: ${decision.project.name}\nDue: ${decision.dueAt ? decision.dueAt.toLocaleDateString("en-US") : "Not scheduled"}`,
+          metadata: { entityType: "ProjectDecision", projectId: decision.project.id, decisionId: decision.id, reason }
+        });
+        sent += 1;
+      }
+    }
+
+    return { scanned: decisions.length, sent };
+  }
+
+  private async runDecisionAlertScanSafely() {
+    try {
+      await this.runDecisionAlertScan();
+    } catch (error) {
+      this.logger.warn(`Project decision alert scan failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  }
+
   private async ensureProject(projectId: string, user: AuthenticatedUser) {
     const project = await this.prisma.project.findFirst({ where: { id: projectId, organizationId: user.organizationId, deletedAt: null }, include: this.projectInclude() });
     if (!project) throw new NotFoundException("Project was not found.");
@@ -324,6 +396,12 @@ export class ProjectsService {
 
   private isClosedDecision(status: ProjectDecisionStatus | undefined) {
     return status === ProjectDecisionStatus.RESOLVED || status === ProjectDecisionStatus.CANCELLED;
+  }
+
+  private decisionAlertReasonLabel(reason: ProjectDecisionAlertReason) {
+    if (reason === ProjectDecisionAlertReason.UNASSIGNED) return "This decision has no assigned owner.";
+    if (reason === ProjectDecisionAlertReason.OVERDUE) return "This decision is overdue.";
+    return "The related project is at risk.";
   }
 
   private projectInclude(): Prisma.ProjectInclude {
