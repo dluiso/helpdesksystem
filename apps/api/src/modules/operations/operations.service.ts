@@ -23,6 +23,7 @@ export interface OperationsWorkItem {
   updatedAt: Date;
   href: string;
   attention: boolean;
+  requestId?: string;
 }
 
 @Injectable()
@@ -82,7 +83,7 @@ export class OperationsService {
           updatedAt: true,
           assignedUser: { select: { firstName: true, lastName: true } },
           externalSpecialist: { select: { name: true } },
-          request: { select: { trackingNumber: true, eventName: true, priority: true, client: { select: { name: true } }, assignedTeam: { select: { name: true } } } }
+          request: { select: { id: true, trackingNumber: true, eventName: true, priority: true, client: { select: { name: true } }, assignedTeam: { select: { name: true } } } }
         },
         orderBy: [{ dueAt: "asc" }, { updatedAt: "desc" }],
         take: 80
@@ -148,7 +149,8 @@ export class OperationsService {
         dueAt: task.dueAt,
         updatedAt: task.updatedAt,
         href: `/event-services/${task.request.trackingNumber}`,
-        attention: task.status === EventServiceTaskStatus.BLOCKED || overdue || !owner
+        attention: task.status === EventServiceTaskStatus.BLOCKED || overdue || !owner,
+        requestId: task.request.id
       };
     });
 
@@ -166,6 +168,10 @@ export class OperationsService {
         upcomingEvents: requestItems.filter((item) => item.dueAt && item.dueAt >= now && item.dueAt <= nextWeek).length,
         blockedTasks: taskItems.filter((item) => item.status === EventServiceTaskStatus.BLOCKED).length,
         attentionItems: items.filter((item) => item.attention).length
+      },
+      capabilities: {
+        updateTicketStatus: user.permissions.includes("tickets.assign"),
+        updateEventStatus: user.permissions.includes("event_services.update")
       },
       items,
       workload

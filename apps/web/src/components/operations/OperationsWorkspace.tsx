@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CalendarClock, CircleAlert, ClipboardList, RefreshCw, Ticket, UsersRound } from "lucide-react";
+import { AlertTriangle, CalendarClock, Check, CircleAlert, RefreshCw, Ticket, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -22,6 +22,7 @@ interface WorkItem {
   updatedAt: string;
   href: string;
   attention: boolean;
+  requestId?: string;
 }
 
 interface OperationsOverview {
@@ -33,6 +34,10 @@ interface OperationsOverview {
     upcomingEvents: number;
     blockedTasks: number;
     attentionItems: number;
+  };
+  capabilities: {
+    updateTicketStatus: boolean;
+    updateEventStatus: boolean;
   };
   items: WorkItem[];
   workload: Array<{ owner: string; total: number; attention: number }>;
@@ -80,6 +85,8 @@ export function OperationsWorkspace() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [statusDrafts, setStatusDrafts] = useState<Record<string, string>>({});
+  const [updatingItemId, setUpdatingItemId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -113,6 +120,40 @@ export function OperationsWorkspace() {
       return timeMatches && (!attentionOnly || item.attention) && (!query || text.includes(query));
     });
   }, [attentionOnly, overview, period, search]);
+
+  const canUpdateStatus = (item: WorkItem) => item.kind === "TICKET" ? Boolean(overview?.capabilities.updateTicketStatus) : Boolean(overview?.capabilities.updateEventStatus);
+
+  const statusOptions = (item: WorkItem) => {
+    if (item.kind === "TICKET") return ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_TECHNICIAN", "WAITING_ON_THIRD_PARTY", "RESOLVED", "CLOSED", "REOPENED", "CANCELLED"];
+    if (item.kind === "EVENT") return ["NEW", "UNDER_REVIEW", "SCHEDULED", "ASSIGNED", "IN_PROGRESS", "WAITING_ON_CLIENT", "WAITING_ON_INTERNAL_TEAM", "COMPLETED", "CANCELLED"];
+    return ["TODO", "IN_PROGRESS", "BLOCKED", "DONE", "CANCELLED"];
+  };
+
+  const updateStatus = async (item: WorkItem) => {
+    const status = statusDrafts[item.id] ?? item.status;
+    if (status === item.status || !canUpdateStatus(item)) return;
+    setUpdatingItemId(item.id);
+    setError("");
+    try {
+      if (item.kind === "TICKET") {
+        await apiFetch("/tickets/bulk", { method: "PATCH", body: JSON.stringify({ ticketIds: [item.id], status }) });
+      } else if (item.kind === "EVENT") {
+        await apiFetch(`/event-services/${item.id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+      } else if (item.requestId) {
+        await apiFetch(`/event-services/${item.requestId}/tasks/${item.id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+      }
+      setStatusDrafts((current) => {
+        const next = { ...current };
+        delete next[item.id];
+        return next;
+      });
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to update work item status.");
+    } finally {
+      setUpdatingItemId(null);
+    }
+  };
 
   return (
     <div className="operations-workspace">
@@ -160,7 +201,7 @@ export function OperationsWorkspace() {
         <div className="operations-table-scroll">
           <table className="table operations-table">
             <thead>
-              <tr><th>Work item</th><th>Source</th><th>Owner</th><th>Client / Team</th><th>Status</th><th>Due / Event</th><th>Updated</th></tr>
+              <tr><th>Work item</th><th>Source</th><th>Owner</th><th>Client / Team</th><th>Status</th><th>Due / Event</th><th>Updated</th><th>Quick action</th></tr>
             </thead>
             <tbody>
               {visibleItems.map((item) => (
@@ -177,9 +218,21 @@ export function OperationsWorkspace() {
                   <td><div className="operations-status-cell"><span>{label(item.status)}</span>{item.priority ? <small>{label(item.priority)}</small> : null}</div></td>
                   <td>{formatDate(item.dueAt)}</td>
                   <td>{formatDate(item.updatedAt)}</td>
+                  <td>
+                    {canUpdateStatus(item) ? (
+                      <div className="operations-action-control">
+                        <select className="input" value={statusDrafts[item.id] ?? item.status} onChange={(event) => setStatusDrafts((current) => ({ ...current, [item.id]: event.target.value }))} disabled={updatingItemId === item.id} aria-label={`Update ${item.reference} status`}>
+                          {statusOptions(item).map((status) => <option value={status} key={status}>{label(status)}</option>)}
+                        </select>
+                        <button className="button secondary icon-button" type="button" onClick={() => void updateStatus(item)} disabled={updatingItemId === item.id || (statusDrafts[item.id] ?? item.status) === item.status} title={`Save ${item.reference} status`} aria-label={`Save ${item.reference} status`}>
+                          <Check size={15} aria-hidden="true" />
+                        </button>
+                      </div>
+                    ) : <span className="muted">View only</span>}
+                  </td>
                 </tr>
               ))}
-              {!loading && visibleItems.length === 0 ? <tr><td colSpan={7}><div className="dashboard-empty">No active work matches these filters.</div></td></tr> : null}
+              {!loading && visibleItems.length === 0 ? <tr><td colSpan={8}><div className="dashboard-empty">No active work matches these filters.</div></td></tr> : null}
             </tbody>
           </table>
         </div>
