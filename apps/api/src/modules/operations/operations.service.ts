@@ -10,6 +10,11 @@ const CLOSED_TASK_STATUSES = [EventServiceTaskStatus.DONE, EventServiceTaskStatu
 type WorkKind = "TICKET" | "EVENT" | "EVENT_TASK" | "PROJECT";
 type CapacityStatus = "AVAILABLE" | "NEAR_CAPACITY" | "OVER_CAPACITY";
 
+interface ProjectCommitment {
+  owner: string;
+  attention: boolean;
+}
+
 export interface OperationsWorkItem {
   id: string;
   kind: WorkKind;
@@ -107,7 +112,14 @@ export class OperationsService {
               updatedAt: true,
               client: { select: { name: true } },
               owner: { select: { firstName: true, lastName: true } },
-              milestones: { where: { status: ProjectMilestoneStatus.BLOCKED }, select: { id: true } },
+              milestones: {
+                where: { status: { not: ProjectMilestoneStatus.COMPLETED } },
+                select: {
+                  status: true,
+                  dueAt: true,
+                  assignedUser: { select: { firstName: true, lastName: true } }
+                }
+              },
               dependencies: { where: { dependsOnProject: { status: { not: ProjectStatus.COMPLETED } } }, select: { id: true } }
             },
             orderBy: [{ targetDate: "asc" }, { updatedAt: "desc" }],
@@ -183,10 +195,31 @@ export class OperationsService {
       };
     });
 
+    const projectCommitments: ProjectCommitment[] = [];
+    let unassignedProjectCommitments = 0;
     const projectItems: OperationsWorkItem[] = projects.map((project) => {
       const overdue = project.targetDate !== null && project.targetDate < now;
-      const blockedMilestones = project.milestones.length;
+      const blockedMilestones = project.milestones.filter((milestone) => milestone.status === ProjectMilestoneStatus.BLOCKED).length;
       const blockedDependencies = project.dependencies.length;
+      const attention = project.health !== ProjectHealth.ON_TRACK || overdue || blockedMilestones > 0 || blockedDependencies > 0;
+
+      if (project.owner) {
+        projectCommitments.push({ owner: this.userName(project.owner), attention });
+      } else {
+        unassignedProjectCommitments += 1;
+      }
+
+      for (const milestone of project.milestones) {
+        if (!milestone.assignedUser) {
+          unassignedProjectCommitments += 1;
+          continue;
+        }
+        projectCommitments.push({
+          owner: this.userName(milestone.assignedUser),
+          attention: milestone.status === ProjectMilestoneStatus.BLOCKED || (milestone.dueAt !== null && milestone.dueAt < now)
+        });
+      }
+
       return {
         id: project.id,
         kind: "PROJECT",
@@ -201,7 +234,7 @@ export class OperationsService {
         dueAt: project.targetDate,
         updatedAt: project.updatedAt,
         href: "/projects",
-        attention: project.health !== ProjectHealth.ON_TRACK || overdue || blockedMilestones > 0 || blockedDependencies > 0,
+        attention,
         internalOwners: []
       };
     });
@@ -210,7 +243,7 @@ export class OperationsService {
     const items = allItems
       .sort((left, right) => Number(right.attention) - Number(left.attention) || this.priorityRank(right.priority) - this.priorityRank(left.priority) || this.dateRank(left.dueAt, left.updatedAt) - this.dateRank(right.dueAt, right.updatedAt))
       .slice(0, 160);
-    const workload = this.workload(allItems, settings.capacityBaseline, settings.capacityWarningPercent);
+    const workload = this.workload(allItems, settings.capacityBaseline, settings.capacityWarningPercent, projectCommitments);
 
     return {
       generatedAt: now,
@@ -221,6 +254,8 @@ export class OperationsService {
         upcomingEvents: requestItems.filter((item) => item.dueAt && item.dueAt >= now && item.dueAt <= nextWeek).length,
         activeProjects: projectItems.length,
         atRiskProjects: projectItems.filter((item) => item.attention).length,
+        projectCommitments: projectCommitments.length,
+        unassignedProjectCommitments,
         blockedTasks: taskItems.filter((item) => item.status === EventServiceTaskStatus.BLOCKED).length,
         attentionItems: allItems.filter((item) => item.attention).length,
         overdueItems: allItems.filter((item) => item.dueAt && item.dueAt < now).length,
@@ -256,15 +291,23 @@ export class OperationsService {
     return (dueAt ?? updatedAt).getTime();
   }
 
-  private workload(items: OperationsWorkItem[], capacityBaseline: number, capacityWarningPercent: number) {
-    const work = new Map<string, { owner: string; total: number; attention: number }>();
+  private workload(items: OperationsWorkItem[], capacityBaseline: number, capacityWarningPercent: number, projectCommitments: ProjectCommitment[] = []) {
+    const work = new Map<string, { owner: string; operational: number; projectCommitments: number; total: number; attention: number }>();
     for (const item of items) {
       for (const owner of item.internalOwners) {
-        const current = work.get(owner) ?? { owner, total: 0, attention: 0 };
+        const current = work.get(owner) ?? { owner, operational: 0, projectCommitments: 0, total: 0, attention: 0 };
+        current.operational += 1;
         current.total += 1;
         if (item.attention) current.attention += 1;
         work.set(owner, current);
       }
+    }
+    for (const commitment of projectCommitments) {
+      const current = work.get(commitment.owner) ?? { owner: commitment.owner, operational: 0, projectCommitments: 0, total: 0, attention: 0 };
+      current.projectCommitments += 1;
+      current.total += 1;
+      if (commitment.attention) current.attention += 1;
+      work.set(commitment.owner, current);
     }
     return [...work.values()]
       .map((entry) => {
