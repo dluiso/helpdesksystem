@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, FolderKanban, Link2, Milestone, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
+import { AlertTriangle, CalendarRange, FolderKanban, Link2, Milestone, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -8,6 +8,9 @@ import { apiFetch } from "@/lib/api";
 type ProjectStatus = "PLANNING" | "ACTIVE" | "ON_HOLD" | "COMPLETED" | "CANCELLED";
 type ProjectHealth = "ON_TRACK" | "AT_RISK" | "OFF_TRACK";
 type MilestoneStatus = "NOT_STARTED" | "IN_PROGRESS" | "BLOCKED" | "COMPLETED";
+type ProjectView = "PORTFOLIO" | "TIMELINE";
+type TimelineRange = "30" | "90" | "180";
+type TimelineEntryKind = "TARGET" | "MILESTONE" | "EVENT";
 
 interface ProjectMilestone {
   id: string;
@@ -59,6 +62,18 @@ interface ProjectDraft {
   targetDate: string;
 }
 
+interface TimelineEntry {
+  id: string;
+  projectId: string;
+  projectName: string;
+  date: string;
+  kind: TimelineEntryKind;
+  title: string;
+  status: string;
+  href?: string;
+  overdue: boolean;
+}
+
 const emptyDraft: ProjectDraft = { name: "", description: "", clientId: "", status: "PLANNING", health: "ON_TRACK", startAt: "", targetDate: "" };
 
 function label(value: string) {
@@ -87,6 +102,8 @@ export function ProjectsWorkspace() {
   const [linkType, setLinkType] = useState<"TICKET" | "EVENT_SERVICE">("TICKET");
   const [linkReference, setLinkReference] = useState("");
   const [dependencyProjectId, setDependencyProjectId] = useState("");
+  const [projectView, setProjectView] = useState<ProjectView>("PORTFOLIO");
+  const [timelineRange, setTimelineRange] = useState<TimelineRange>("90");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -266,12 +283,49 @@ export function ProjectsWorkspace() {
 
   const blockedDependencies = selected?.dependencies.filter((dependency) => dependency.dependsOnProject.status !== "COMPLETED") ?? [];
   const availableDependencies = (data?.items ?? []).filter((project) => project.id !== selected?.id && !selected?.dependencies.some((dependency) => dependency.dependsOnProject.id === project.id));
+  const timelineEntries = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const rangeEnd = new Date(today);
+    rangeEnd.setDate(rangeEnd.getDate() + Number(timelineRange));
+    const isIncomplete = (status: string) => !["COMPLETED", "CANCELLED"].includes(status);
+    const entries: TimelineEntry[] = [];
+
+    for (const project of data?.items ?? []) {
+      if (project.targetDate) {
+        entries.push({ id: `${project.id}:target`, projectId: project.id, projectName: project.name, date: project.targetDate, kind: "TARGET", title: "Project target", status: project.status, overdue: new Date(project.targetDate) < today && isIncomplete(project.status) });
+      }
+      for (const milestone of project.milestones) {
+        if (milestone.dueAt) {
+          entries.push({ id: milestone.id, projectId: project.id, projectName: project.name, date: milestone.dueAt, kind: "MILESTONE", title: milestone.title, status: milestone.status, overdue: new Date(milestone.dueAt) < today && isIncomplete(milestone.status) });
+        }
+      }
+      for (const workItem of project.workItems) {
+        const event = workItem.eventServiceRequest;
+        if (event?.eventDate) {
+          entries.push({ id: workItem.id, projectId: project.id, projectName: project.name, date: event.eventDate, kind: "EVENT", title: event.eventName, status: event.status, href: `/event-services/${event.trackingNumber}`, overdue: new Date(event.eventDate) < today && isIncomplete(event.status) });
+        }
+      }
+    }
+
+    return entries.filter((entry) => entry.overdue || (new Date(entry.date) >= today && new Date(entry.date) <= rangeEnd)).sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime());
+  }, [data, timelineRange]);
+
+  const showProjectInPortfolio = (projectId: string) => {
+    const project = data?.items.find((item) => item.id === projectId) ?? null;
+    setProjectView("PORTFOLIO");
+    selectProject(project);
+  };
 
   return (
     <div className="projects-workspace">
       <div className="projects-toolbar panel">
         <div><strong>Project portfolio</strong><span className="muted">Projects coordinate existing work without changing its source ownership.</span></div>
         <div className="projects-toolbar-actions">
+          <div className="segmented-control" role="group" aria-label="Project view">
+            <button className={projectView === "PORTFOLIO" ? "active" : ""} type="button" onClick={() => setProjectView("PORTFOLIO")}>Portfolio</button>
+            <button className={projectView === "TIMELINE" ? "active" : ""} type="button" onClick={() => setProjectView("TIMELINE")}>Timeline</button>
+          </div>
           <button className="button secondary icon-button" type="button" onClick={() => void load()} disabled={loading} title="Refresh projects" aria-label="Refresh projects"><RefreshCw size={16} className={loading ? "spin" : ""} aria-hidden="true" /></button>
           {data?.capabilities.create ? <button className="button" type="button" onClick={() => { setShowCreate(true); selectProject(null); }}><Plus size={16} aria-hidden="true" /> Add Project</button> : null}
         </div>
@@ -285,7 +339,21 @@ export function ProjectsWorkspace() {
         <div className="form-actions"><button className="button" type="submit" disabled={saving || !draft.name.trim()}><Save size={16} aria-hidden="true" /> Create Project</button></div>
       </form> : null}
 
-      <div className="projects-layout">
+      {projectView === "TIMELINE" ? <section className="panel projects-timeline-panel">
+        <div className="projects-timeline-heading">
+          <div><span className="projects-timeline-title"><CalendarRange size={18} aria-hidden="true" /> Portfolio timeline</span><p>Upcoming project targets, milestones, and linked event requests. Overdue work remains visible.</p></div>
+          <div className="segmented-control" role="group" aria-label="Timeline range">
+            {(["30", "90", "180"] as TimelineRange[]).map((range) => <button className={timelineRange === range ? "active" : ""} type="button" key={range} onClick={() => setTimelineRange(range)}>{range}d</button>)}
+          </div>
+        </div>
+        <div className="projects-timeline-list">
+          {timelineEntries.map((entry) => <div className={`projects-timeline-row${entry.overdue ? " overdue" : ""}`} key={entry.id}>
+            <time>{formatDate(entry.date)}</time><span className={`projects-timeline-marker ${entry.kind.toLowerCase()}`} aria-hidden="true" />
+            <div className="projects-timeline-content"><div><span className="projects-timeline-kind">{label(entry.kind)}</span><button type="button" onClick={() => showProjectInPortfolio(entry.projectId)}>{entry.projectName}</button></div>{entry.href ? <Link href={entry.href}>{entry.title}</Link> : <strong>{entry.title}</strong>}<small>{entry.overdue ? "Overdue" : label(entry.status)}</small></div>
+          </div>)}
+          {!loading && !timelineEntries.length ? <div className="dashboard-empty">No project targets, milestones, or linked events fall within this timeline.</div> : null}
+        </div>
+      </section> : <div className="projects-layout">
         <section className="panel projects-list-panel">
           <div className="section-heading"><div><h2>Projects</h2><p>{data?.items.length ?? 0} active planning records</p></div></div>
           <div className="projects-list">
@@ -317,7 +385,7 @@ export function ProjectsWorkspace() {
             </div>
           </>}
         </section>
-      </div>
+      </div>}
     </div>
   );
 }

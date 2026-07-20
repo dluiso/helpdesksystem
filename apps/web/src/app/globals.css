@@ -8545,6 +8545,158 @@ a.dashboard-list-row:hover {
   gap: 8px;
 }
 
+.projects-timeline-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.projects-timeline-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.projects-timeline-heading > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.projects-timeline-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 850;
+}
+
+.projects-timeline-heading p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.projects-timeline-list {
+  display: grid;
+}
+
+.projects-timeline-row {
+  display: grid;
+  grid-template-columns: 124px 20px minmax(0, 1fr);
+  column-gap: 12px;
+  min-height: 76px;
+  padding: 13px 18px;
+}
+
+.projects-timeline-row + .projects-timeline-row {
+  border-top: 1px solid var(--line);
+}
+
+.projects-timeline-row > time {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.projects-timeline-marker {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border: 2px solid var(--surface-raised);
+  border-radius: 50%;
+  background: var(--brand-primary);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.projects-timeline-marker::after {
+  position: absolute;
+  top: 10px;
+  left: 3px;
+  width: 2px;
+  height: 70px;
+  content: "";
+  background: var(--line);
+}
+
+.projects-timeline-row:last-child .projects-timeline-marker::after {
+  display: none;
+}
+
+.projects-timeline-marker.milestone {
+  background: var(--warning);
+}
+
+.projects-timeline-marker.event {
+  background: var(--success);
+}
+
+.projects-timeline-row.overdue .projects-timeline-marker {
+  background: var(--danger);
+}
+
+.projects-timeline-content {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.projects-timeline-content > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.projects-timeline-kind {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.projects-timeline-content button {
+  padding: 0;
+  border: 0;
+  color: var(--text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.projects-timeline-content button:hover {
+  color: var(--brand-primary);
+  text-decoration: underline;
+}
+
+.projects-timeline-content > a,
+.projects-timeline-content > strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projects-timeline-content > a {
+  color: var(--brand-primary);
+  font-weight: 800;
+}
+
+.projects-timeline-content small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.projects-timeline-row.overdue .projects-timeline-content small {
+  color: var(--danger);
+  font-weight: 800;
+}
+
 .projects-create-panel {
   display: grid;
   gap: 16px;
@@ -8811,6 +8963,20 @@ a.dashboard-list-row:hover {
 
   .projects-toolbar-actions {
     justify-content: flex-end;
+  }
+
+  .projects-timeline-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .projects-timeline-row {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .projects-timeline-marker {
+    display: none;
   }
 
   .projects-fields,
