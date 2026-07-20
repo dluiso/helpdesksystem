@@ -20,6 +20,7 @@ import { KnowledgeBaseModule } from "./modules/knowledge-base/knowledge-base.mod
 import { MaintenanceModule } from "./modules/maintenance/maintenance.module";
 import { MailboxesModule } from "./modules/mailboxes/mailboxes.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { OperationsModule } from "./modules/operations/operations.module";
 import { PermissionsModule } from "./modules/permissions/permissions.module";
 import { ProfileModule } from "./modules/profile/profile.module";
 import { PrismaModule } from "./modules/prisma/prisma.module";
@@ -74,6 +75,7 @@ import { UsersModule } from "./modules/users/users.module";
     ClientDomainsModule,
     ContactsModule,
     DashboardModule,
+    OperationsModule,
     TicketsModule,
     TicketMessagesModule,
     TicketTeamsModule,

@@ -45,6 +45,7 @@ export const INITIAL_PERMISSIONS = [
   "tickets.reopen",
   "tickets.merge",
   "tickets.delete",
+  "operations.view",
   "event_services.view",
   "event_services.create",
   "event_services.update",
@@ -116,6 +117,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, readonly string[]> = {
   Technician: INITIAL_PERMISSIONS.filter(
     (permission) =>
       permission.startsWith("tickets.") ||
+      permission === "operations.view" ||
       permission.startsWith("event_services.") ||
       permission.startsWith("external_specialists.") ||
       permission.startsWith("ticket_messages.") ||
