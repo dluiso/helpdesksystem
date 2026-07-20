@@ -23,6 +23,7 @@ interface WorkItem {
   href: string;
   attention: boolean;
   requestId?: string;
+  internalOwners: string[];
 }
 
 interface OperationsOverview {
@@ -34,13 +35,17 @@ interface OperationsOverview {
     upcomingEvents: number;
     blockedTasks: number;
     attentionItems: number;
+    overdueItems: number;
+    overCapacity: number;
+    nearCapacity: number;
+    capacityBaseline: number;
   };
   capabilities: {
     updateTicketStatus: boolean;
     updateEventStatus: boolean;
   };
   items: WorkItem[];
-  workload: Array<{ owner: string; total: number; attention: number }>;
+  workload: Array<{ owner: string; total: number; attention: number; capacityPercent: number; capacityStatus: "AVAILABLE" | "NEAR_CAPACITY" | "OVER_CAPACITY" }>;
 }
 
 function label(value: string) {
@@ -184,9 +189,9 @@ export function OperationsWorkspace() {
       {error ? <div className="alert error">Unable to load Operations Center. {error}</div> : null}
 
       <section className="operations-summary-grid" aria-label="Operations summary">
-        <SummaryCard icon={CircleAlert} title="Needs attention" value={overview?.summary.attentionItems ?? 0} note="Unassigned, urgent, blocked, or upcoming work" tone="attention" />
-        <SummaryCard icon={Ticket} title="Active tickets" value={overview?.summary.activeTickets ?? 0} note={`${overview?.summary.unassignedTickets ?? 0} currently unassigned`} />
-        <SummaryCard icon={CalendarClock} title="Upcoming events" value={overview?.summary.upcomingEvents ?? 0} note={`${overview?.summary.activeEvents ?? 0} active event requests`} />
+        <SummaryCard icon={CircleAlert} title="Needs attention" value={overview?.summary.attentionItems ?? 0} note={`${overview?.summary.overdueItems ?? 0} overdue work items`} tone="attention" />
+        <SummaryCard icon={Ticket} title="Unassigned tickets" value={overview?.summary.unassignedTickets ?? 0} note={`${overview?.summary.activeTickets ?? 0} active tickets`} tone={(overview?.summary.unassignedTickets ?? 0) > 0 ? "attention" : "default"} />
+        <SummaryCard icon={CalendarClock} title="Capacity alerts" value={overview?.summary.overCapacity ?? 0} note={`${overview?.summary.nearCapacity ?? 0} nearing the active-work baseline`} tone={(overview?.summary.overCapacity ?? 0) > 0 ? "attention" : "default"} />
         <SummaryCard icon={AlertTriangle} title="Blocked tasks" value={overview?.summary.blockedTasks ?? 0} note="Event service tasks requiring follow-up" tone={(overview?.summary.blockedTasks ?? 0) > 0 ? "attention" : "default"} />
       </section>
 
@@ -239,9 +244,9 @@ export function OperationsWorkspace() {
       </section>
 
       <section className="panel operations-workload-panel">
-        <div className="section-heading operations-section-heading"><div><h2>Work distribution</h2><p>Active queue items by assignee.</p></div><UsersRound size={19} aria-hidden="true" /></div>
+        <div className="section-heading operations-section-heading"><div><h2>Capacity and work distribution</h2><p>Active assignments per internal specialist. Baseline: {overview?.summary.capacityBaseline ?? 12} items.</p></div><UsersRound size={19} aria-hidden="true" /></div>
         <div className="operations-workload-list">
-          {(overview?.workload ?? []).map((entry) => <div className="operations-workload-row" key={entry.owner}><strong>{entry.owner}</strong><span>{entry.total} active</span><small>{entry.attention} need attention</small></div>)}
+          {(overview?.workload ?? []).map((entry) => <div className={`operations-workload-row ${entry.capacityStatus.toLowerCase().replace("_", "-")}`} key={entry.owner}><strong>{entry.owner}</strong><span>{entry.total}/{overview?.summary.capacityBaseline ?? 12} active</span><small>{entry.attention} need attention</small><em>{label(entry.capacityStatus)}</em><div className="operations-capacity-meter" aria-label={`${entry.owner} capacity ${entry.capacityPercent}%`}><span style={{ width: `${entry.capacityPercent}%` }} /></div></div>)}
           {!loading && !overview?.workload.length ? <div className="dashboard-empty">No assigned active work.</div> : null}
         </div>
       </section>

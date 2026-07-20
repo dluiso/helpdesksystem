@@ -9037,7 +9037,48 @@ a.dashboard-list-row:hover {
 }
 
 .operations-workload-row small {
+  grid-column: 1 / 2;
+}
+
+.operations-workload-row em {
+  justify-self: end;
+  align-self: center;
+  color: var(--success);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.operations-workload-row.near-capacity em {
+  color: var(--warning);
+}
+
+.operations-workload-row.over-capacity em {
+  color: var(--danger);
+}
+
+.operations-capacity-meter {
   grid-column: 1 / -1;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+.operations-capacity-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--success);
+}
+
+.operations-workload-row.near-capacity .operations-capacity-meter span {
+  background: var(--warning);
+}
+
+.operations-workload-row.over-capacity .operations-capacity-meter span {
+  background: var(--danger);
 }
 
 @media (max-width: 1120px) {

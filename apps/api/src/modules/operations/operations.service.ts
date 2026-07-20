@@ -6,8 +6,10 @@ import { PrismaService } from "../prisma/prisma.service";
 const CLOSED_TICKET_STATUSES = [TicketStatus.RESOLVED, TicketStatus.CLOSED, TicketStatus.CANCELLED, TicketStatus.MERGED];
 const CLOSED_EVENT_STATUSES = [EventServiceRequestStatus.COMPLETED, EventServiceRequestStatus.CANCELLED, EventServiceRequestStatus.CONVERTED_TO_TICKET];
 const CLOSED_TASK_STATUSES = [EventServiceTaskStatus.DONE, EventServiceTaskStatus.CANCELLED];
+const CAPACITY_BASELINE = 12;
 
 type WorkKind = "TICKET" | "EVENT" | "EVENT_TASK";
+type CapacityStatus = "AVAILABLE" | "NEAR_CAPACITY" | "OVER_CAPACITY";
 
 export interface OperationsWorkItem {
   id: string;
@@ -24,6 +26,7 @@ export interface OperationsWorkItem {
   href: string;
   attention: boolean;
   requestId?: string;
+  internalOwners: string[];
 }
 
 @Injectable()
@@ -108,7 +111,8 @@ export class OperationsService {
         dueAt: null,
         updatedAt: ticket.updatedAt,
         href: `/tickets/${ticket.ticketNumber}`,
-        attention
+        attention,
+        internalOwners: [...new Set(owners)]
       };
     });
 
@@ -129,7 +133,8 @@ export class OperationsService {
         dueAt: request.eventDate,
         updatedAt: request.updatedAt,
         href: `/event-services/${request.trackingNumber}`,
-        attention: (!owners.length && !request.assignedTeam) || overdue || dueSoon
+        attention: (!owners.length && !request.assignedTeam) || overdue || dueSoon,
+        internalOwners: [...new Set(owners)]
       };
     });
 
@@ -150,14 +155,16 @@ export class OperationsService {
         updatedAt: task.updatedAt,
         href: `/event-services/${task.request.trackingNumber}`,
         attention: task.status === EventServiceTaskStatus.BLOCKED || overdue || !owner,
-        requestId: task.request.id
+        requestId: task.request.id,
+        internalOwners: task.assignedUser ? [this.userName(task.assignedUser)] : []
       };
     });
 
-    const items = [...ticketItems, ...requestItems, ...taskItems]
+    const allItems = [...ticketItems, ...requestItems, ...taskItems];
+    const items = allItems
       .sort((left, right) => Number(right.attention) - Number(left.attention) || this.priorityRank(right.priority) - this.priorityRank(left.priority) || this.dateRank(left.dueAt, left.updatedAt) - this.dateRank(right.dueAt, right.updatedAt))
       .slice(0, 160);
-    const workload = this.workload(items);
+    const workload = this.workload(allItems);
 
     return {
       generatedAt: now,
@@ -167,7 +174,11 @@ export class OperationsService {
         activeEvents: requestItems.length,
         upcomingEvents: requestItems.filter((item) => item.dueAt && item.dueAt >= now && item.dueAt <= nextWeek).length,
         blockedTasks: taskItems.filter((item) => item.status === EventServiceTaskStatus.BLOCKED).length,
-        attentionItems: items.filter((item) => item.attention).length
+        attentionItems: allItems.filter((item) => item.attention).length,
+        overdueItems: allItems.filter((item) => item.dueAt && item.dueAt < now).length,
+        overCapacity: workload.filter((entry) => entry.capacityStatus === "OVER_CAPACITY").length,
+        nearCapacity: workload.filter((entry) => entry.capacityStatus === "NEAR_CAPACITY").length,
+        capacityBaseline: CAPACITY_BASELINE
       },
       capabilities: {
         updateTicketStatus: user.permissions.includes("tickets.assign"),
@@ -198,12 +209,23 @@ export class OperationsService {
   private workload(items: OperationsWorkItem[]) {
     const work = new Map<string, { owner: string; total: number; attention: number }>();
     for (const item of items) {
-      if (!item.owner) continue;
-      const current = work.get(item.owner) ?? { owner: item.owner, total: 0, attention: 0 };
-      current.total += 1;
-      if (item.attention) current.attention += 1;
-      work.set(item.owner, current);
+      for (const owner of item.internalOwners) {
+        const current = work.get(owner) ?? { owner, total: 0, attention: 0 };
+        current.total += 1;
+        if (item.attention) current.attention += 1;
+        work.set(owner, current);
+      }
     }
-    return [...work.values()].sort((left, right) => right.attention - left.attention || right.total - left.total || left.owner.localeCompare(right.owner)).slice(0, 10);
+    return [...work.values()]
+      .map((entry) => {
+        const capacityStatus: CapacityStatus = entry.total >= CAPACITY_BASELINE ? "OVER_CAPACITY" : entry.total >= Math.ceil(CAPACITY_BASELINE * 0.75) ? "NEAR_CAPACITY" : "AVAILABLE";
+        return { ...entry, capacityPercent: Math.min(100, Math.round((entry.total / CAPACITY_BASELINE) * 100)), capacityStatus };
+      })
+      .sort((left, right) => this.capacityRank(right.capacityStatus) - this.capacityRank(left.capacityStatus) || right.attention - left.attention || right.total - left.total || left.owner.localeCompare(right.owner))
+      .slice(0, 12);
+  }
+
+  private capacityRank(status: CapacityStatus) {
+    return status === "OVER_CAPACITY" ? 3 : status === "NEAR_CAPACITY" ? 2 : 1;
   }
 }
