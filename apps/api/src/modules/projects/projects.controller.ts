@@ -4,7 +4,7 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
 import { RequirePermissions } from "../permissions/decorators/require-permissions.decorator";
 import { PermissionsGuard } from "../permissions/guards/permissions.guard";
-import { AddProjectWorkItemDto, CreateProjectDto, CreateProjectMilestoneDto, UpdateProjectDto, UpdateProjectMilestoneDto } from "./dto/project.dto";
+import { AddProjectDependencyDto, AddProjectWorkItemDto, CreateProjectDto, CreateProjectMilestoneDto, UpdateProjectDto, UpdateProjectMilestoneDto } from "./dto/project.dto";
 import { ProjectsService } from "./projects.service";
 
 @Controller("projects")
@@ -70,5 +70,17 @@ export class ProjectsController {
   @RequirePermissions("projects.update")
   removeWorkItem(@Param("projectId") projectId: string, @Param("workItemId") workItemId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.projects.removeWorkItem(projectId, workItemId, user);
+  }
+
+  @Post(":projectId/dependencies")
+  @RequirePermissions("projects.update")
+  addDependency(@Param("projectId") projectId: string, @Body() body: AddProjectDependencyDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.projects.addDependency(projectId, body, user);
+  }
+
+  @Delete(":projectId/dependencies/:dependencyId")
+  @RequirePermissions("projects.update")
+  removeDependency(@Param("projectId") projectId: string, @Param("dependencyId") dependencyId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.projects.removeDependency(projectId, dependencyId, user);
   }
 }

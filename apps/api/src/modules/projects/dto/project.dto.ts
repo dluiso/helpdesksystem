@@ -116,3 +116,8 @@ export class AddProjectWorkItemDto {
   @MaxLength(100)
   reference: string;
 }
+
+export class AddProjectDependencyDto {
+  @IsUUID()
+  dependsOnProjectId: string;
+}

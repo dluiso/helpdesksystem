@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, FolderKanban, Link2, Milestone, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
+import { AlertTriangle, FolderKanban, Link2, Milestone, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -23,6 +23,11 @@ interface ProjectWorkItem {
   eventServiceRequest: { id: string; trackingNumber: string; eventName: string; status: string; priority: string; eventDate: string | null } | null;
 }
 
+interface ProjectDependency {
+  id: string;
+  dependsOnProject: { id: string; name: string; status: ProjectStatus; health: ProjectHealth; targetDate: string | null };
+}
+
 interface Project {
   id: string;
   name: string;
@@ -35,6 +40,7 @@ interface Project {
   owner: { id: string; firstName: string; lastName: string } | null;
   milestones: ProjectMilestone[];
   workItems: ProjectWorkItem[];
+  dependencies: ProjectDependency[];
 }
 
 interface ProjectsResponse {
@@ -80,6 +86,7 @@ export function ProjectsWorkspace() {
   const [milestoneDueAt, setMilestoneDueAt] = useState("");
   const [linkType, setLinkType] = useState<"TICKET" | "EVENT_SERVICE">("TICKET");
   const [linkReference, setLinkReference] = useState("");
+  const [dependencyProjectId, setDependencyProjectId] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -92,6 +99,7 @@ export function ProjectsWorkspace() {
     setMilestoneTitle("");
     setMilestoneDueAt("");
     setLinkReference("");
+    setDependencyProjectId("");
   };
 
   const load = async (preferredProjectId?: string | null) => {
@@ -228,6 +236,37 @@ export function ProjectsWorkspace() {
     }
   };
 
+  const addDependency = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!selected || !dependencyProjectId) return;
+    setSaving(true);
+    setError("");
+    try {
+      await apiFetch(`/projects/${selected.id}/dependencies`, { method: "POST", body: JSON.stringify({ dependsOnProjectId: dependencyProjectId }) });
+      await load(selected.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to add project dependency.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeDependency = async (dependencyId: string) => {
+    if (!selected || !window.confirm("Remove this project dependency?")) return;
+    setSaving(true);
+    try {
+      await apiFetch(`/projects/${selected.id}/dependencies/${dependencyId}`, { method: "DELETE" });
+      await load(selected.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to remove project dependency.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const blockedDependencies = selected?.dependencies.filter((dependency) => dependency.dependsOnProject.status !== "COMPLETED") ?? [];
+  const availableDependencies = (data?.items ?? []).filter((project) => project.id !== selected?.id && !selected?.dependencies.some((dependency) => dependency.dependsOnProject.id === project.id));
+
   return (
     <div className="projects-workspace">
       <div className="projects-toolbar panel">
@@ -260,6 +299,8 @@ export function ProjectsWorkspace() {
             <div className="section-heading projects-detail-heading"><div><h2>{selected.name}</h2><p>Owner: {selected.owner ? `${selected.owner.firstName} ${selected.owner.lastName}` : "Unassigned"}</p></div>{data?.capabilities.delete ? <button className="button secondary icon-button" type="button" onClick={() => void removeProject()} disabled={saving} title="Archive project" aria-label="Archive project"><Trash2 size={16} aria-hidden="true" /></button> : null}</div>
             {data?.capabilities.update ? <form className="projects-detail-form" onSubmit={(event) => void saveProject(event)}><ProjectFields draft={draft} clients={data?.clients ?? []} onChange={updateDraft} /><div className="form-actions"><button className="button" type="submit" disabled={saving || !draft.name.trim()}><Save size={16} aria-hidden="true" /> Save Plan</button></div></form> : null}
 
+            {blockedDependencies.length ? <div className="projects-dependency-alert"><AlertTriangle size={17} aria-hidden="true" /><span>{blockedDependencies.length === 1 ? `Blocked by ${blockedDependencies[0].dependsOnProject.name}.` : `Blocked by ${blockedDependencies.length} incomplete project dependencies.`}</span></div> : null}
+
             <div className="projects-detail-section"><div className="projects-detail-section-heading"><Milestone size={17} aria-hidden="true" /><div><h3>Milestones</h3><p>Track the intended delivery checkpoints.</p></div></div>
               <div className="projects-milestone-list">{selected.milestones.map((milestone) => <div className="projects-milestone-row" key={milestone.id}><div><strong>{milestone.title}</strong><span>Due {formatDate(milestone.dueAt)}</span></div>{data?.capabilities.update ? <><select className="input" value={milestone.status} onChange={(event) => void updateMilestoneStatus(milestone, event.target.value as MilestoneStatus)} disabled={saving}>{(["NOT_STARTED", "IN_PROGRESS", "BLOCKED", "COMPLETED"] as MilestoneStatus[]).map((status) => <option value={status} key={status}>{label(status)}</option>)}</select><button className="button secondary icon-button" type="button" onClick={() => void removeMilestone(milestone.id)} disabled={saving} title="Remove milestone" aria-label={`Remove ${milestone.title}`}><Trash2 size={15} aria-hidden="true" /></button></> : <span>{label(milestone.status)}</span>}</div>)}{!selected.milestones.length ? <span className="muted">No milestones defined.</span> : null}</div>
               {data?.capabilities.update ? <form className="projects-inline-form" onSubmit={(event) => void addMilestone(event)}><input className="input" value={milestoneTitle} onChange={(event) => setMilestoneTitle(event.target.value)} placeholder="Milestone title" /><input className="input" type="date" value={milestoneDueAt} onChange={(event) => setMilestoneDueAt(event.target.value)} /><button className="button secondary" type="submit" disabled={saving || !milestoneTitle.trim()}><Plus size={15} aria-hidden="true" /> Add</button></form> : null}
@@ -268,6 +309,11 @@ export function ProjectsWorkspace() {
             <div className="projects-detail-section"><div className="projects-detail-section-heading"><Link2 size={17} aria-hidden="true" /><div><h3>Linked operational work</h3><p>Tickets and event requests remain managed in their source modules.</p></div></div>
               <div className="projects-work-list">{selected.workItems.map((workItem) => { const ticket = workItem.ticket; const event = workItem.eventServiceRequest; const href = ticket ? `/tickets/${ticket.ticketNumber}` : `/event-services/${event?.trackingNumber}`; const reference = ticket?.ticketNumber ?? event?.trackingNumber ?? "Unknown"; const title = ticket?.subject ?? event?.eventName ?? "Unavailable work item"; return <div className="projects-work-row" key={workItem.id}><div><Link href={href}>{reference}</Link><strong>{title}</strong><span>{label(ticket?.status ?? event?.status ?? "")}</span></div>{data?.capabilities.update ? <button className="button secondary icon-button" type="button" onClick={() => void removeWorkItem(workItem.id)} disabled={saving} title="Remove linked work" aria-label={`Remove ${reference}`}><Trash2 size={15} aria-hidden="true" /></button> : null}</div>; })}{!selected.workItems.length ? <span className="muted">No linked work items.</span> : null}</div>
               {data?.capabilities.update ? <form className="projects-inline-form projects-link-form" onSubmit={(event) => void addWorkItem(event)}><select className="input" value={linkType} onChange={(event) => setLinkType(event.target.value as "TICKET" | "EVENT_SERVICE")}><option value="TICKET">Ticket</option><option value="EVENT_SERVICE">Event request</option></select><input className="input" value={linkReference} onChange={(event) => setLinkReference(event.target.value)} placeholder={linkType === "TICKET" ? "AIT-100001 or ID" : "EVT-100001 or ID"} /><button className="button secondary" type="submit" disabled={saving || !linkReference.trim()}><Plus size={15} aria-hidden="true" /> Link</button></form> : null}
+            </div>
+
+            <div className="projects-detail-section"><div className="projects-detail-section-heading"><AlertTriangle size={17} aria-hidden="true" /><div><h3>Project dependencies</h3><p>Work that must be completed before this project can close safely.</p></div></div>
+              <div className="projects-dependency-list">{selected.dependencies.map((dependency) => <div className="projects-dependency-row" key={dependency.id}><div><strong>{dependency.dependsOnProject.name}</strong><span>{label(dependency.dependsOnProject.status)} · Target {formatDate(dependency.dependsOnProject.targetDate)}</span></div>{data?.capabilities.update ? <button className="button secondary icon-button" type="button" onClick={() => void removeDependency(dependency.id)} disabled={saving} title="Remove dependency" aria-label={`Remove ${dependency.dependsOnProject.name}`}><Trash2 size={15} aria-hidden="true" /></button> : null}</div>)}{!selected.dependencies.length ? <span className="muted">No project dependencies.</span> : null}</div>
+              {data?.capabilities.update && availableDependencies.length ? <form className="projects-inline-form projects-dependency-form" onSubmit={(event) => void addDependency(event)}><select className="input" value={dependencyProjectId} onChange={(event) => setDependencyProjectId(event.target.value)}><option value="">Select prerequisite project</option>{availableDependencies.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select><button className="button secondary" type="submit" disabled={saving || !dependencyProjectId}><Plus size={15} aria-hidden="true" /> Add dependency</button></form> : null}
             </div>
           </>}
         </section>

@@ -19,4 +19,23 @@ describe("ProjectsService", () => {
     expect(prisma.projectWorkItem.create).toHaveBeenCalledWith(expect.objectContaining({ data: { projectId: "project-1", ticketId: "ticket-1" } }));
     expect(auditLogs.create).toHaveBeenCalledWith(expect.objectContaining({ action: "project.work_item_added", entityId: "work-1" }));
   });
+
+  it("rejects a dependency that would close a transitive cycle", async () => {
+    const prisma = {
+      project: {
+        findFirst: jest.fn()
+          .mockResolvedValueOnce({ id: "project-1", name: "Current project" })
+          .mockResolvedValueOnce({ id: "project-2", name: "Prerequisite" })
+      },
+      projectDependency: {
+        findMany: jest.fn().mockResolvedValue([{ dependsOnProjectId: "project-1" }]),
+        create: jest.fn()
+      }
+    };
+    const service = new ProjectsService(prisma as never, { create: jest.fn() } as never);
+    const user = { id: "user-1", organizationId: "org-1", email: "manager@example.com", firstName: "Project", lastName: "Manager", forcePasswordChange: false, permissions: ["projects.update"] };
+
+    await expect(service.addDependency("project-1", { dependsOnProjectId: "project-2" }, user)).rejects.toThrow("dependency cycle");
+    expect(prisma.projectDependency.create).not.toHaveBeenCalled();
+  });
 });

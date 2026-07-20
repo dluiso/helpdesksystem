@@ -8697,13 +8697,15 @@ a.dashboard-list-row:hover {
 }
 
 .projects-milestone-list,
-.projects-work-list {
+.projects-work-list,
+.projects-dependency-list {
   display: grid;
   gap: 8px;
 }
 
 .projects-milestone-row,
-.projects-work-row {
+.projects-work-row,
+.projects-dependency-row {
   justify-content: space-between;
   gap: 10px;
   min-height: 48px;
@@ -8714,7 +8716,8 @@ a.dashboard-list-row:hover {
 }
 
 .projects-milestone-row > div,
-.projects-work-row > div {
+.projects-work-row > div,
+.projects-dependency-row > div {
   display: grid;
   min-width: 0;
   gap: 2px;
@@ -8742,6 +8745,41 @@ a.dashboard-list-row:hover {
 
 .projects-link-form {
   grid-template-columns: 145px minmax(0, 1fr) auto;
+}
+
+.projects-dependency-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.projects-dependency-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 48px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+}
+
+.projects-dependency-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 18px 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 55%, var(--line));
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface-raised));
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.projects-dependency-alert svg {
+  flex: 0 0 auto;
+  color: var(--warning);
 }
 
 .projects-empty {

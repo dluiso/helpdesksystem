@@ -3,7 +3,7 @@ import { Prisma, ProjectMilestoneStatus, ProjectStatus } from "@prisma/client";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
-import { AddProjectWorkItemDto, CreateProjectDto, CreateProjectMilestoneDto, UpdateProjectDto, UpdateProjectMilestoneDto } from "./dto/project.dto";
+import { AddProjectDependencyDto, AddProjectWorkItemDto, CreateProjectDto, CreateProjectMilestoneDto, UpdateProjectDto, UpdateProjectMilestoneDto } from "./dto/project.dto";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -189,6 +189,36 @@ export class ProjectsService {
     return { deleted: true };
   }
 
+  async addDependency(projectId: string, input: AddProjectDependencyDto, user: AuthenticatedUser) {
+    await this.ensureProject(projectId, user);
+    if (projectId === input.dependsOnProjectId) throw new BadRequestException("A project cannot depend on itself.");
+    const prerequisite = await this.ensureProject(input.dependsOnProjectId, user);
+    if (await this.hasDependencyPath(prerequisite.id, projectId)) {
+      throw new BadRequestException("This dependency would create a project dependency cycle.");
+    }
+
+    try {
+      const dependency = await this.prisma.projectDependency.create({
+        data: { projectId, dependsOnProjectId: prerequisite.id },
+        include: { dependsOnProject: { select: { id: true, name: true, status: true, health: true, targetDate: true } } }
+      });
+      await this.auditLogs.create({ organizationId: user.organizationId, userId: user.id, entityType: "ProjectDependency", entityId: dependency.id, action: "project.dependency_added", metadata: { projectId, dependsOnProjectId: prerequisite.id } });
+      return dependency;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") throw new ConflictException("This project dependency already exists.");
+      throw error;
+    }
+  }
+
+  async removeDependency(projectId: string, dependencyId: string, user: AuthenticatedUser) {
+    await this.ensureProject(projectId, user);
+    const dependency = await this.prisma.projectDependency.findFirst({ where: { id: dependencyId, projectId } });
+    if (!dependency) throw new NotFoundException("Project dependency was not found.");
+    await this.prisma.projectDependency.delete({ where: { id: dependency.id } });
+    await this.auditLogs.create({ organizationId: user.organizationId, userId: user.id, entityType: "ProjectDependency", entityId: dependency.id, action: "project.dependency_removed", metadata: { projectId, dependsOnProjectId: dependency.dependsOnProjectId } });
+    return { deleted: true };
+  }
+
   private async ensureProject(projectId: string, user: AuthenticatedUser) {
     const project = await this.prisma.project.findFirst({ where: { id: projectId, organizationId: user.organizationId, deletedAt: null }, include: this.projectInclude() });
     if (!project) throw new NotFoundException("Project was not found.");
@@ -201,6 +231,21 @@ export class ProjectsService {
     const client = await this.prisma.client.findFirst({ where: { id: clientId, organizationId, deletedAt: null }, select: { id: true } });
     if (!client) throw new BadRequestException("Client was not found.");
     return client.id;
+  }
+
+  private async hasDependencyPath(startProjectId: string, targetProjectId: string) {
+    const visited = new Set<string>();
+    let frontier = [startProjectId];
+    while (frontier.length) {
+      const current = frontier.filter((id) => !visited.has(id));
+      if (!current.length) return false;
+      current.forEach((id) => visited.add(id));
+      const dependencies = await this.prisma.projectDependency.findMany({ where: { projectId: { in: current } }, select: { dependsOnProjectId: true } });
+      const next = dependencies.map((dependency) => dependency.dependsOnProjectId);
+      if (next.includes(targetProjectId)) return true;
+      frontier = next;
+    }
+    return false;
   }
 
   private optionalTrim(value: string | null | undefined) {
@@ -221,7 +266,8 @@ export class ProjectsService {
       client: { select: { id: true, name: true } },
       owner: { select: { id: true, firstName: true, lastName: true } },
       milestones: { orderBy: [{ dueAt: "asc" }, { createdAt: "asc" }] },
-      workItems: { include: this.workItemInclude(), orderBy: { createdAt: "desc" } }
+      workItems: { include: this.workItemInclude(), orderBy: { createdAt: "desc" } },
+      dependencies: { include: { dependsOnProject: { select: { id: true, name: true, status: true, health: true, targetDate: true } } }, orderBy: { createdAt: "asc" } }
     };
   }
 
