@@ -86,4 +86,35 @@ describe("OperationsService", () => {
 
     expect(workload).toEqual([expect.objectContaining({ owner: "Alex Example", operational: 4, projectCommitments: 3, total: 7, attention: 1, capacityStatus: "OVER_CAPACITY" })]);
   });
+
+  it("surfaces open project decisions in the operational decision queue", async () => {
+    const prisma = {
+      ticket: { findMany: jest.fn().mockResolvedValue([]) },
+      eventServiceRequest: { findMany: jest.fn().mockResolvedValue([]) },
+      eventServiceTask: { findMany: jest.fn().mockResolvedValue([]) },
+      project: {
+        findMany: jest.fn().mockResolvedValue([{
+          id: "project-1",
+          name: "Network rollout",
+          status: "ACTIVE",
+          health: "AT_RISK",
+          targetDate: null,
+          updatedAt: new Date("2026-07-20T12:00:00.000Z"),
+          client: { name: "Avidity" },
+          owner: { firstName: "Alex", lastName: "Example" },
+          milestones: [],
+          decisions: [{ id: "decision-1", title: "Confirm maintenance window", description: "Coordinate the client window.", status: "OPEN", dueAt: null, createdAt: new Date("2026-07-19T12:00:00.000Z"), owner: { firstName: "Blair", lastName: "Example" } }],
+          dependencies: []
+        }])
+      }
+    };
+    const settings = { getOperationsSettings: jest.fn().mockResolvedValue({ capacityBaseline: 12, capacityWarningPercent: 75, dueSoonDays: 7 }) };
+    const service = new OperationsService(prisma as never, settings as never);
+    const user = { id: "user-1", organizationId: "org-1", email: "manager@example.com", firstName: "Project", lastName: "Manager", forcePasswordChange: false, permissions: ["projects.view"] };
+
+    const overview = await service.overview(user);
+
+    expect(overview.summary.openProjectDecisions).toBe(1);
+    expect(overview.decisions).toEqual([expect.objectContaining({ id: "decision-1", projectName: "Network rollout", owner: "Blair Example", attention: true, href: "/projects?project=project-1" })]);
+  });
 });

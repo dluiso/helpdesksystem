@@ -9231,6 +9231,7 @@ a.dashboard-list-row:hover {
 }
 
 .operations-queue-panel,
+.operations-decision-panel,
 .operations-workload-panel {
   padding: 0;
   overflow: hidden;
@@ -9263,6 +9264,23 @@ a.dashboard-list-row:hover {
 
 .operations-table td {
   vertical-align: middle;
+}
+
+.operations-decision-table {
+  min-width: 1040px;
+}
+
+.operations-decision-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.operations-decision-controls .input {
+  min-height: 34px;
+  max-width: 160px;
+  padding: 5px 25px 5px 8px;
+  font-size: 12px;
 }
 
 .operations-work-cell a {
@@ -9389,6 +9407,11 @@ a.dashboard-list-row:hover {
     grid-template-columns: auto auto minmax(160px, 1fr) auto;
   }
 
+  .operations-decision-controls {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
   .operations-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -9402,6 +9425,15 @@ a.dashboard-list-row:hover {
   .operations-toolbar-controls .segmented-control,
   .operations-search {
     grid-column: 1 / -1;
+  }
+
+  .operations-decision-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .operations-decision-controls .input {
+    max-width: none;
   }
 
   .operations-toolbar-controls .segmented-control {

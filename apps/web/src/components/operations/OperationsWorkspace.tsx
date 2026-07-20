@@ -1,12 +1,13 @@
 "use client";
 
-import { AlertTriangle, CalendarClock, Check, CircleAlert, FolderKanban, RefreshCw, Ticket, UsersRound } from "lucide-react";
+import { AlertTriangle, CalendarClock, Check, CircleAlert, ClipboardCheck, FolderKanban, RefreshCw, Ticket, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
 type WorkKind = "TICKET" | "EVENT" | "EVENT_TASK" | "PROJECT";
 type Period = "ALL" | "TODAY" | "7_DAYS" | "30_DAYS";
+type DecisionStatus = "OPEN" | "IN_PROGRESS";
 
 interface WorkItem {
   id: string;
@@ -27,6 +28,21 @@ interface WorkItem {
   internalOwners: string[];
 }
 
+interface OperationsDecision {
+  id: string;
+  title: string;
+  description: string | null;
+  status: DecisionStatus;
+  dueAt: string | null;
+  createdAt: string;
+  owner: string | null;
+  projectId: string;
+  projectName: string;
+  projectHealth: string;
+  attention: boolean;
+  href: string;
+}
+
 interface OperationsOverview {
   generatedAt: string;
   summary: {
@@ -36,6 +52,7 @@ interface OperationsOverview {
     upcomingEvents: number;
     activeProjects: number;
     atRiskProjects: number;
+    openProjectDecisions: number;
     projectCommitments: number;
     unassignedProjectCommitments: number;
     blockedTasks: number;
@@ -52,6 +69,7 @@ interface OperationsOverview {
     updateEventStatus: boolean;
   };
   items: WorkItem[];
+  decisions: OperationsDecision[];
   workload: Array<{ owner: string; operational: number; projectCommitments: number; total: number; attention: number; capacityPercent: number; capacityStatus: "AVAILABLE" | "NEAR_CAPACITY" | "OVER_CAPACITY" }>;
 }
 
@@ -100,6 +118,9 @@ export function OperationsWorkspace() {
   const [error, setError] = useState("");
   const [statusDrafts, setStatusDrafts] = useState<Record<string, string>>({});
   const [updatingItemId, setUpdatingItemId] = useState<string | null>(null);
+  const [decisionOwner, setDecisionOwner] = useState("ALL");
+  const [decisionStatus, setDecisionStatus] = useState<"ALL" | DecisionStatus>("ALL");
+  const [decisionAttentionOnly, setDecisionAttentionOnly] = useState(true);
 
   const load = async () => {
     setLoading(true);
@@ -135,6 +156,12 @@ export function OperationsWorkspace() {
   }, [attentionOnly, overview, period, search]);
 
   const canUpdateStatus = (item: WorkItem) => item.kind === "TICKET" ? Boolean(overview?.capabilities.updateTicketStatus) : item.kind === "PROJECT" ? false : Boolean(overview?.capabilities.updateEventStatus);
+
+  const decisionOwners = useMemo(() => [...new Set((overview?.decisions ?? []).map((decision) => decision.owner).filter((owner): owner is string => Boolean(owner)))].sort((left, right) => left.localeCompare(right)), [overview?.decisions]);
+  const visibleDecisions = useMemo(() => (overview?.decisions ?? []).filter((decision) => {
+    const ownerMatches = decisionOwner === "ALL" || (decisionOwner === "UNASSIGNED" ? !decision.owner : decision.owner === decisionOwner);
+    return ownerMatches && (decisionStatus === "ALL" || decision.status === decisionStatus) && (!decisionAttentionOnly || decision.attention);
+  }), [decisionAttentionOnly, decisionOwner, decisionStatus, overview?.decisions]);
 
   const statusOptions = (item: WorkItem) => {
     if (item.kind === "TICKET") return ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_TECHNICIAN", "WAITING_ON_THIRD_PARTY", "RESOLVED", "CLOSED", "REOPENED", "CANCELLED"];
@@ -200,6 +227,7 @@ export function OperationsWorkspace() {
         <SummaryCard icon={CircleAlert} title="Needs attention" value={overview?.summary.attentionItems ?? 0} note={`${overview?.summary.overdueItems ?? 0} overdue work items`} tone="attention" />
         <SummaryCard icon={Ticket} title="Unassigned tickets" value={overview?.summary.unassignedTickets ?? 0} note={`${overview?.summary.activeTickets ?? 0} active tickets`} tone={(overview?.summary.unassignedTickets ?? 0) > 0 ? "attention" : "default"} />
         <SummaryCard icon={FolderKanban} title="Project commitments" value={overview?.summary.projectCommitments ?? 0} note={`${overview?.summary.atRiskProjects ?? 0} at risk · ${overview?.summary.unassignedProjectCommitments ?? 0} unassigned`} tone={(overview?.summary.atRiskProjects ?? 0) > 0 || (overview?.summary.unassignedProjectCommitments ?? 0) > 0 ? "attention" : "default"} />
+        <SummaryCard icon={ClipboardCheck} title="Open decisions" value={overview?.summary.openProjectDecisions ?? 0} note="Project actions needing ownership or closure" tone={(overview?.summary.openProjectDecisions ?? 0) > 0 ? "attention" : "default"} />
         <SummaryCard icon={CalendarClock} title="Capacity alerts" value={overview?.summary.overCapacity ?? 0} note={`${overview?.summary.nearCapacity ?? 0} nearing ${overview?.summary.capacityWarningPercent ?? 75}% of capacity`} tone={(overview?.summary.overCapacity ?? 0) > 0 ? "attention" : "default"} />
         <SummaryCard icon={AlertTriangle} title="Blocked tasks" value={overview?.summary.blockedTasks ?? 0} note="Event service tasks requiring follow-up" tone={(overview?.summary.blockedTasks ?? 0) > 0 ? "attention" : "default"} />
       </section>
@@ -250,6 +278,21 @@ export function OperationsWorkspace() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="panel operations-decision-panel">
+        <div className="section-heading operations-section-heading">
+          <div><h2>Decision queue</h2><p>{loading ? "Refreshing project decisions..." : `${visibleDecisions.length} open decisions in view`}</p></div>
+          <div className="operations-decision-controls">
+            <select className="input" value={decisionStatus} onChange={(event) => setDecisionStatus(event.target.value as "ALL" | DecisionStatus)} aria-label="Filter decision status"><option value="ALL">All statuses</option><option value="OPEN">Open</option><option value="IN_PROGRESS">In progress</option></select>
+            <select className="input" value={decisionOwner} onChange={(event) => setDecisionOwner(event.target.value)} aria-label="Filter decision owner"><option value="ALL">All owners</option><option value="UNASSIGNED">Unassigned</option>{decisionOwners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}</select>
+            <label className="operations-attention-toggle"><input type="checkbox" checked={decisionAttentionOnly} onChange={(event) => setDecisionAttentionOnly(event.target.checked)} />Needs attention</label>
+          </div>
+        </div>
+        <div className="operations-table-scroll"><table className="table operations-table operations-decision-table"><thead><tr><th>Decision / action</th><th>Project</th><th>Owner</th><th>Status</th><th>Due</th><th>Project risk</th><th></th></tr></thead><tbody>
+          {visibleDecisions.map((decision) => <tr key={decision.id}><td><div className="operations-work-cell"><strong title={decision.title}>{decision.title}</strong>{decision.description ? <span>{decision.description}</span> : null}</div></td><td><Link href={decision.href}>{decision.projectName}</Link></td><td>{decision.owner ?? <span className="operations-unassigned">Unassigned</span>}</td><td>{label(decision.status)}</td><td>{formatDate(decision.dueAt)}</td><td>{decision.attention ? <span className="operations-unassigned">Needs attention</span> : label(decision.projectHealth)}</td><td><Link className="button secondary" href={decision.href}>Open Project</Link></td></tr>)}
+          {!loading && !visibleDecisions.length ? <tr><td colSpan={7}><div className="dashboard-empty">No open project decisions match these filters.</div></td></tr> : null}
+        </tbody></table></div>
       </section>
 
       <section className="panel operations-workload-panel">

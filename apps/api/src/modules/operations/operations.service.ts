@@ -34,6 +34,21 @@ export interface OperationsWorkItem {
   internalOwners: string[];
 }
 
+export interface OperationsDecision {
+  id: string;
+  title: string;
+  description: string | null;
+  status: ProjectDecisionStatus;
+  dueAt: Date | null;
+  createdAt: Date;
+  owner: string | null;
+  projectId: string;
+  projectName: string;
+  projectHealth: ProjectHealth;
+  attention: boolean;
+  href: string;
+}
+
 @Injectable()
 export class OperationsService {
   constructor(
@@ -123,8 +138,12 @@ export class OperationsService {
               decisions: {
                 where: { status: { notIn: [ProjectDecisionStatus.RESOLVED, ProjectDecisionStatus.CANCELLED] } },
                 select: {
+                  id: true,
+                  title: true,
+                  description: true,
                   status: true,
                   dueAt: true,
+                  createdAt: true,
                   owner: { select: { firstName: true, lastName: true } }
                 }
               },
@@ -257,6 +276,26 @@ export class OperationsService {
         internalOwners: []
       };
     });
+    const decisions: OperationsDecision[] = projects
+      .flatMap((project) => project.decisions.map((decision) => {
+        const overdue = decision.dueAt !== null && decision.dueAt < now;
+        return {
+          id: decision.id,
+          title: decision.title,
+          description: decision.description,
+          status: decision.status,
+          dueAt: decision.dueAt,
+          createdAt: decision.createdAt,
+          owner: decision.owner ? this.userName(decision.owner) : null,
+          projectId: project.id,
+          projectName: project.name,
+          projectHealth: project.health,
+          attention: decision.status === ProjectDecisionStatus.OPEN || overdue || !decision.owner || project.health !== ProjectHealth.ON_TRACK,
+          href: `/projects?project=${project.id}`
+        };
+      }))
+      .sort((left, right) => Number(right.attention) - Number(left.attention) || this.dateRank(left.dueAt, left.createdAt) - this.dateRank(right.dueAt, right.createdAt))
+      .slice(0, 80);
 
     const allItems = [...ticketItems, ...requestItems, ...taskItems, ...projectItems];
     const items = allItems
@@ -273,6 +312,7 @@ export class OperationsService {
         upcomingEvents: requestItems.filter((item) => item.dueAt && item.dueAt >= now && item.dueAt <= nextWeek).length,
         activeProjects: projectItems.length,
         atRiskProjects: projectItems.filter((item) => item.attention).length,
+        openProjectDecisions: decisions.length,
         projectCommitments: projectCommitments.length,
         unassignedProjectCommitments,
         blockedTasks: taskItems.filter((item) => item.status === EventServiceTaskStatus.BLOCKED).length,
@@ -289,6 +329,7 @@ export class OperationsService {
         updateEventStatus: user.permissions.includes("event_services.update")
       },
       items,
+      decisions,
       workload
     };
   }

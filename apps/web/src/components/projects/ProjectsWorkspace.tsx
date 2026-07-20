@@ -2,6 +2,7 @@
 
 import { AlertTriangle, CalendarRange, ClipboardCheck, FolderKanban, Link2, Milestone, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
@@ -118,6 +119,8 @@ function draftFromProject(project: Project): ProjectDraft {
 }
 
 export function ProjectsWorkspace() {
+  const searchParams = useSearchParams();
+  const requestedProjectId = searchParams.get("project");
   const [data, setData] = useState<ProjectsResponse | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ProjectDraft>(emptyDraft);
@@ -162,7 +165,7 @@ export function ProjectsWorkspace() {
     try {
       const response = await apiFetch<ProjectsResponse>("/projects");
       setData(response);
-      const next = response.items.find((project) => project.id === (preferredProjectId ?? selectedId)) ?? response.items[0] ?? null;
+      const next = response.items.find((project) => project.id === (preferredProjectId ?? selectedId ?? requestedProjectId)) ?? response.items[0] ?? null;
       selectProject(next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to load projects.");
