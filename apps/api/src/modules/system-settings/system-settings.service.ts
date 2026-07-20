@@ -5,6 +5,7 @@ import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { LocalFileStorageProvider } from "../file-storage/providers/local-file-storage.provider";
 import { PrismaService } from "../prisma/prisma.service";
 import { UpdateGeneralSettingsDto } from "./dto/update-general-settings.dto";
+import { UpdateOperationsSettingsDto } from "./dto/update-operations-settings.dto";
 import { UpdateSecuritySettingsDto } from "./dto/update-security-settings.dto";
 
 const BRANDING_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/x-icon", "image/vnd.microsoft.icon"]);
@@ -232,6 +233,36 @@ export class SystemSettingsService {
     });
 
     return this.toGeneralSettings(updated);
+  }
+
+  async getOperationsSettings(user: AuthenticatedUser) {
+    const settings = await this.getOrCreateSettings(user.organizationId);
+    return this.toOperationsSettings(settings);
+  }
+
+  async updateOperationsSettings(user: AuthenticatedUser, input: UpdateOperationsSettingsDto) {
+    const updated = await this.prisma.systemSetting.update({
+      where: { organizationId: user.organizationId },
+      data: {
+        operationsCapacityBaseline: input.capacityBaseline,
+        operationsCapacityWarningPercent: input.capacityWarningPercent,
+        operationsDueSoonDays: input.dueSoonDays
+      }
+    });
+
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "system_settings",
+      entityId: updated.id,
+      action: "system_settings.operations_updated",
+      metadata: {
+        capacityBaseline: updated.operationsCapacityBaseline,
+        capacityWarningPercent: updated.operationsCapacityWarningPercent,
+        dueSoonDays: updated.operationsDueSoonDays
+      }
+    });
+
+    return this.toOperationsSettings(updated);
   }
 
   async getSecuritySettings(user: AuthenticatedUser) {
@@ -669,6 +700,18 @@ export class SystemSettingsService {
       turnstileSecretReference: settings.turnstileSecretReference,
       turnstileProtectLogin: settings.turnstileProtectLogin,
       turnstileProtectPasswordReset: settings.turnstileProtectPasswordReset
+    };
+  }
+
+  private toOperationsSettings(settings: {
+    operationsCapacityBaseline: number;
+    operationsCapacityWarningPercent: number;
+    operationsDueSoonDays: number;
+  }) {
+    return {
+      capacityBaseline: settings.operationsCapacityBaseline,
+      capacityWarningPercent: settings.operationsCapacityWarningPercent,
+      dueSoonDays: settings.operationsDueSoonDays
     };
   }
 

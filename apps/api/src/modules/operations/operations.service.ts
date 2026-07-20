@@ -2,12 +2,11 @@ import { Injectable } from "@nestjs/common";
 import { EventServiceRequestStatus, EventServiceTaskStatus, TicketPriority, TicketStatus } from "@prisma/client";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
+import { SystemSettingsService } from "../system-settings/system-settings.service";
 
 const CLOSED_TICKET_STATUSES = [TicketStatus.RESOLVED, TicketStatus.CLOSED, TicketStatus.CANCELLED, TicketStatus.MERGED];
 const CLOSED_EVENT_STATUSES = [EventServiceRequestStatus.COMPLETED, EventServiceRequestStatus.CANCELLED, EventServiceRequestStatus.CONVERTED_TO_TICKET];
 const CLOSED_TASK_STATUSES = [EventServiceTaskStatus.DONE, EventServiceTaskStatus.CANCELLED];
-const CAPACITY_BASELINE = 12;
-
 type WorkKind = "TICKET" | "EVENT" | "EVENT_TASK";
 type CapacityStatus = "AVAILABLE" | "NEAR_CAPACITY" | "OVER_CAPACITY";
 
@@ -31,12 +30,16 @@ export interface OperationsWorkItem {
 
 @Injectable()
 export class OperationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly systemSettings: SystemSettingsService
+  ) {}
 
   async overview(user: AuthenticatedUser) {
     const now = new Date();
+    const settings = await this.systemSettings.getOperationsSettings(user);
     const nextWeek = new Date(now);
-    nextWeek.setDate(nextWeek.getDate() + 7);
+    nextWeek.setDate(nextWeek.getDate() + settings.dueSoonDays);
 
     const [tickets, requests, tasks] = await Promise.all([
       this.prisma.ticket.findMany({
@@ -164,7 +167,7 @@ export class OperationsService {
     const items = allItems
       .sort((left, right) => Number(right.attention) - Number(left.attention) || this.priorityRank(right.priority) - this.priorityRank(left.priority) || this.dateRank(left.dueAt, left.updatedAt) - this.dateRank(right.dueAt, right.updatedAt))
       .slice(0, 160);
-    const workload = this.workload(allItems);
+    const workload = this.workload(allItems, settings.capacityBaseline, settings.capacityWarningPercent);
 
     return {
       generatedAt: now,
@@ -178,7 +181,9 @@ export class OperationsService {
         overdueItems: allItems.filter((item) => item.dueAt && item.dueAt < now).length,
         overCapacity: workload.filter((entry) => entry.capacityStatus === "OVER_CAPACITY").length,
         nearCapacity: workload.filter((entry) => entry.capacityStatus === "NEAR_CAPACITY").length,
-        capacityBaseline: CAPACITY_BASELINE
+        capacityBaseline: settings.capacityBaseline,
+        capacityWarningPercent: settings.capacityWarningPercent,
+        dueSoonDays: settings.dueSoonDays
       },
       capabilities: {
         updateTicketStatus: user.permissions.includes("tickets.assign"),
@@ -206,7 +211,7 @@ export class OperationsService {
     return (dueAt ?? updatedAt).getTime();
   }
 
-  private workload(items: OperationsWorkItem[]) {
+  private workload(items: OperationsWorkItem[], capacityBaseline: number, capacityWarningPercent: number) {
     const work = new Map<string, { owner: string; total: number; attention: number }>();
     for (const item of items) {
       for (const owner of item.internalOwners) {
@@ -218,8 +223,9 @@ export class OperationsService {
     }
     return [...work.values()]
       .map((entry) => {
-        const capacityStatus: CapacityStatus = entry.total >= CAPACITY_BASELINE ? "OVER_CAPACITY" : entry.total >= Math.ceil(CAPACITY_BASELINE * 0.75) ? "NEAR_CAPACITY" : "AVAILABLE";
-        return { ...entry, capacityPercent: Math.min(100, Math.round((entry.total / CAPACITY_BASELINE) * 100)), capacityStatus };
+        const warningThreshold = Math.ceil(capacityBaseline * (capacityWarningPercent / 100));
+        const capacityStatus: CapacityStatus = entry.total >= capacityBaseline ? "OVER_CAPACITY" : entry.total >= warningThreshold ? "NEAR_CAPACITY" : "AVAILABLE";
+        return { ...entry, capacityPercent: Math.min(100, Math.round((entry.total / capacityBaseline) * 100)), capacityStatus };
       })
       .sort((left, right) => this.capacityRank(right.capacityStatus) - this.capacityRank(left.capacityStatus) || right.attention - left.attention || right.total - left.total || left.owner.localeCompare(right.owner))
       .slice(0, 12);

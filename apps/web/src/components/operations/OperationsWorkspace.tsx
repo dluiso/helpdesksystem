@@ -39,6 +39,8 @@ interface OperationsOverview {
     overCapacity: number;
     nearCapacity: number;
     capacityBaseline: number;
+    capacityWarningPercent: number;
+    dueSoonDays: number;
   };
   capabilities: {
     updateTicketStatus: boolean;
@@ -191,7 +193,7 @@ export function OperationsWorkspace() {
       <section className="operations-summary-grid" aria-label="Operations summary">
         <SummaryCard icon={CircleAlert} title="Needs attention" value={overview?.summary.attentionItems ?? 0} note={`${overview?.summary.overdueItems ?? 0} overdue work items`} tone="attention" />
         <SummaryCard icon={Ticket} title="Unassigned tickets" value={overview?.summary.unassignedTickets ?? 0} note={`${overview?.summary.activeTickets ?? 0} active tickets`} tone={(overview?.summary.unassignedTickets ?? 0) > 0 ? "attention" : "default"} />
-        <SummaryCard icon={CalendarClock} title="Capacity alerts" value={overview?.summary.overCapacity ?? 0} note={`${overview?.summary.nearCapacity ?? 0} nearing the active-work baseline`} tone={(overview?.summary.overCapacity ?? 0) > 0 ? "attention" : "default"} />
+        <SummaryCard icon={CalendarClock} title="Capacity alerts" value={overview?.summary.overCapacity ?? 0} note={`${overview?.summary.nearCapacity ?? 0} nearing ${overview?.summary.capacityWarningPercent ?? 75}% of capacity`} tone={(overview?.summary.overCapacity ?? 0) > 0 ? "attention" : "default"} />
         <SummaryCard icon={AlertTriangle} title="Blocked tasks" value={overview?.summary.blockedTasks ?? 0} note="Event service tasks requiring follow-up" tone={(overview?.summary.blockedTasks ?? 0) > 0 ? "attention" : "default"} />
       </section>
 
@@ -244,7 +246,7 @@ export function OperationsWorkspace() {
       </section>
 
       <section className="panel operations-workload-panel">
-        <div className="section-heading operations-section-heading"><div><h2>Capacity and work distribution</h2><p>Active assignments per internal specialist. Baseline: {overview?.summary.capacityBaseline ?? 12} items.</p></div><UsersRound size={19} aria-hidden="true" /></div>
+        <div className="section-heading operations-section-heading"><div><h2>Capacity and work distribution</h2><p>Active assignments per internal specialist. Baseline: {overview?.summary.capacityBaseline ?? 12} items; warning at {overview?.summary.capacityWarningPercent ?? 75}%.</p></div><UsersRound size={19} aria-hidden="true" /></div>
         <div className="operations-workload-list">
           {(overview?.workload ?? []).map((entry) => <div className={`operations-workload-row ${entry.capacityStatus.toLowerCase().replace("_", "-")}`} key={entry.owner}><strong>{entry.owner}</strong><span>{entry.total}/{overview?.summary.capacityBaseline ?? 12} active</span><small>{entry.attention} need attention</small><em>{label(entry.capacityStatus)}</em><div className="operations-capacity-meter" aria-label={`${entry.owner} capacity ${entry.capacityPercent}%`}><span style={{ width: `${entry.capacityPercent}%` }} /></div></div>)}
           {!loading && !overview?.workload.length ? <div className="dashboard-empty">No assigned active work.</div> : null}

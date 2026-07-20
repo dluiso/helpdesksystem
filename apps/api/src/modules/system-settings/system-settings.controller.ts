@@ -9,6 +9,7 @@ import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { RequirePermissions } from "../permissions/decorators/require-permissions.decorator";
 import { PermissionsGuard } from "../permissions/guards/permissions.guard";
 import { UpdateGeneralSettingsDto } from "./dto/update-general-settings.dto";
+import { UpdateOperationsSettingsDto } from "./dto/update-operations-settings.dto";
 import { UpdateSecuritySettingsDto } from "./dto/update-security-settings.dto";
 import { SystemSettingsService } from "./system-settings.service";
 import { singleFileUploadOptions } from "../file-storage/upload-limits";
@@ -54,6 +55,20 @@ export class SystemSettingsController {
   @RequirePermissions("system_settings.update")
   updateGeneralSettings(@CurrentUser() user: AuthenticatedUser, @Body() body: UpdateGeneralSettingsDto) {
     return this.systemSettingsService.updateGeneralSettings(user, body);
+  }
+
+  @Get("operations")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("system_settings.view")
+  getOperationsSettings(@CurrentUser() user: AuthenticatedUser) {
+    return this.systemSettingsService.getOperationsSettings(user);
+  }
+
+  @Patch("operations")
+  @UseGuards(SessionAuthGuard, PermissionsGuard)
+  @RequirePermissions("system_settings.update")
+  updateOperationsSettings(@CurrentUser() user: AuthenticatedUser, @Body() body: UpdateOperationsSettingsDto) {
+    return this.systemSettingsService.updateOperationsSettings(user, body);
   }
 
   @Get("security")

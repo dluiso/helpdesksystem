@@ -378,6 +378,12 @@ interface SecuritySettings {
   turnstileProtectPasswordReset: boolean;
 }
 
+interface OperationsSettings {
+  capacityBaseline: number;
+  capacityWarningPercent: number;
+  dueSoonDays: number;
+}
+
 type SecurityPostureStatus = "ok" | "warning" | "info";
 
 interface SecurityPostureCheck {
@@ -513,6 +519,7 @@ type ActiveSection =
   | "knowledge"
   | "spam"
   | "maintenance"
+  | "operations"
   | "logs"
   | "security"
   | "ai"
@@ -696,6 +703,12 @@ const DEFAULT_SECURITY_SETTINGS: SecuritySettings = {
   turnstileSecretReference: "",
   turnstileProtectLogin: false,
   turnstileProtectPasswordReset: false
+};
+
+const DEFAULT_OPERATIONS_SETTINGS: OperationsSettings = {
+  capacityBaseline: 12,
+  capacityWarningPercent: 75,
+  dueSoonDays: 7
 };
 
 const EMPTY_RULE_DRAFT = {
@@ -1001,6 +1014,8 @@ export function SettingsWorkspace() {
   const [generalDraft, setGeneralDraft] = useState<GeneralSettings>(DEFAULT_GENERAL_SETTINGS);
   const [securitySettings, setSecuritySettings] = useState<SecuritySettings | null>(null);
   const [securityDraft, setSecurityDraft] = useState<SecuritySettings>(DEFAULT_SECURITY_SETTINGS);
+  const [operationsSettings, setOperationsSettings] = useState<OperationsSettings | null>(null);
+  const [operationsDraft, setOperationsDraft] = useState<OperationsSettings>(DEFAULT_OPERATIONS_SETTINGS);
   const [securityPosture, setSecurityPosture] = useState<SecurityPosture | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLogResult | null>(null);
   const [expandedAuditLogId, setExpandedAuditLogId] = useState<string | null>(null);
@@ -1244,6 +1259,12 @@ export function SettingsWorkspace() {
     setSecurityDraft(merged);
   }
 
+  function applyOperationsSettings(settings: OperationsSettings) {
+    const merged = { ...DEFAULT_OPERATIONS_SETTINGS, ...settings };
+    setOperationsSettings(merged);
+    setOperationsDraft(merged);
+  }
+
   function securitySettingsPayload(settings: SecuritySettings) {
     const turnstileSecretReference = settings.turnstileSecretReference.trim();
     return {
@@ -1357,9 +1378,10 @@ export function SettingsWorkspace() {
       setSpamEntries(spamResult.status === "fulfilled" ? spamResult.value : []);
       setMaintenanceSummary(maintenanceResult.status === "fulfilled" ? maintenanceResult.value : null);
       setMaintenanceDraft(maintenanceResult.status === "fulfilled" ? String(maintenanceResult.value.recycleBinRetentionDays) : "7");
-      const [generalResult, securityResult, securityPostureResult, auditResult] = await Promise.allSettled([
+      const [generalResult, securityResult, operationsResult, securityPostureResult, auditResult] = await Promise.allSettled([
         apiFetch<GeneralSettings>("/system-settings/general"),
         apiFetch<SecuritySettings>("/system-settings/security"),
+        apiFetch<OperationsSettings>("/system-settings/operations"),
         apiFetch<SecurityPosture>("/system-settings/security-posture"),
         loadAuditLogs()
       ]);
@@ -1368,6 +1390,9 @@ export function SettingsWorkspace() {
       }
       if (securityResult.status === "fulfilled") {
         applySecuritySettings(securityResult.value);
+      }
+      if (operationsResult.status === "fulfilled") {
+        applyOperationsSettings(operationsResult.value);
       }
       setSecurityPosture(securityPostureResult.status === "fulfilled" ? securityPostureResult.value : null);
       if (auditResult.status === "rejected") {
@@ -1469,6 +1494,28 @@ export function SettingsWorkspace() {
       setNotice("Security settings saved.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save security settings.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveOperationsSettings() {
+    setBusy("operations-settings");
+    setNotice(null);
+    setError(null);
+    try {
+      const saved = await apiFetch<OperationsSettings>("/system-settings/operations", {
+        method: "PATCH",
+        body: JSON.stringify({
+          capacityBaseline: Number(operationsDraft.capacityBaseline) || DEFAULT_OPERATIONS_SETTINGS.capacityBaseline,
+          capacityWarningPercent: Number(operationsDraft.capacityWarningPercent) || DEFAULT_OPERATIONS_SETTINGS.capacityWarningPercent,
+          dueSoonDays: Number(operationsDraft.dueSoonDays) || DEFAULT_OPERATIONS_SETTINGS.dueSoonDays
+        })
+      });
+      applyOperationsSettings(saved);
+      setNotice("Operations settings saved.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save operations settings.");
     } finally {
       setBusy(null);
     }
@@ -2655,6 +2702,9 @@ export function SettingsWorkspace() {
           </button>
           <button className={activeSection === "maintenance" ? "active" : ""} type="button" onClick={() => setActiveSection("maintenance")}>
             Maintenance
+          </button>
+          <button className={activeSection === "operations" ? "active" : ""} type="button" onClick={() => setActiveSection("operations")}>
+            Operations
           </button>
           <button className={activeSection === "logs" ? "active" : ""} type="button" onClick={() => setActiveSection("logs")}>
             Event Logs
@@ -4331,6 +4381,38 @@ export function SettingsWorkspace() {
                   </div>
                 </div>
               ) : null}
+            </section>
+          ) : null}
+
+          {activeSection === "operations" ? (
+            <section className="panel">
+              <div className="section-heading">
+                <div>
+                  <h2>Operations Settings</h2>
+                  <p className="muted">Set organization-wide thresholds used by Operations Center capacity and event follow-up signals.</p>
+                </div>
+                <span className={`status-pill ${operationsSettings ? "success" : "muted-pill"}`}>{operationsSettings ? "Configured" : "Defaults"}</span>
+              </div>
+              <div className="client-form-grid settings-section">
+                <label>
+                  Capacity baseline per specialist
+                  <input className="input" type="number" min={1} max={100} value={operationsDraft.capacityBaseline} onChange={(event) => setOperationsDraft((current) => ({ ...current, capacityBaseline: Number(event.target.value) }))} />
+                  <span className="field-help">Assigned active work at or above this value is flagged as over capacity.</span>
+                </label>
+                <label>
+                  Capacity warning percentage
+                  <input className="input" type="number" min={50} max={100} value={operationsDraft.capacityWarningPercent} onChange={(event) => setOperationsDraft((current) => ({ ...current, capacityWarningPercent: Number(event.target.value) }))} />
+                  <span className="field-help">Specialists are shown as nearing capacity at this percentage of the baseline.</span>
+                </label>
+                <label>
+                  Event follow-up window in days
+                  <input className="input" type="number" min={1} max={30} value={operationsDraft.dueSoonDays} onChange={(event) => setOperationsDraft((current) => ({ ...current, dueSoonDays: Number(event.target.value) }))} />
+                  <span className="field-help">Upcoming event requests inside this window are marked for attention in Operations Center.</span>
+                </label>
+              </div>
+              <div className="settings-actions">
+                <button className="button" type="button" onClick={saveOperationsSettings} disabled={busy === "operations-settings"}>Save Operations Settings</button>
+              </div>
             </section>
           ) : null}
 
