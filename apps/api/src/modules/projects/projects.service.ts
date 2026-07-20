@@ -15,7 +15,7 @@ export class ProjectsService {
   ) {}
 
   async list(user: AuthenticatedUser) {
-    const [items, clients] = await Promise.all([
+    const [items, clients, assignableUsers] = await Promise.all([
       this.prisma.project.findMany({
         where: { organizationId: user.organizationId, deletedAt: null },
         include: this.projectInclude(),
@@ -24,12 +24,16 @@ export class ProjectsService {
       }),
       user.permissions.includes("clients.view")
         ? this.prisma.client.findMany({ where: { organizationId: user.organizationId, deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" }, take: 250 })
+        : Promise.resolve([]),
+      user.permissions.includes("projects.update")
+        ? this.prisma.user.findMany({ where: { organizationId: user.organizationId, isActive: true, deletedAt: null }, select: { id: true, firstName: true, lastName: true }, orderBy: [{ firstName: "asc" }, { lastName: "asc" }], take: 250 })
         : Promise.resolve([])
     ]);
 
     return {
       items,
       clients,
+      assignableUsers,
       capabilities: {
         create: user.permissions.includes("projects.create"),
         update: user.permissions.includes("projects.update"),
@@ -44,11 +48,12 @@ export class ProjectsService {
 
   async create(input: CreateProjectDto, user: AuthenticatedUser) {
     const clientId = await this.resolveClientId(input.clientId, user.organizationId);
+    const ownerId = input.ownerId === undefined ? user.id : await this.resolveAssignableUserId(input.ownerId, user.organizationId);
     const project = await this.prisma.project.create({
       data: {
         organizationId: user.organizationId,
         clientId,
-        ownerId: user.id,
+        ownerId,
         name: input.name.trim(),
         description: this.optionalTrim(input.description),
         status: input.status,
@@ -64,7 +69,7 @@ export class ProjectsService {
       entityType: "Project",
       entityId: project.id,
       action: "project.created",
-      metadata: { name: project.name, clientId: project.clientId, status: project.status }
+      metadata: { name: project.name, clientId: project.clientId, ownerId: project.ownerId, status: project.status }
     });
     return project;
   }
@@ -72,12 +77,14 @@ export class ProjectsService {
   async update(projectId: string, input: UpdateProjectDto, user: AuthenticatedUser) {
     const existing = await this.ensureProject(projectId, user);
     const clientId = input.clientId === undefined ? undefined : await this.resolveClientId(input.clientId, user.organizationId);
+    const ownerId = input.ownerId === undefined ? undefined : await this.resolveAssignableUserId(input.ownerId, user.organizationId);
     const project = await this.prisma.project.update({
       where: { id: existing.id },
       data: {
         ...(input.name !== undefined ? { name: input.name.trim() } : {}),
         ...(input.description !== undefined ? { description: this.optionalTrim(input.description) } : {}),
         ...(clientId !== undefined ? { clientId } : {}),
+        ...(ownerId !== undefined ? { ownerId } : {}),
         ...(input.status !== undefined ? { status: input.status, completedAt: input.status === ProjectStatus.COMPLETED ? new Date() : null } : {}),
         ...(input.health !== undefined ? { health: input.health } : {}),
         ...(input.startAt !== undefined ? { startAt: this.parseDate(input.startAt) } : {}),
@@ -91,7 +98,7 @@ export class ProjectsService {
       entityType: "Project",
       entityId: project.id,
       action: "project.updated",
-      metadata: { status: input.status, health: input.health, targetDate: input.targetDate, clientId: project.clientId }
+      metadata: { status: input.status, health: input.health, targetDate: input.targetDate, clientId: project.clientId, ownerId: project.ownerId }
     });
     return project;
   }
@@ -105,6 +112,7 @@ export class ProjectsService {
 
   async createMilestone(projectId: string, input: CreateProjectMilestoneDto, user: AuthenticatedUser) {
     await this.ensureProject(projectId, user);
+    const assignedUserId = await this.resolveAssignableUserId(input.assignedUserId, user.organizationId);
     const milestone = await this.prisma.projectMilestone.create({
       data: {
         projectId,
@@ -112,10 +120,11 @@ export class ProjectsService {
         description: this.optionalTrim(input.description),
         status: input.status,
         dueAt: this.parseDate(input.dueAt),
+        assignedUserId,
         completedAt: input.status === ProjectMilestoneStatus.COMPLETED ? new Date() : null
       }
     });
-    await this.auditLogs.create({ organizationId: user.organizationId, userId: user.id, entityType: "ProjectMilestone", entityId: milestone.id, action: "project.milestone_created", metadata: { projectId, title: milestone.title } });
+    await this.auditLogs.create({ organizationId: user.organizationId, userId: user.id, entityType: "ProjectMilestone", entityId: milestone.id, action: "project.milestone_created", metadata: { projectId, title: milestone.title, assignedUserId: milestone.assignedUserId } });
     return milestone;
   }
 
@@ -123,16 +132,18 @@ export class ProjectsService {
     await this.ensureProject(projectId, user);
     const milestone = await this.prisma.projectMilestone.findFirst({ where: { id: milestoneId, projectId } });
     if (!milestone) throw new NotFoundException("Project milestone was not found.");
+    const assignedUserId = input.assignedUserId === undefined ? undefined : await this.resolveAssignableUserId(input.assignedUserId, user.organizationId);
     const updated = await this.prisma.projectMilestone.update({
       where: { id: milestone.id },
       data: {
         ...(input.title !== undefined ? { title: input.title.trim() } : {}),
         ...(input.description !== undefined ? { description: this.optionalTrim(input.description) } : {}),
         ...(input.status !== undefined ? { status: input.status, completedAt: input.status === ProjectMilestoneStatus.COMPLETED ? new Date() : null } : {}),
-        ...(input.dueAt !== undefined ? { dueAt: this.parseDate(input.dueAt) } : {})
+        ...(input.dueAt !== undefined ? { dueAt: this.parseDate(input.dueAt) } : {}),
+        ...(assignedUserId !== undefined ? { assignedUserId } : {})
       }
     });
-    await this.auditLogs.create({ organizationId: user.organizationId, userId: user.id, entityType: "ProjectMilestone", entityId: updated.id, action: "project.milestone_updated", metadata: { projectId, status: input.status } });
+    await this.auditLogs.create({ organizationId: user.organizationId, userId: user.id, entityType: "ProjectMilestone", entityId: updated.id, action: "project.milestone_updated", metadata: { projectId, status: input.status, assignedUserId: updated.assignedUserId } });
     return updated;
   }
 
@@ -200,7 +211,7 @@ export class ProjectsService {
     try {
       const dependency = await this.prisma.projectDependency.create({
         data: { projectId, dependsOnProjectId: prerequisite.id },
-        include: { dependsOnProject: { select: { id: true, name: true, status: true, health: true, targetDate: true } } }
+        include: { dependsOnProject: { select: { id: true, name: true, status: true, health: true, targetDate: true, owner: { select: { id: true, firstName: true, lastName: true } } } } }
       });
       await this.auditLogs.create({ organizationId: user.organizationId, userId: user.id, entityType: "ProjectDependency", entityId: dependency.id, action: "project.dependency_added", metadata: { projectId, dependsOnProjectId: prerequisite.id } });
       return dependency;
@@ -231,6 +242,14 @@ export class ProjectsService {
     const client = await this.prisma.client.findFirst({ where: { id: clientId, organizationId, deletedAt: null }, select: { id: true } });
     if (!client) throw new BadRequestException("Client was not found.");
     return client.id;
+  }
+
+  private async resolveAssignableUserId(userId: string | null | undefined, organizationId: string) {
+    if (userId === undefined) return undefined;
+    if (userId === null || userId === "") return null;
+    const user = await this.prisma.user.findFirst({ where: { id: userId, organizationId, isActive: true, deletedAt: null }, select: { id: true } });
+    if (!user) throw new BadRequestException("Assigned user was not found or is inactive.");
+    return user.id;
   }
 
   private async hasDependencyPath(startProjectId: string, targetProjectId: string) {
@@ -265,9 +284,9 @@ export class ProjectsService {
     return {
       client: { select: { id: true, name: true } },
       owner: { select: { id: true, firstName: true, lastName: true } },
-      milestones: { orderBy: [{ dueAt: "asc" }, { createdAt: "asc" }] },
+      milestones: { include: { assignedUser: { select: { id: true, firstName: true, lastName: true } } }, orderBy: [{ dueAt: "asc" }, { createdAt: "asc" }] },
       workItems: { include: this.workItemInclude(), orderBy: { createdAt: "desc" } },
-      dependencies: { include: { dependsOnProject: { select: { id: true, name: true, status: true, health: true, targetDate: true } } }, orderBy: { createdAt: "asc" } }
+      dependencies: { include: { dependsOnProject: { select: { id: true, name: true, status: true, health: true, targetDate: true, owner: { select: { id: true, firstName: true, lastName: true } } } } }, orderBy: { createdAt: "asc" } }
     };
   }
 

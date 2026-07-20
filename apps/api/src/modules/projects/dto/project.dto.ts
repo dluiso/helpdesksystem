@@ -17,6 +17,10 @@ export class CreateProjectDto {
   clientId?: string | null;
 
   @IsOptional()
+  @IsUUID()
+  ownerId?: string | null;
+
+  @IsOptional()
   @IsEnum(ProjectStatus)
   status?: ProjectStatus;
 
@@ -48,6 +52,10 @@ export class UpdateProjectDto {
   @IsOptional()
   @IsUUID()
   clientId?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  ownerId?: string | null;
 
   @IsOptional()
   @IsEnum(ProjectStatus)
@@ -84,6 +92,10 @@ export class CreateProjectMilestoneDto {
   @IsOptional()
   @IsDateString()
   dueAt?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  assignedUserId?: string | null;
 }
 
 export class UpdateProjectMilestoneDto {
@@ -105,6 +117,10 @@ export class UpdateProjectMilestoneDto {
   @IsOptional()
   @IsDateString()
   dueAt?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  assignedUserId?: string | null;
 }
 
 export class AddProjectWorkItemDto {

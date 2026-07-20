@@ -38,4 +38,16 @@ describe("ProjectsService", () => {
     await expect(service.addDependency("project-1", { dependsOnProjectId: "project-2" }, user)).rejects.toThrow("dependency cycle");
     expect(prisma.projectDependency.create).not.toHaveBeenCalled();
   });
+
+  it("resolves project responsibility only to an active user in the organization", async () => {
+    const prisma = { user: { findFirst: jest.fn().mockResolvedValue({ id: "user-2" }) } };
+    const service = new ProjectsService(prisma as never, { create: jest.fn() } as never);
+
+    await expect((service as unknown as { resolveAssignableUserId(userId: string, organizationId: string): Promise<string | null | undefined> }).resolveAssignableUserId("user-2", "org-1")).resolves.toBe("user-2");
+
+    expect(prisma.user.findFirst).toHaveBeenCalledWith({
+      where: { id: "user-2", organizationId: "org-1", isActive: true, deletedAt: null },
+      select: { id: true }
+    });
+  });
 });
