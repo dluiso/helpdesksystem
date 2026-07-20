@@ -74,6 +74,15 @@ interface TimelineEntry {
   overdue: boolean;
 }
 
+interface ProjectCommitment {
+  id: string;
+  kind: "TARGET" | "MILESTONE" | "DEPENDENCY";
+  title: string;
+  note: string;
+  dueAt: string | null;
+  overdue: boolean;
+}
+
 const emptyDraft: ProjectDraft = { name: "", description: "", clientId: "", status: "PLANNING", health: "ON_TRACK", startAt: "", targetDate: "" };
 
 function label(value: string) {
@@ -316,6 +325,27 @@ export function ProjectsWorkspace() {
     setProjectView("PORTFOLIO");
     selectProject(project);
   };
+  const commitments = useMemo(() => {
+    if (!selected) return [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const incomplete = !["COMPLETED", "CANCELLED"].includes(selected.status);
+    const entries: ProjectCommitment[] = [];
+    if (selected.targetDate && incomplete) {
+      entries.push({ id: "target", kind: "TARGET", title: "Project target", note: label(selected.status), dueAt: selected.targetDate, overdue: new Date(selected.targetDate) < today });
+    }
+    for (const milestone of selected.milestones) {
+      if (milestone.status !== "COMPLETED") {
+        entries.push({ id: milestone.id, kind: "MILESTONE", title: milestone.title, note: label(milestone.status), dueAt: milestone.dueAt, overdue: Boolean(milestone.dueAt && new Date(milestone.dueAt) < today) });
+      }
+    }
+    for (const dependency of selected.dependencies) {
+      if (dependency.dependsOnProject.status !== "COMPLETED") {
+        entries.push({ id: dependency.id, kind: "DEPENDENCY", title: dependency.dependsOnProject.name, note: "Prerequisite not complete", dueAt: dependency.dependsOnProject.targetDate, overdue: Boolean(dependency.dependsOnProject.targetDate && new Date(dependency.dependsOnProject.targetDate) < today) });
+      }
+    }
+    return entries.sort((left, right) => (left.dueAt ? new Date(left.dueAt).getTime() : Number.MAX_SAFE_INTEGER) - (right.dueAt ? new Date(right.dueAt).getTime() : Number.MAX_SAFE_INTEGER));
+  }, [selected]);
 
   return (
     <div className="projects-workspace">
@@ -368,6 +398,10 @@ export function ProjectsWorkspace() {
             {data?.capabilities.update ? <form className="projects-detail-form" onSubmit={(event) => void saveProject(event)}><ProjectFields draft={draft} clients={data?.clients ?? []} onChange={updateDraft} /><div className="form-actions"><button className="button" type="submit" disabled={saving || !draft.name.trim()}><Save size={16} aria-hidden="true" /> Save Plan</button></div></form> : null}
 
             {blockedDependencies.length ? <div className="projects-dependency-alert"><AlertTriangle size={17} aria-hidden="true" /><span>{blockedDependencies.length === 1 ? `Blocked by ${blockedDependencies[0].dependsOnProject.name}.` : `Blocked by ${blockedDependencies.length} incomplete project dependencies.`}</span></div> : null}
+
+            <div className="projects-detail-section projects-commitments-section"><div className="projects-detail-section-heading"><CalendarRange size={17} aria-hidden="true" /><div><h3>Project commitments</h3><p>Outstanding targets, milestones, and prerequisites that need follow-through.</p></div></div>
+              <div className="projects-commitment-list">{commitments.map((commitment) => <div className={`projects-commitment-row${commitment.overdue ? " overdue" : ""}`} key={commitment.id}><span>{label(commitment.kind)}</span><strong>{commitment.title}</strong><small>{commitment.overdue ? "Overdue" : commitment.note}</small><time>{formatDate(commitment.dueAt)}</time></div>)}{!commitments.length ? <span className="muted">No outstanding project commitments.</span> : null}</div>
+            </div>
 
             <div className="projects-detail-section"><div className="projects-detail-section-heading"><Milestone size={17} aria-hidden="true" /><div><h3>Milestones</h3><p>Track the intended delivery checkpoints.</p></div></div>
               <div className="projects-milestone-list">{selected.milestones.map((milestone) => <div className="projects-milestone-row" key={milestone.id}><div><strong>{milestone.title}</strong><span>Due {formatDate(milestone.dueAt)}</span></div>{data?.capabilities.update ? <><select className="input" value={milestone.status} onChange={(event) => void updateMilestoneStatus(milestone, event.target.value as MilestoneStatus)} disabled={saving}>{(["NOT_STARTED", "IN_PROGRESS", "BLOCKED", "COMPLETED"] as MilestoneStatus[]).map((status) => <option value={status} key={status}>{label(status)}</option>)}</select><button className="button secondary icon-button" type="button" onClick={() => void removeMilestone(milestone.id)} disabled={saving} title="Remove milestone" aria-label={`Remove ${milestone.title}`}><Trash2 size={15} aria-hidden="true" /></button></> : <span>{label(milestone.status)}</span>}</div>)}{!selected.milestones.length ? <span className="muted">No milestones defined.</span> : null}</div>

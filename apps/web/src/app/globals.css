@@ -8850,9 +8850,48 @@ a.dashboard-list-row:hover {
 
 .projects-milestone-list,
 .projects-work-list,
-.projects-dependency-list {
+.projects-dependency-list,
+.projects-commitment-list {
   display: grid;
   gap: 8px;
+}
+
+.projects-commitment-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) minmax(120px, auto) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.projects-commitment-row:last-child {
+  border-bottom: 0;
+}
+
+.projects-commitment-row > span,
+.projects-commitment-row small,
+.projects-commitment-row time {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.projects-commitment-row > span {
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.projects-commitment-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projects-commitment-row.overdue small,
+.projects-commitment-row.overdue time {
+  color: var(--danger);
+  font-weight: 800;
 }
 
 .projects-milestone-row,
@@ -8988,6 +9027,20 @@ a.dashboard-list-row:hover {
   .projects-milestone-row {
     align-items: flex-start;
     flex-wrap: wrap;
+  }
+
+  .projects-commitment-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .projects-commitment-row > span,
+  .projects-commitment-row small {
+    grid-column: 1;
+  }
+
+  .projects-commitment-row time {
+    grid-column: 2;
+    grid-row: 1 / span 3;
   }
 
   .projects-milestone-row .input {

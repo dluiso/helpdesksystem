@@ -6,7 +6,6 @@ import {
   BookOpen,
   Building2,
   CalendarDays,
-  FolderKanban,
   Gauge,
   HardDrive,
   LifeBuoy,
@@ -30,7 +29,6 @@ import { UserMenu } from "./UserMenu";
 const iconMap = {
   Dashboard: Gauge,
   Operations: PanelsTopLeft,
-  Projects: FolderKanban,
   Tickets: Ticket,
   "Event & Services": CalendarDays,
   Clients: Building2,
@@ -45,7 +43,8 @@ const routePermissions = [
   ...dashboardNavigation
     .filter((item) => item.permission)
     .map((item) => ({ href: item.href, permission: item.permission as string })),
-  { href: "/event-services/external-specialists", permission: "external_specialists.view" }
+  { href: "/event-services/external-specialists", permission: "external_specialists.view" },
+  { href: "/projects", permission: "projects.view" }
 ].sort((a, b) => b.href.length - a.href.length);
 
 function brandingFontFamily(value?: string) {
@@ -87,7 +86,13 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const userPermissions = useMemo(() => new Set(user?.permissions ?? []), [user?.permissions]);
   const navigation = useMemo(
-    () => dashboardNavigation.filter((item) => item.label !== "Users" && (!item.permission || userPermissions.has(item.permission))),
+    () => {
+      const items = dashboardNavigation.filter((item) => item.label !== "Users" && (!item.permission || userPermissions.has(item.permission)));
+      if (userPermissions.has("projects.view") && !items.some((item) => item.label === "Operations")) {
+        items.splice(1, 0, { label: "Operations", href: "/projects" });
+      }
+      return items;
+    },
     [userPermissions]
   );
   const primaryMobileNavigation = useMemo(
@@ -153,8 +158,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         <nav className="nav" aria-label="Main navigation">
           {navigation.map((item) => {
             const Icon = iconMap[item.label as keyof typeof iconMap] ?? LifeBuoy;
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const operationsItem = item.label === "Operations";
+            const active = operationsItem ? pathname === "/operations" || pathname.startsWith("/operations/") || pathname === "/projects" || pathname.startsWith("/projects/") : pathname === item.href || pathname.startsWith(`${item.href}/`);
             const eventServicesActive = item.label === "Event & Services" && active;
+            const operationsActive = operationsItem && active;
             return (
               <div className="nav-item-group" key={item.href}>
                 <Link className={`nav-link${active ? " active" : ""}`} href={item.href} aria-current={active ? "page" : undefined}>
@@ -170,6 +177,12 @@ export function AppShell({ children }: { children: ReactNode }) {
                     {userPermissions.has("external_specialists.view") ? (
                       <Link className={pathname === "/event-services/external-specialists" ? "active" : ""} href="/event-services/external-specialists" aria-current={pathname === "/event-services/external-specialists" ? "page" : undefined}>External Specialists</Link>
                     ) : null}
+                  </div>
+                ) : null}
+                {operationsActive ? (
+                  <div className="nav-submenu" aria-label="Operations subnavigation">
+                    {userPermissions.has("operations.view") ? <Link className={pathname === "/operations" ? "active" : ""} href="/operations" aria-current={pathname === "/operations" ? "page" : undefined}>Work Queue</Link> : null}
+                    {userPermissions.has("projects.view") ? <Link className={pathname === "/projects" ? "active" : ""} href="/projects" aria-current={pathname === "/projects" ? "page" : undefined}>Projects</Link> : null}
                   </div>
                 ) : null}
               </div>
