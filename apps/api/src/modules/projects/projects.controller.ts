@@ -4,7 +4,7 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
 import { RequirePermissions } from "../permissions/decorators/require-permissions.decorator";
 import { PermissionsGuard } from "../permissions/guards/permissions.guard";
-import { AddProjectDependencyDto, AddProjectWorkItemDto, CreateProjectDto, CreateProjectMilestoneDto, UpdateProjectDto, UpdateProjectMilestoneDto } from "./dto/project.dto";
+import { AddProjectDependencyDto, AddProjectWorkItemDto, CreateProjectDecisionDto, CreateProjectDto, CreateProjectMilestoneDto, UpdateProjectDecisionDto, UpdateProjectDto, UpdateProjectMilestoneDto } from "./dto/project.dto";
 import { ProjectsService } from "./projects.service";
 
 @Controller("projects")
@@ -58,6 +58,18 @@ export class ProjectsController {
   @RequirePermissions("projects.update")
   removeMilestone(@Param("projectId") projectId: string, @Param("milestoneId") milestoneId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.projects.removeMilestone(projectId, milestoneId, user);
+  }
+
+  @Post(":projectId/decisions")
+  @RequirePermissions("projects.update")
+  createDecision(@Param("projectId") projectId: string, @Body() body: CreateProjectDecisionDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.projects.createDecision(projectId, body, user);
+  }
+
+  @Patch(":projectId/decisions/:decisionId")
+  @RequirePermissions("projects.update")
+  updateDecision(@Param("projectId") projectId: string, @Param("decisionId") decisionId: string, @Body() body: UpdateProjectDecisionDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.projects.updateDecision(projectId, decisionId, body, user);
   }
 
   @Post(":projectId/work-items")

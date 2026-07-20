@@ -1,9 +1,9 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma, ProjectMilestoneStatus, ProjectStatus } from "@prisma/client";
+import { Prisma, ProjectDecisionStatus, ProjectMilestoneStatus, ProjectStatus } from "@prisma/client";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
-import { AddProjectDependencyDto, AddProjectWorkItemDto, CreateProjectDto, CreateProjectMilestoneDto, UpdateProjectDto, UpdateProjectMilestoneDto } from "./dto/project.dto";
+import { AddProjectDependencyDto, AddProjectWorkItemDto, CreateProjectDecisionDto, CreateProjectDto, CreateProjectMilestoneDto, UpdateProjectDecisionDto, UpdateProjectDto, UpdateProjectMilestoneDto } from "./dto/project.dto";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -156,6 +156,48 @@ export class ProjectsService {
     return { deleted: true };
   }
 
+  async createDecision(projectId: string, input: CreateProjectDecisionDto, user: AuthenticatedUser) {
+    await this.ensureProject(projectId, user);
+    if (this.isClosedDecision(input.status)) throw new BadRequestException("A project decision cannot be created in a closed state.");
+    const ownerId = await this.resolveAssignableUserId(input.ownerId, user.organizationId);
+    const decision = await this.prisma.projectDecision.create({
+      data: {
+        projectId,
+        ownerId,
+        title: input.title.trim(),
+        description: this.optionalTrim(input.description),
+        status: input.status,
+        dueAt: this.parseDate(input.dueAt),
+        resolvedAt: this.isClosedDecision(input.status) ? new Date() : null
+      }
+    });
+    await this.auditLogs.create({ organizationId: user.organizationId, userId: user.id, entityType: "ProjectDecision", entityId: decision.id, action: "project.decision_created", metadata: { projectId, title: decision.title, status: decision.status, ownerId: decision.ownerId } });
+    return decision;
+  }
+
+  async updateDecision(projectId: string, decisionId: string, input: UpdateProjectDecisionDto, user: AuthenticatedUser) {
+    await this.ensureProject(projectId, user);
+    const decision = await this.prisma.projectDecision.findFirst({ where: { id: decisionId, projectId } });
+    if (!decision) throw new NotFoundException("Project decision was not found.");
+    if (input.status !== undefined && this.isClosedDecision(input.status) && !this.optionalTrim(input.resolution ?? decision.resolution)) {
+      throw new BadRequestException("A resolution note is required before closing a project decision.");
+    }
+    const ownerId = input.ownerId === undefined ? undefined : await this.resolveAssignableUserId(input.ownerId, user.organizationId);
+    const updated = await this.prisma.projectDecision.update({
+      where: { id: decision.id },
+      data: {
+        ...(input.title !== undefined ? { title: input.title.trim() } : {}),
+        ...(input.description !== undefined ? { description: this.optionalTrim(input.description) } : {}),
+        ...(input.resolution !== undefined ? { resolution: this.optionalTrim(input.resolution) } : {}),
+        ...(input.dueAt !== undefined ? { dueAt: this.parseDate(input.dueAt) } : {}),
+        ...(ownerId !== undefined ? { ownerId } : {}),
+        ...(input.status !== undefined ? { status: input.status, resolvedAt: this.isClosedDecision(input.status) ? new Date() : null } : {})
+      }
+    });
+    await this.auditLogs.create({ organizationId: user.organizationId, userId: user.id, entityType: "ProjectDecision", entityId: updated.id, action: "project.decision_updated", metadata: { projectId, status: input.status, ownerId: updated.ownerId, resolved: this.isClosedDecision(updated.status) } });
+    return updated;
+  }
+
   async addWorkItem(projectId: string, input: AddProjectWorkItemDto, user: AuthenticatedUser) {
     await this.ensureProject(projectId, user);
     const reference = input.reference.trim();
@@ -280,11 +322,16 @@ export class ProjectsService {
     return parsed;
   }
 
+  private isClosedDecision(status: ProjectDecisionStatus | undefined) {
+    return status === ProjectDecisionStatus.RESOLVED || status === ProjectDecisionStatus.CANCELLED;
+  }
+
   private projectInclude(): Prisma.ProjectInclude {
     return {
       client: { select: { id: true, name: true } },
       owner: { select: { id: true, firstName: true, lastName: true } },
       milestones: { include: { assignedUser: { select: { id: true, firstName: true, lastName: true } } }, orderBy: [{ dueAt: "asc" }, { createdAt: "asc" }] },
+      decisions: { include: { owner: { select: { id: true, firstName: true, lastName: true } } }, orderBy: [{ dueAt: "asc" }, { createdAt: "desc" }] },
       workItems: { include: this.workItemInclude(), orderBy: { createdAt: "desc" } },
       dependencies: { include: { dependsOnProject: { select: { id: true, name: true, status: true, health: true, targetDate: true, owner: { select: { id: true, firstName: true, lastName: true } } } } }, orderBy: { createdAt: "asc" } }
     };

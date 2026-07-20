@@ -225,6 +225,13 @@ enum ProjectMilestoneStatus {
   COMPLETED
 }
 
+enum ProjectDecisionStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CANCELLED
+}
+
 enum EventServiceFieldType {
   TEXT
   TEXTAREA
@@ -506,6 +513,7 @@ model User {
   eventServiceMessages EventServiceMessage[]
   ownedProjects        Project[] @relation("ProjectOwner")
   assignedProjectMilestones ProjectMilestone[] @relation("ProjectMilestoneAssignee")
+  assignedProjectDecisions ProjectDecision[] @relation("ProjectDecisionOwner")
 
   @@index([organizationId])
   @@index([deletedAt])
@@ -2071,6 +2079,7 @@ model Project {
   client         Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
   owner          User?         @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   milestones     ProjectMilestone[]
+  decisions      ProjectDecision[]
   workItems      ProjectWorkItem[]
   dependencies   ProjectDependency[] @relation("ProjectDependencies")
   dependents     ProjectDependency[] @relation("ProjectDependents")
@@ -2100,6 +2109,26 @@ model ProjectMilestone {
   @@index([projectId, dueAt])
   @@index([assignedUserId])
   @@map("project_milestones")
+}
+
+model ProjectDecision {
+  id          String                @id @default(uuid()) @db.Uuid
+  projectId   String                @db.Uuid
+  ownerId     String?               @db.Uuid
+  title       String
+  description String?
+  resolution  String?
+  status      ProjectDecisionStatus @default(OPEN)
+  dueAt       DateTime?
+  resolvedAt  DateTime?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  project     Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  owner       User?                 @relation("ProjectDecisionOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, status, dueAt])
+  @@index([ownerId])
+  @@map("project_decisions")
 }
 
 model ProjectWorkItem {

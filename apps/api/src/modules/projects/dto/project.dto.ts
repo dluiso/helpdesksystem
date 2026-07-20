@@ -1,4 +1,4 @@
-import { ProjectHealth, ProjectMilestoneStatus, ProjectStatus } from "@prisma/client";
+import { ProjectDecisionStatus, ProjectHealth, ProjectMilestoneStatus, ProjectStatus } from "@prisma/client";
 import { IsDateString, IsEnum, IsIn, IsOptional, IsString, IsUUID, MaxLength, MinLength } from "class-validator";
 
 export class CreateProjectDto {
@@ -121,6 +121,60 @@ export class UpdateProjectMilestoneDto {
   @IsOptional()
   @IsUUID()
   assignedUserId?: string | null;
+}
+
+export class CreateProjectDecisionDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(180)
+  title: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string | null;
+
+  @IsOptional()
+  @IsEnum(ProjectDecisionStatus)
+  status?: ProjectDecisionStatus;
+
+  @IsOptional()
+  @IsDateString()
+  dueAt?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  ownerId?: string | null;
+}
+
+export class UpdateProjectDecisionDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(180)
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  resolution?: string | null;
+
+  @IsOptional()
+  @IsEnum(ProjectDecisionStatus)
+  status?: ProjectDecisionStatus;
+
+  @IsOptional()
+  @IsDateString()
+  dueAt?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  ownerId?: string | null;
 }
 
 export class AddProjectWorkItemDto {

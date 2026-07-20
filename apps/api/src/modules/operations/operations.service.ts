@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { EventServiceRequestStatus, EventServiceTaskStatus, ProjectHealth, ProjectMilestoneStatus, ProjectStatus, TicketPriority, TicketStatus } from "@prisma/client";
+import { EventServiceRequestStatus, EventServiceTaskStatus, ProjectDecisionStatus, ProjectHealth, ProjectMilestoneStatus, ProjectStatus, TicketPriority, TicketStatus } from "@prisma/client";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { SystemSettingsService } from "../system-settings/system-settings.service";
@@ -120,6 +120,14 @@ export class OperationsService {
                   assignedUser: { select: { firstName: true, lastName: true } }
                 }
               },
+              decisions: {
+                where: { status: { notIn: [ProjectDecisionStatus.RESOLVED, ProjectDecisionStatus.CANCELLED] } },
+                select: {
+                  status: true,
+                  dueAt: true,
+                  owner: { select: { firstName: true, lastName: true } }
+                }
+              },
               dependencies: { where: { dependsOnProject: { status: { not: ProjectStatus.COMPLETED } } }, select: { id: true } }
             },
             orderBy: [{ targetDate: "asc" }, { updatedAt: "desc" }],
@@ -217,6 +225,17 @@ export class OperationsService {
         projectCommitments.push({
           owner: this.userName(milestone.assignedUser),
           attention: milestone.status === ProjectMilestoneStatus.BLOCKED || (milestone.dueAt !== null && milestone.dueAt < now)
+        });
+      }
+
+      for (const decision of project.decisions) {
+        if (!decision.owner) {
+          unassignedProjectCommitments += 1;
+          continue;
+        }
+        projectCommitments.push({
+          owner: this.userName(decision.owner),
+          attention: decision.status === ProjectDecisionStatus.OPEN || (decision.dueAt !== null && decision.dueAt < now)
         });
       }
 

@@ -8849,6 +8849,7 @@ a.dashboard-list-row:hover {
 }
 
 .projects-milestone-list,
+.projects-decision-list,
 .projects-work-list,
 .projects-dependency-list,
 .projects-commitment-list {
@@ -8895,6 +8896,7 @@ a.dashboard-list-row:hover {
 }
 
 .projects-milestone-row,
+.projects-decision-row,
 .projects-work-row,
 .projects-dependency-row {
   justify-content: space-between;
@@ -8907,6 +8909,7 @@ a.dashboard-list-row:hover {
 }
 
 .projects-milestone-row > div,
+.projects-decision-row > div,
 .projects-work-row > div,
 .projects-dependency-row > div {
   display: grid;
@@ -8923,6 +8926,46 @@ a.dashboard-list-row:hover {
 
 .projects-milestone-row .projects-milestone-owner-select {
   width: 170px;
+}
+
+.projects-decision-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(430px, 1.1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+}
+
+.projects-decision-row > div > span,
+.projects-decision-row > div > small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.projects-decision-resolution {
+  color: var(--text) !important;
+}
+
+.projects-decision-controls {
+  display: grid;
+  grid-template-columns: 150px 130px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.projects-decision-controls .input {
+  min-height: 34px;
+  padding: 5px 25px 5px 8px;
+  font-size: 12px;
+}
+
+.projects-decision-resolution-input {
+  display: flex;
+  gap: 6px;
+}
+
+.projects-decision-resolution-input .input {
+  min-width: 0;
+  flex: 1;
 }
 
 .projects-work-row a {
@@ -8948,6 +8991,16 @@ a.dashboard-list-row:hover {
 
 .projects-dependency-form {
   grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.projects-decision-form {
+  grid-template-columns: minmax(0, 1fr) 150px 170px auto;
+}
+
+.projects-decision-form textarea {
+  grid-column: 1 / -2;
+  min-height: 54px;
+  resize: vertical;
 }
 
 .projects-dependency-row {
@@ -9029,13 +9082,26 @@ a.dashboard-list-row:hover {
   .projects-fields,
   .projects-inline-form,
   .projects-link-form,
-  .projects-milestone-form {
+  .projects-milestone-form,
+  .projects-decision-form {
     grid-template-columns: 1fr;
   }
 
   .projects-milestone-row {
     align-items: flex-start;
     flex-wrap: wrap;
+  }
+
+  .projects-decision-row {
+    grid-template-columns: 1fr;
+  }
+
+  .projects-decision-controls {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .projects-decision-resolution-input {
+    grid-column: 1 / -1;
   }
 
   .projects-commitment-row {

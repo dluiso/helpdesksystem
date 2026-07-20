@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CalendarRange, FolderKanban, Link2, Milestone, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
+import { AlertTriangle, CalendarRange, ClipboardCheck, FolderKanban, Link2, Milestone, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -8,6 +8,7 @@ import { apiFetch } from "@/lib/api";
 type ProjectStatus = "PLANNING" | "ACTIVE" | "ON_HOLD" | "COMPLETED" | "CANCELLED";
 type ProjectHealth = "ON_TRACK" | "AT_RISK" | "OFF_TRACK";
 type MilestoneStatus = "NOT_STARTED" | "IN_PROGRESS" | "BLOCKED" | "COMPLETED";
+type DecisionStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CANCELLED";
 type ProjectView = "PORTFOLIO" | "TIMELINE";
 type TimelineRange = "30" | "90" | "180";
 type TimelineEntryKind = "TARGET" | "MILESTONE" | "EVENT";
@@ -19,6 +20,17 @@ interface ProjectMilestone {
   status: MilestoneStatus;
   dueAt: string | null;
   assignedUser: { id: string; firstName: string; lastName: string } | null;
+}
+
+interface ProjectDecision {
+  id: string;
+  title: string;
+  description: string | null;
+  resolution: string | null;
+  status: DecisionStatus;
+  dueAt: string | null;
+  resolvedAt: string | null;
+  owner: { id: string; firstName: string; lastName: string } | null;
 }
 
 interface ProjectWorkItem {
@@ -43,6 +55,7 @@ interface Project {
   client: { id: string; name: string } | null;
   owner: { id: string; firstName: string; lastName: string } | null;
   milestones: ProjectMilestone[];
+  decisions: ProjectDecision[];
   workItems: ProjectWorkItem[];
   dependencies: ProjectDependency[];
 }
@@ -79,7 +92,7 @@ interface TimelineEntry {
 
 interface ProjectCommitment {
   id: string;
-  kind: "TARGET" | "MILESTONE" | "DEPENDENCY";
+  kind: "TARGET" | "MILESTONE" | "DEPENDENCY" | "DECISION";
   title: string;
   note: string;
   dueAt: string | null;
@@ -112,6 +125,11 @@ export function ProjectsWorkspace() {
   const [milestoneTitle, setMilestoneTitle] = useState("");
   const [milestoneDueAt, setMilestoneDueAt] = useState("");
   const [milestoneAssignedUserId, setMilestoneAssignedUserId] = useState("");
+  const [decisionTitle, setDecisionTitle] = useState("");
+  const [decisionDescription, setDecisionDescription] = useState("");
+  const [decisionDueAt, setDecisionDueAt] = useState("");
+  const [decisionOwnerId, setDecisionOwnerId] = useState("");
+  const [decisionResolutionDrafts, setDecisionResolutionDrafts] = useState<Record<string, string>>({});
   const [linkType, setLinkType] = useState<"TICKET" | "EVENT_SERVICE">("TICKET");
   const [linkReference, setLinkReference] = useState("");
   const [dependencyProjectId, setDependencyProjectId] = useState("");
@@ -129,6 +147,11 @@ export function ProjectsWorkspace() {
     setMilestoneTitle("");
     setMilestoneDueAt("");
     setMilestoneAssignedUserId("");
+    setDecisionTitle("");
+    setDecisionDescription("");
+    setDecisionDueAt("");
+    setDecisionOwnerId("");
+    setDecisionResolutionDrafts({});
     setLinkReference("");
     setDependencyProjectId("");
   };
@@ -221,6 +244,35 @@ export function ProjectsWorkspace() {
       await load(selected.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to remove milestone.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addDecision = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!selected || !decisionTitle.trim()) return;
+    setSaving(true);
+    setError("");
+    try {
+      await apiFetch(`/projects/${selected.id}/decisions`, { method: "POST", body: JSON.stringify({ title: decisionTitle, description: decisionDescription || null, dueAt: decisionDueAt || null, ownerId: decisionOwnerId || null }) });
+      await load(selected.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to add project decision.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateDecision = async (decision: ProjectDecision, update: { ownerId?: string | null; status?: DecisionStatus; resolution?: string | null }) => {
+    if (!selected) return;
+    setSaving(true);
+    setError("");
+    try {
+      await apiFetch(`/projects/${selected.id}/decisions/${decision.id}`, { method: "PATCH", body: JSON.stringify(update) });
+      await load(selected.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to update project decision.");
     } finally {
       setSaving(false);
     }
@@ -349,6 +401,11 @@ export function ProjectsWorkspace() {
         entries.push({ id: dependency.id, kind: "DEPENDENCY", title: dependency.dependsOnProject.name, note: dependency.dependsOnProject.owner ? `Prerequisite · ${dependency.dependsOnProject.owner.firstName} ${dependency.dependsOnProject.owner.lastName}` : "Prerequisite · Unassigned", dueAt: dependency.dependsOnProject.targetDate, overdue: Boolean(dependency.dependsOnProject.targetDate && new Date(dependency.dependsOnProject.targetDate) < today) });
       }
     }
+    for (const decision of selected.decisions) {
+      if (!["RESOLVED", "CANCELLED"].includes(decision.status)) {
+        entries.push({ id: decision.id, kind: "DECISION", title: decision.title, note: decision.owner ? `${label(decision.status)} · ${decision.owner.firstName} ${decision.owner.lastName}` : `${label(decision.status)} · Unassigned`, dueAt: decision.dueAt, overdue: Boolean(decision.dueAt && new Date(decision.dueAt) < today) });
+      }
+    }
     return entries.sort((left, right) => (left.dueAt ? new Date(left.dueAt).getTime() : Number.MAX_SAFE_INTEGER) - (right.dueAt ? new Date(right.dueAt).getTime() : Number.MAX_SAFE_INTEGER));
   }, [selected]);
 
@@ -406,6 +463,11 @@ export function ProjectsWorkspace() {
 
             <div className="projects-detail-section projects-commitments-section"><div className="projects-detail-section-heading"><CalendarRange size={17} aria-hidden="true" /><div><h3>Project commitments</h3><p>Outstanding targets, milestones, and prerequisites that need follow-through.</p></div></div>
               <div className="projects-commitment-list">{commitments.map((commitment) => <div className={`projects-commitment-row${commitment.overdue ? " overdue" : ""}`} key={commitment.id}><span>{label(commitment.kind)}</span><strong>{commitment.title}</strong><small>{commitment.overdue ? "Overdue" : commitment.note}</small><time>{formatDate(commitment.dueAt)}</time></div>)}{!commitments.length ? <span className="muted">No outstanding project commitments.</span> : null}</div>
+            </div>
+
+            <div className="projects-detail-section"><div className="projects-detail-section-heading"><ClipboardCheck size={17} aria-hidden="true" /><div><h3>Decisions and actions</h3><p>Record risk responses, operating decisions, accountability, and closure outcomes.</p></div></div>
+              <div className="projects-decision-list">{selected.decisions.map((decision) => <div className="projects-decision-row" key={decision.id}><div><strong>{decision.title}</strong>{decision.description ? <span>{decision.description}</span> : null}<small>{decision.owner ? `${decision.owner.firstName} ${decision.owner.lastName}` : "Unassigned"} · Due {formatDate(decision.dueAt)}</small>{decision.resolution ? <small className="projects-decision-resolution">Outcome: {decision.resolution}</small> : null}</div>{data?.capabilities.update ? <div className="projects-decision-controls"><select className="input" value={decision.owner?.id ?? ""} onChange={(event) => void updateDecision(decision, { ownerId: event.target.value || null })} disabled={saving} aria-label={`Assign ${decision.title}`}><option value="">Unassigned</option>{(data?.assignableUsers ?? []).map((user) => <option value={user.id} key={user.id}>{user.firstName} {user.lastName}</option>)}</select><select className="input" value={decision.status} onChange={(event) => { const status = event.target.value as DecisionStatus; const resolution = decisionResolutionDrafts[decision.id] ?? decision.resolution ?? ""; if (["RESOLVED", "CANCELLED"].includes(status) && !resolution.trim()) { setError("Save a closure note before closing this decision."); return; } void updateDecision(decision, { status }); }} disabled={saving}><option value="OPEN">Open</option><option value="IN_PROGRESS">In progress</option><option value="RESOLVED">Resolved</option><option value="CANCELLED">Cancelled</option></select><div className="projects-decision-resolution-input"><input className="input" value={decisionResolutionDrafts[decision.id] ?? decision.resolution ?? ""} onChange={(event) => setDecisionResolutionDrafts((current) => ({ ...current, [decision.id]: event.target.value }))} placeholder="Closure note required before closing" aria-label={`Closure note for ${decision.title}`} /><button className="button secondary icon-button" type="button" onClick={() => void updateDecision(decision, { resolution: decisionResolutionDrafts[decision.id] ?? decision.resolution ?? null })} disabled={saving} title="Save closure note" aria-label={`Save closure note for ${decision.title}`}><Save size={15} aria-hidden="true" /></button></div></div> : <em>{label(decision.status)}</em>}</div>)}{!selected.decisions.length ? <span className="muted">No decisions or actions recorded.</span> : null}</div>
+              {data?.capabilities.update ? <form className="projects-inline-form projects-decision-form" onSubmit={(event) => void addDecision(event)}><input className="input" value={decisionTitle} onChange={(event) => setDecisionTitle(event.target.value)} placeholder="Decision or action" /><input className="input" type="date" value={decisionDueAt} onChange={(event) => setDecisionDueAt(event.target.value)} /><select className="input" value={decisionOwnerId} onChange={(event) => setDecisionOwnerId(event.target.value)}><option value="">Unassigned</option>{(data?.assignableUsers ?? []).map((user) => <option value={user.id} key={user.id}>{user.firstName} {user.lastName}</option>)}</select><textarea className="input" value={decisionDescription} onChange={(event) => setDecisionDescription(event.target.value)} placeholder="Context or action needed (optional)" maxLength={2000} /><button className="button secondary" type="submit" disabled={saving || !decisionTitle.trim()}><Plus size={15} aria-hidden="true" /> Add action</button></form> : null}
             </div>
 
             <div className="projects-detail-section"><div className="projects-detail-section-heading"><Milestone size={17} aria-hidden="true" /><div><h3>Milestones</h3><p>Track the intended delivery checkpoints.</p></div></div>
