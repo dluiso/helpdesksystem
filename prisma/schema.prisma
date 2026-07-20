@@ -204,6 +204,27 @@ enum EventServiceTaskStatus {
   CANCELLED
 }
 
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum ProjectHealth {
+  ON_TRACK
+  AT_RISK
+  OFF_TRACK
+}
+
+enum ProjectMilestoneStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  BLOCKED
+  COMPLETED
+}
+
 enum EventServiceFieldType {
   TEXT
   TEXTAREA
@@ -258,6 +279,7 @@ model Organization {
   supportPortalForms   SupportPortalForm[]
   deviceViews          UserDeviceView[]
   auditLogs            AuditLog[]
+  projects             Project[]
 
   @@map("organizations")
 }
@@ -479,6 +501,7 @@ model User {
   createdEventServiceComments EventServiceComment[]
   eventServiceActivity EventServiceActivity[]
   eventServiceMessages EventServiceMessage[]
+  ownedProjects        Project[] @relation("ProjectOwner")
 
   @@index([organizationId])
   @@index([deletedAt])
@@ -734,6 +757,7 @@ model Client {
   ticketRoutingRules  TicketRoutingRule[]
   resolvedUnmappedDomains UnmappedEmailDomain[] @relation("ResolvedUnmappedDomainClient")
   eventServiceRequests EventServiceRequest[]
+  projects             Project[]
 
   @@index([organizationId, status])
   @@index([deletedAt])
@@ -902,6 +926,7 @@ model Ticket {
   notifications              Notification[]
   aiRequestLogs              AiRequestLog[]
   eventServiceRequests       EventServiceRequest[]
+  projectWorkItems           ProjectWorkItem[]
 
   @@index([organizationId, updatedAt])
   @@index([clientId])
@@ -1904,6 +1929,7 @@ model EventServiceRequest {
   attachments         EventServiceAttachment[]
   activity           EventServiceActivity[]
   aiRequestLogs      AiRequestLog[]
+  projectWorkItems   ProjectWorkItem[]
 
   @@index([organizationId, status, updatedAt])
   @@index([clientId])
@@ -2020,6 +2046,68 @@ model EventServiceTask {
   @@index([assignedUserId])
   @@index([externalSpecialistId])
   @@map("event_service_tasks")
+}
+
+model Project {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @db.Uuid
+  clientId       String?       @db.Uuid
+  ownerId        String?       @db.Uuid
+  name           String
+  description    String?
+  status         ProjectStatus @default(PLANNING)
+  health         ProjectHealth @default(ON_TRACK)
+  startAt        DateTime?
+  targetDate     DateTime?
+  completedAt    DateTime?
+  deletedAt      DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client         Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  owner          User?         @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  milestones     ProjectMilestone[]
+  workItems      ProjectWorkItem[]
+
+  @@index([organizationId, status, updatedAt])
+  @@index([clientId])
+  @@index([ownerId])
+  @@index([targetDate])
+  @@index([deletedAt])
+  @@map("projects")
+}
+
+model ProjectMilestone {
+  id          String                 @id @default(uuid()) @db.Uuid
+  projectId   String                 @db.Uuid
+  title       String
+  description String?
+  status      ProjectMilestoneStatus @default(NOT_STARTED)
+  dueAt       DateTime?
+  completedAt DateTime?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  project     Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, dueAt])
+  @@map("project_milestones")
+}
+
+model ProjectWorkItem {
+  id                    String               @id @default(uuid()) @db.Uuid
+  projectId             String               @db.Uuid
+  ticketId              String?              @db.Uuid
+  eventServiceRequestId String?              @db.Uuid
+  createdAt             DateTime             @default(now())
+  project               Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  ticket                Ticket?              @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  eventServiceRequest   EventServiceRequest? @relation(fields: [eventServiceRequestId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, ticketId])
+  @@unique([projectId, eventServiceRequestId])
+  @@index([ticketId])
+  @@index([eventServiceRequestId])
+  @@map("project_work_items")
 }
 
 model EventServiceMessage {

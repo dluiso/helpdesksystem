@@ -6,6 +6,7 @@ import {
   BookOpen,
   Building2,
   CalendarDays,
+  FolderKanban,
   Gauge,
   HardDrive,
   LifeBuoy,
@@ -29,6 +30,7 @@ import { UserMenu } from "./UserMenu";
 const iconMap = {
   Dashboard: Gauge,
   Operations: PanelsTopLeft,
+  Projects: FolderKanban,
   Tickets: Ticket,
   "Event & Services": CalendarDays,
   Clients: Building2,
@@ -89,7 +91,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     [userPermissions]
   );
   const primaryMobileNavigation = useMemo(
-    () => navigation.filter((item) => ["Dashboard", "Operations", "Tickets", "Event & Services", "Settings"].includes(item.label)).slice(0, 4),
+    () => navigation.filter((item) => ["Dashboard", "Operations", "Projects", "Tickets", "Event & Services", "Settings"].includes(item.label)).slice(0, 4),
     [navigation]
   );
 

@@ -23,6 +23,7 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
 import { OperationsModule } from "./modules/operations/operations.module";
 import { PermissionsModule } from "./modules/permissions/permissions.module";
 import { ProfileModule } from "./modules/profile/profile.module";
+import { ProjectsModule } from "./modules/projects/projects.module";
 import { PrismaModule } from "./modules/prisma/prisma.module";
 import { RemoteAccessModule } from "./modules/remote-access/remote-access.module";
 import { ReportsModule } from "./modules/reports/reports.module";
@@ -71,6 +72,7 @@ import { UsersModule } from "./modules/users/users.module";
     RolesModule,
     PermissionsModule,
     ProfileModule,
+    ProjectsModule,
     ClientsModule,
     ClientDomainsModule,
     ContactsModule,
