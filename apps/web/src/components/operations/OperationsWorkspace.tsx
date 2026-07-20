@@ -1,11 +1,11 @@
 "use client";
 
-import { AlertTriangle, CalendarClock, Check, CircleAlert, RefreshCw, Ticket, UsersRound } from "lucide-react";
+import { AlertTriangle, CalendarClock, Check, CircleAlert, FolderKanban, RefreshCw, Ticket, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
-type WorkKind = "TICKET" | "EVENT" | "EVENT_TASK";
+type WorkKind = "TICKET" | "EVENT" | "EVENT_TASK" | "PROJECT";
 type Period = "ALL" | "TODAY" | "7_DAYS" | "30_DAYS";
 
 interface WorkItem {
@@ -15,6 +15,7 @@ interface WorkItem {
   title: string;
   clientName: string | null;
   status: string;
+  health?: string | null;
   priority: string | null;
   owner: string | null;
   teamName: string | null;
@@ -33,6 +34,8 @@ interface OperationsOverview {
     unassignedTickets: number;
     activeEvents: number;
     upcomingEvents: number;
+    activeProjects: number;
+    atRiskProjects: number;
     blockedTasks: number;
     attentionItems: number;
     overdueItems: number;
@@ -69,7 +72,8 @@ function formatDateTime(value: string) {
 
 function kindLabel(kind: WorkKind) {
   if (kind === "EVENT_TASK") return "Event task";
-  return kind === "EVENT" ? "Event request" : "Ticket";
+  if (kind === "EVENT") return "Event request";
+  return kind === "PROJECT" ? "Project" : "Ticket";
 }
 
 function SummaryCard({ icon: Icon, title, value, note, tone = "default" }: { icon: typeof Ticket; title: string; value: number; note: string; tone?: "default" | "attention" }) {
@@ -123,12 +127,12 @@ export function OperationsWorkspace() {
     return overview.items.filter((item) => {
       const dueDate = item.dueAt ? new Date(item.dueAt) : null;
       const timeMatches = period === "ALL" || !dueDate || (dueDate >= now && dueDate <= end) || (item.attention && dueDate < now);
-      const text = [item.reference, item.title, item.clientName, item.owner, item.teamName, item.status, item.priority].filter(Boolean).join(" ").toLowerCase();
+      const text = [item.reference, item.title, item.clientName, item.owner, item.teamName, item.status, item.health, item.priority].filter(Boolean).join(" ").toLowerCase();
       return timeMatches && (!attentionOnly || item.attention) && (!query || text.includes(query));
     });
   }, [attentionOnly, overview, period, search]);
 
-  const canUpdateStatus = (item: WorkItem) => item.kind === "TICKET" ? Boolean(overview?.capabilities.updateTicketStatus) : Boolean(overview?.capabilities.updateEventStatus);
+  const canUpdateStatus = (item: WorkItem) => item.kind === "TICKET" ? Boolean(overview?.capabilities.updateTicketStatus) : item.kind === "PROJECT" ? false : Boolean(overview?.capabilities.updateEventStatus);
 
   const statusOptions = (item: WorkItem) => {
     if (item.kind === "TICKET") return ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_TECHNICIAN", "WAITING_ON_THIRD_PARTY", "RESOLVED", "CLOSED", "REOPENED", "CANCELLED"];
@@ -193,6 +197,7 @@ export function OperationsWorkspace() {
       <section className="operations-summary-grid" aria-label="Operations summary">
         <SummaryCard icon={CircleAlert} title="Needs attention" value={overview?.summary.attentionItems ?? 0} note={`${overview?.summary.overdueItems ?? 0} overdue work items`} tone="attention" />
         <SummaryCard icon={Ticket} title="Unassigned tickets" value={overview?.summary.unassignedTickets ?? 0} note={`${overview?.summary.activeTickets ?? 0} active tickets`} tone={(overview?.summary.unassignedTickets ?? 0) > 0 ? "attention" : "default"} />
+        <SummaryCard icon={FolderKanban} title="At-risk projects" value={overview?.summary.atRiskProjects ?? 0} note={`${overview?.summary.activeProjects ?? 0} active projects`} tone={(overview?.summary.atRiskProjects ?? 0) > 0 ? "attention" : "default"} />
         <SummaryCard icon={CalendarClock} title="Capacity alerts" value={overview?.summary.overCapacity ?? 0} note={`${overview?.summary.nearCapacity ?? 0} nearing ${overview?.summary.capacityWarningPercent ?? 75}% of capacity`} tone={(overview?.summary.overCapacity ?? 0) > 0 ? "attention" : "default"} />
         <SummaryCard icon={AlertTriangle} title="Blocked tasks" value={overview?.summary.blockedTasks ?? 0} note="Event service tasks requiring follow-up" tone={(overview?.summary.blockedTasks ?? 0) > 0 ? "attention" : "default"} />
       </section>
@@ -222,7 +227,7 @@ export function OperationsWorkspace() {
                   <td><span className="operations-kind-pill">{kindLabel(item.kind)}</span></td>
                   <td>{item.owner ?? <span className="operations-unassigned">Unassigned</span>}</td>
                   <td><div className="operations-context-cell"><strong>{item.clientName ?? "No client"}</strong><span>{item.teamName ?? "No team"}</span></div></td>
-                  <td><div className="operations-status-cell"><span>{label(item.status)}</span>{item.priority ? <small>{label(item.priority)}</small> : null}</div></td>
+                  <td><div className="operations-status-cell"><span>{label(item.status)}</span>{item.health ? <small>{label(item.health)}</small> : item.priority ? <small>{label(item.priority)}</small> : null}</div></td>
                   <td>{formatDate(item.dueAt)}</td>
                   <td>{formatDate(item.updatedAt)}</td>
                   <td>

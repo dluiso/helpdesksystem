@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { EventServiceRequestStatus, EventServiceTaskStatus, TicketPriority, TicketStatus } from "@prisma/client";
+import { EventServiceRequestStatus, EventServiceTaskStatus, ProjectHealth, ProjectMilestoneStatus, ProjectStatus, TicketPriority, TicketStatus } from "@prisma/client";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { SystemSettingsService } from "../system-settings/system-settings.service";
@@ -7,7 +7,7 @@ import { SystemSettingsService } from "../system-settings/system-settings.servic
 const CLOSED_TICKET_STATUSES = [TicketStatus.RESOLVED, TicketStatus.CLOSED, TicketStatus.CANCELLED, TicketStatus.MERGED];
 const CLOSED_EVENT_STATUSES = [EventServiceRequestStatus.COMPLETED, EventServiceRequestStatus.CANCELLED, EventServiceRequestStatus.CONVERTED_TO_TICKET];
 const CLOSED_TASK_STATUSES = [EventServiceTaskStatus.DONE, EventServiceTaskStatus.CANCELLED];
-type WorkKind = "TICKET" | "EVENT" | "EVENT_TASK";
+type WorkKind = "TICKET" | "EVENT" | "EVENT_TASK" | "PROJECT";
 type CapacityStatus = "AVAILABLE" | "NEAR_CAPACITY" | "OVER_CAPACITY";
 
 export interface OperationsWorkItem {
@@ -17,6 +17,7 @@ export interface OperationsWorkItem {
   title: string;
   clientName: string | null;
   status: string;
+  health?: ProjectHealth | null;
   priority: TicketPriority | null;
   owner: string | null;
   teamName: string | null;
@@ -41,7 +42,7 @@ export class OperationsService {
     const nextWeek = new Date(now);
     nextWeek.setDate(nextWeek.getDate() + settings.dueSoonDays);
 
-    const [tickets, requests, tasks] = await Promise.all([
+    const [tickets, requests, tasks, projects] = await Promise.all([
       this.prisma.ticket.findMany({
         where: { organizationId: user.organizationId, deletedAt: null, status: { notIn: CLOSED_TICKET_STATUSES } },
         select: {
@@ -93,7 +94,26 @@ export class OperationsService {
         },
         orderBy: [{ dueAt: "asc" }, { updatedAt: "desc" }],
         take: 80
-      })
+      }),
+      user.permissions.includes("projects.view")
+        ? this.prisma.project.findMany({
+            where: { organizationId: user.organizationId, deletedAt: null, status: { notIn: [ProjectStatus.COMPLETED, ProjectStatus.CANCELLED] } },
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              health: true,
+              targetDate: true,
+              updatedAt: true,
+              client: { select: { name: true } },
+              owner: { select: { firstName: true, lastName: true } },
+              milestones: { where: { status: ProjectMilestoneStatus.BLOCKED }, select: { id: true } },
+              dependencies: { where: { dependsOnProject: { status: { not: ProjectStatus.COMPLETED } } }, select: { id: true } }
+            },
+            orderBy: [{ targetDate: "asc" }, { updatedAt: "desc" }],
+            take: 80
+          })
+        : Promise.resolve([])
     ]);
 
     const ticketItems: OperationsWorkItem[] = tickets.map((ticket) => {
@@ -163,7 +183,30 @@ export class OperationsService {
       };
     });
 
-    const allItems = [...ticketItems, ...requestItems, ...taskItems];
+    const projectItems: OperationsWorkItem[] = projects.map((project) => {
+      const overdue = project.targetDate !== null && project.targetDate < now;
+      const blockedMilestones = project.milestones.length;
+      const blockedDependencies = project.dependencies.length;
+      return {
+        id: project.id,
+        kind: "PROJECT",
+        reference: "Project",
+        title: project.name,
+        clientName: project.client?.name ?? null,
+        status: project.status,
+        health: project.health,
+        priority: null,
+        owner: project.owner ? this.userName(project.owner) : null,
+        teamName: null,
+        dueAt: project.targetDate,
+        updatedAt: project.updatedAt,
+        href: "/projects",
+        attention: project.health !== ProjectHealth.ON_TRACK || overdue || blockedMilestones > 0 || blockedDependencies > 0,
+        internalOwners: []
+      };
+    });
+
+    const allItems = [...ticketItems, ...requestItems, ...taskItems, ...projectItems];
     const items = allItems
       .sort((left, right) => Number(right.attention) - Number(left.attention) || this.priorityRank(right.priority) - this.priorityRank(left.priority) || this.dateRank(left.dueAt, left.updatedAt) - this.dateRank(right.dueAt, right.updatedAt))
       .slice(0, 160);
@@ -176,6 +219,8 @@ export class OperationsService {
         unassignedTickets: ticketItems.filter((item) => !item.owner && !item.teamName).length,
         activeEvents: requestItems.length,
         upcomingEvents: requestItems.filter((item) => item.dueAt && item.dueAt >= now && item.dueAt <= nextWeek).length,
+        activeProjects: projectItems.length,
+        atRiskProjects: projectItems.filter((item) => item.attention).length,
         blockedTasks: taskItems.filter((item) => item.status === EventServiceTaskStatus.BLOCKED).length,
         attentionItems: allItems.filter((item) => item.attention).length,
         overdueItems: allItems.filter((item) => item.dueAt && item.dueAt < now).length,
