@@ -21,7 +21,8 @@ export type NotificationEventType =
   | "eventTaskAssignedToMe"
   | "eventTaskUpdated"
   | "eventCommentAdded"
-  | "projectDecisionAlert";
+  | "projectDecisionAlert"
+  | "projectDecisionDigest";
 
 interface NotifyUserInput {
   userId: string;
@@ -49,7 +50,8 @@ const EVENT_CHANNEL_FIELDS: Record<NotificationEventType, { inApp: keyof UpdateN
   eventTaskAssignedToMe: { inApp: "inAppEventTaskAssignedToMe", email: "emailEventTaskAssignedToMe" },
   eventTaskUpdated: { inApp: "inAppEventTaskUpdated", email: "emailEventTaskUpdated" },
   eventCommentAdded: { inApp: "inAppEventCommentAdded", email: "emailEventCommentAdded" },
-  projectDecisionAlert: { inApp: "inAppEnabled", email: "emailEnabled" }
+  projectDecisionAlert: { inApp: "inAppEnabled", email: "emailEnabled" },
+  projectDecisionDigest: { inApp: "inAppEnabled", email: "emailEnabled" }
 };
 
 @Injectable()
@@ -642,7 +644,8 @@ export class NotificationsService {
       eventTaskAssignedToMe: "Event task assigned to me",
       eventTaskUpdated: "Event task updated",
       eventCommentAdded: "Event comment added",
-      projectDecisionAlert: "Project decision alert"
+      projectDecisionAlert: "Project decision alert",
+      projectDecisionDigest: "Project decision summary"
     };
     return labels[eventType];
   }

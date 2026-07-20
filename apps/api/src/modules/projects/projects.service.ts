@@ -21,9 +21,9 @@ export class ProjectsService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    void this.runDecisionAlertScanSafely();
+    void this.runDecisionAutomationSafely();
     this.decisionAlertTimer = setInterval(() => {
-      void this.runDecisionAlertScanSafely();
+      void this.runDecisionAutomationSafely();
     }, DECISION_ALERT_SCAN_INTERVAL_MS);
   }
 
@@ -300,47 +300,110 @@ export class ProjectsService implements OnModuleInit, OnModuleDestroy {
         title: true,
         dueAt: true,
         owner: { select: { id: true, firstName: true, lastName: true } },
-        project: { select: { id: true, name: true, health: true, owner: { select: { id: true, firstName: true, lastName: true } } } }
+        project: { select: { id: true, organizationId: true, name: true, health: true, owner: { select: { id: true, firstName: true, lastName: true } } } }
       }
     });
     const alertDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const escalationRecipientsByOrganization = new Map<string, string[]>();
     let sent = 0;
 
     for (const decision of decisions) {
-      const recipient = decision.owner ?? decision.project.owner;
-      if (!recipient) continue;
+      let escalationRecipientIds = escalationRecipientsByOrganization.get(decision.project.organizationId);
+      if (!escalationRecipientIds) {
+        escalationRecipientIds = await this.getEscalationRecipientIds(decision.project.organizationId);
+        escalationRecipientsByOrganization.set(decision.project.organizationId, escalationRecipientIds);
+      }
+      const recipientIds = [...new Set([decision.owner?.id ?? decision.project.owner?.id, ...escalationRecipientIds].filter((id): id is string => Boolean(id)))];
+      if (!recipientIds.length) continue;
       const reasons: ProjectDecisionAlertReason[] = [];
       if (!decision.owner) reasons.push(ProjectDecisionAlertReason.UNASSIGNED);
       if (decision.dueAt && decision.dueAt < now) reasons.push(ProjectDecisionAlertReason.OVERDUE);
       if (decision.project.health !== ProjectHealth.ON_TRACK) reasons.push(ProjectDecisionAlertReason.PROJECT_AT_RISK);
 
       for (const reason of reasons) {
-        try {
-          await this.prisma.projectDecisionAlert.create({ data: { decisionId: decision.id, recipientUserId: recipient.id, reason, alertDate } });
-        } catch (error) {
-          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") continue;
-          this.logger.warn(`Unable to record project decision alert for ${decision.id}: ${error instanceof Error ? error.message : "Unknown error"}`);
-          continue;
+        for (const recipientUserId of recipientIds) {
+          try {
+            await this.prisma.projectDecisionAlert.create({ data: { decisionId: decision.id, recipientUserId, reason, alertDate } });
+          } catch (error) {
+            if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") continue;
+            this.logger.warn(`Unable to record project decision alert for ${decision.id}: ${error instanceof Error ? error.message : "Unknown error"}`);
+            continue;
+          }
+          await this.notifications.notifyUser({
+            userId: recipientUserId,
+            eventType: "projectDecisionAlert",
+            title: `Project decision needs attention: ${decision.title}`,
+            body: `${this.decisionAlertReasonLabel(reason)}\nProject: ${decision.project.name}\nDue: ${decision.dueAt ? decision.dueAt.toLocaleDateString("en-US") : "Not scheduled"}`,
+            metadata: { entityType: "ProjectDecision", projectId: decision.project.id, decisionId: decision.id, reason }
+          });
+          sent += 1;
         }
-        await this.notifications.notifyUser({
-          userId: recipient.id,
-          eventType: "projectDecisionAlert",
-          title: `Project decision needs attention: ${decision.title}`,
-          body: `${this.decisionAlertReasonLabel(reason)}\nProject: ${decision.project.name}\nDue: ${decision.dueAt ? decision.dueAt.toLocaleDateString("en-US") : "Not scheduled"}`,
-          metadata: { entityType: "ProjectDecision", projectId: decision.project.id, decisionId: decision.id, reason }
-        });
-        sent += 1;
       }
     }
 
     return { scanned: decisions.length, sent };
   }
 
-  private async runDecisionAlertScanSafely() {
+  async runDecisionDigestScan(now = new Date()) {
+    const settings = await this.prisma.systemSetting.findMany({
+      where: { operationsDecisionDailyDigestEnabled: true, operationsDecisionEscalationUserIds: { isEmpty: false } },
+      select: { organizationId: true, defaultTimezone: true, operationsDecisionDailyDigestTime: true }
+    });
+    let sent = 0;
+
+    for (const setting of settings) {
+      const clock = this.organizationClock(now, setting.defaultTimezone);
+      if (clock.time < setting.operationsDecisionDailyDigestTime) continue;
+      const recipientIds = await this.getEscalationRecipientIds(setting.organizationId);
+      if (!recipientIds.length) continue;
+      const decisions = await this.prisma.projectDecision.findMany({
+        where: {
+          status: { notIn: [ProjectDecisionStatus.RESOLVED, ProjectDecisionStatus.CANCELLED] },
+          project: { organizationId: setting.organizationId, deletedAt: null, status: { notIn: [ProjectStatus.COMPLETED, ProjectStatus.CANCELLED] } },
+          OR: [{ ownerId: null }, { dueAt: { lt: now } }, { project: { health: { not: ProjectHealth.ON_TRACK } } }]
+        },
+        select: {
+          id: true,
+          title: true,
+          dueAt: true,
+          owner: { select: { firstName: true, lastName: true } },
+          project: { select: { id: true, name: true, health: true } }
+        },
+        orderBy: [{ dueAt: "asc" }, { createdAt: "asc" }],
+        take: 25
+      });
+      if (!decisions.length) continue;
+      const digestDate = new Date(`${clock.date}T00:00:00.000Z`);
+
+      for (const recipientUserId of recipientIds) {
+        try {
+          await this.prisma.projectDecisionDigest.create({ data: { organizationId: setting.organizationId, recipientUserId, digestDate } });
+        } catch (error) {
+          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") continue;
+          this.logger.warn(`Unable to record project decision digest for ${setting.organizationId}: ${error instanceof Error ? error.message : "Unknown error"}`);
+          continue;
+        }
+        const details = decisions.slice(0, 10).map((decision) => `- ${decision.project.name}: ${decision.title} (${this.decisionDigestReason(decision, now)})`).join("\n");
+        await this.notifications.notifyUser({
+          userId: recipientUserId,
+          eventType: "projectDecisionDigest",
+          title: `Daily decision summary: ${decisions.length} need attention`,
+          body: `${details}${decisions.length > 10 ? `\n+ ${decisions.length - 10} more in Operations Center.` : ""}`,
+          metadata: { entityType: "ProjectDecisionDigest", href: "/operations", decisionCount: decisions.length }
+        });
+        sent += 1;
+      }
+    }
+
+    return { organizations: settings.length, sent };
+  }
+
+  private async runDecisionAutomationSafely() {
     try {
       await this.runDecisionAlertScan();
+      await this.runDecisionDigestScan();
     } catch (error) {
-      this.logger.warn(`Project decision alert scan failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+      this.logger.warn(`Project decision automation failed: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
   }
 
@@ -402,6 +465,30 @@ export class ProjectsService implements OnModuleInit, OnModuleDestroy {
     if (reason === ProjectDecisionAlertReason.UNASSIGNED) return "This decision has no assigned owner.";
     if (reason === ProjectDecisionAlertReason.OVERDUE) return "This decision is overdue.";
     return "The related project is at risk.";
+  }
+
+  private async getEscalationRecipientIds(organizationId: string) {
+    const settings = await this.prisma.systemSetting.findUnique({ where: { organizationId }, select: { operationsDecisionEscalationUserIds: true } });
+    const userIds = settings?.operationsDecisionEscalationUserIds ?? [];
+    if (!userIds.length) return [];
+    const users = await this.prisma.user.findMany({ where: { id: { in: userIds }, organizationId, isActive: true, deletedAt: null }, select: { id: true } });
+    return users.map((user) => user.id);
+  }
+
+  private organizationClock(now: Date, timezone: string) {
+    try {
+      const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
+      const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "00";
+      return { date: `${value("year")}-${value("month")}-${value("day")}`, time: `${value("hour")}:${value("minute")}` };
+    } catch {
+      return { date: now.toISOString().slice(0, 10), time: now.toISOString().slice(11, 16) };
+    }
+  }
+
+  private decisionDigestReason(decision: { owner: { firstName: string; lastName: string } | null; dueAt: Date | null; project: { health: ProjectHealth } }, now: Date) {
+    if (!decision.owner) return "unassigned";
+    if (decision.dueAt && decision.dueAt < now) return "overdue";
+    return decision.project.health !== ProjectHealth.ON_TRACK ? "project at risk" : "needs review";
   }
 
   private projectInclude(): Prisma.ProjectInclude {

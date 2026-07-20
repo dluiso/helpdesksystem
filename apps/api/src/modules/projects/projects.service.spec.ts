@@ -87,10 +87,12 @@ describe("ProjectsService", () => {
           title: "Confirm maintenance window",
           dueAt: new Date("2026-07-19T12:00:00.000Z"),
           owner: { id: "user-2", firstName: "Alex", lastName: "Example" },
-          project: { id: "project-1", name: "Network rollout", health: "AT_RISK", owner: { id: "user-1", firstName: "Project", lastName: "Manager" } }
+          project: { id: "project-1", organizationId: "org-1", name: "Network rollout", health: "AT_RISK", owner: { id: "user-1", firstName: "Project", lastName: "Manager" } }
         }])
       },
-      projectDecisionAlert: { create: jest.fn().mockResolvedValue({ id: "alert-1" }) }
+      projectDecisionAlert: { create: jest.fn().mockResolvedValue({ id: "alert-1" }) },
+      systemSetting: { findUnique: jest.fn().mockResolvedValue({ operationsDecisionEscalationUserIds: [] }) },
+      user: { findMany: jest.fn().mockResolvedValue([]) }
     };
     const notifications = { notifyUser: jest.fn().mockResolvedValue(undefined) };
     const service = new ProjectsService(prisma as never, { create: jest.fn() } as never, notifications as never);
@@ -99,5 +101,24 @@ describe("ProjectsService", () => {
 
     expect(prisma.projectDecisionAlert.create).toHaveBeenCalledTimes(2);
     expect(notifications.notifyUser).toHaveBeenCalledWith(expect.objectContaining({ userId: "user-2", eventType: "projectDecisionAlert", metadata: expect.objectContaining({ projectId: "project-1", decisionId: "decision-1" }) }));
+  });
+
+  it("sends one configured daily digest after the organization delivery time", async () => {
+    const prisma = {
+      systemSetting: {
+        findMany: jest.fn().mockResolvedValue([{ organizationId: "org-1", defaultTimezone: "America/Chicago", operationsDecisionDailyDigestTime: "08:00" }]),
+        findUnique: jest.fn().mockResolvedValue({ operationsDecisionEscalationUserIds: ["user-2"] })
+      },
+      user: { findMany: jest.fn().mockResolvedValue([{ id: "user-2" }]) },
+      projectDecision: { findMany: jest.fn().mockResolvedValue([{ id: "decision-1", title: "Confirm maintenance window", dueAt: new Date("2026-07-19T12:00:00.000Z"), owner: null, project: { id: "project-1", name: "Network rollout", health: "AT_RISK" } }]) },
+      projectDecisionDigest: { create: jest.fn().mockResolvedValue({ id: "digest-1" }) }
+    };
+    const notifications = { notifyUser: jest.fn().mockResolvedValue(undefined) };
+    const service = new ProjectsService(prisma as never, { create: jest.fn() } as never, notifications as never);
+
+    await expect(service.runDecisionDigestScan(new Date("2026-07-20T14:00:00.000Z"))).resolves.toEqual({ organizations: 1, sent: 1 });
+
+    expect(prisma.projectDecisionDigest.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ organizationId: "org-1", recipientUserId: "user-2" }) }));
+    expect(notifications.notifyUser).toHaveBeenCalledWith(expect.objectContaining({ userId: "user-2", eventType: "projectDecisionDigest", metadata: expect.objectContaining({ entityType: "ProjectDecisionDigest", href: "/operations" }) }));
   });
 });

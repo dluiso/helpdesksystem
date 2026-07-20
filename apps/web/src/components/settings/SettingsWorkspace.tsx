@@ -382,6 +382,9 @@ interface OperationsSettings {
   capacityBaseline: number;
   capacityWarningPercent: number;
   dueSoonDays: number;
+  decisionEscalationUserIds: string[];
+  decisionDailyDigestEnabled: boolean;
+  decisionDailyDigestTime: string;
 }
 
 type SecurityPostureStatus = "ok" | "warning" | "info";
@@ -708,7 +711,10 @@ const DEFAULT_SECURITY_SETTINGS: SecuritySettings = {
 const DEFAULT_OPERATIONS_SETTINGS: OperationsSettings = {
   capacityBaseline: 12,
   capacityWarningPercent: 75,
-  dueSoonDays: 7
+  dueSoonDays: 7,
+  decisionEscalationUserIds: [],
+  decisionDailyDigestEnabled: false,
+  decisionDailyDigestTime: "08:00"
 };
 
 const EMPTY_RULE_DRAFT = {
@@ -1509,7 +1515,10 @@ export function SettingsWorkspace() {
         body: JSON.stringify({
           capacityBaseline: Number(operationsDraft.capacityBaseline) || DEFAULT_OPERATIONS_SETTINGS.capacityBaseline,
           capacityWarningPercent: Number(operationsDraft.capacityWarningPercent) || DEFAULT_OPERATIONS_SETTINGS.capacityWarningPercent,
-          dueSoonDays: Number(operationsDraft.dueSoonDays) || DEFAULT_OPERATIONS_SETTINGS.dueSoonDays
+          dueSoonDays: Number(operationsDraft.dueSoonDays) || DEFAULT_OPERATIONS_SETTINGS.dueSoonDays,
+          decisionEscalationUserIds: operationsDraft.decisionEscalationUserIds,
+          decisionDailyDigestEnabled: operationsDraft.decisionDailyDigestEnabled,
+          decisionDailyDigestTime: operationsDraft.decisionDailyDigestTime
         })
       });
       applyOperationsSettings(saved);
@@ -4409,6 +4418,22 @@ export function SettingsWorkspace() {
                   <input className="input" type="number" min={1} max={30} value={operationsDraft.dueSoonDays} onChange={(event) => setOperationsDraft((current) => ({ ...current, dueSoonDays: Number(event.target.value) }))} />
                   <span className="field-help">Upcoming event requests inside this window are marked for attention in Operations Center.</span>
                 </label>
+                <label className="full-span">
+                  Decision escalation recipients
+                  <select className="input" multiple value={operationsDraft.decisionEscalationUserIds} onChange={(event) => setOperationsDraft((current) => ({ ...current, decisionEscalationUserIds: Array.from(event.target.selectedOptions, (option) => option.value) }))} size={Math.min(6, Math.max(3, users.filter((user) => user.isActive !== false).length))}>
+                    {users.filter((user) => user.isActive !== false).map((user) => <option value={user.id} key={user.id}>{user.firstName} {user.lastName} · {user.email}</option>)}
+                  </select>
+                  <span className="field-help">These active users receive escalations for overdue, unassigned, and at-risk project decisions. Hold Command or Control to select multiple users.</span>
+                </label>
+                <label className="checkbox-row full-span">
+                  <input type="checkbox" checked={operationsDraft.decisionDailyDigestEnabled} onChange={(event) => setOperationsDraft((current) => ({ ...current, decisionDailyDigestEnabled: event.target.checked }))} />
+                  Send a daily decision summary to escalation recipients
+                </label>
+                {operationsDraft.decisionDailyDigestEnabled ? <label>
+                  Daily summary time
+                  <input className="input" type="time" value={operationsDraft.decisionDailyDigestTime} onChange={(event) => setOperationsDraft((current) => ({ ...current, decisionDailyDigestTime: event.target.value }))} />
+                  <span className="field-help">Uses the organization default timezone.</span>
+                </label> : null}
               </div>
               <div className="settings-actions">
                 <button className="button" type="button" onClick={saveOperationsSettings} disabled={busy === "operations-settings"}>Save Operations Settings</button>

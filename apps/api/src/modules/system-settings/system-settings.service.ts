@@ -241,12 +241,18 @@ export class SystemSettingsService {
   }
 
   async updateOperationsSettings(user: AuthenticatedUser, input: UpdateOperationsSettingsDto) {
+    const existing = await this.getOrCreateSettings(user.organizationId);
+    const decisionEscalationUserIds = await this.resolveOperationsEscalationUserIds(input.decisionEscalationUserIds ?? existing.operationsDecisionEscalationUserIds, user.organizationId);
+    const decisionDailyDigestTime = this.normalizedTimeOfDay(input.decisionDailyDigestTime ?? existing.operationsDecisionDailyDigestTime, "08:00");
     const updated = await this.prisma.systemSetting.update({
       where: { organizationId: user.organizationId },
       data: {
         operationsCapacityBaseline: input.capacityBaseline,
         operationsCapacityWarningPercent: input.capacityWarningPercent,
-        operationsDueSoonDays: input.dueSoonDays
+        operationsDueSoonDays: input.dueSoonDays,
+        operationsDecisionEscalationUserIds: decisionEscalationUserIds,
+        operationsDecisionDailyDigestEnabled: input.decisionDailyDigestEnabled ?? existing.operationsDecisionDailyDigestEnabled,
+        operationsDecisionDailyDigestTime: decisionDailyDigestTime
       }
     });
 
@@ -258,7 +264,10 @@ export class SystemSettingsService {
       metadata: {
         capacityBaseline: updated.operationsCapacityBaseline,
         capacityWarningPercent: updated.operationsCapacityWarningPercent,
-        dueSoonDays: updated.operationsDueSoonDays
+        dueSoonDays: updated.operationsDueSoonDays,
+        decisionEscalationUserIds: updated.operationsDecisionEscalationUserIds,
+        decisionDailyDigestEnabled: updated.operationsDecisionDailyDigestEnabled,
+        decisionDailyDigestTime: updated.operationsDecisionDailyDigestTime
       }
     });
 
@@ -707,12 +716,29 @@ export class SystemSettingsService {
     operationsCapacityBaseline: number;
     operationsCapacityWarningPercent: number;
     operationsDueSoonDays: number;
+    operationsDecisionEscalationUserIds: string[];
+    operationsDecisionDailyDigestEnabled: boolean;
+    operationsDecisionDailyDigestTime: string;
   }) {
     return {
       capacityBaseline: settings.operationsCapacityBaseline,
       capacityWarningPercent: settings.operationsCapacityWarningPercent,
-      dueSoonDays: settings.operationsDueSoonDays
+      dueSoonDays: settings.operationsDueSoonDays,
+      decisionEscalationUserIds: settings.operationsDecisionEscalationUserIds,
+      decisionDailyDigestEnabled: settings.operationsDecisionDailyDigestEnabled,
+      decisionDailyDigestTime: settings.operationsDecisionDailyDigestTime
     };
+  }
+
+  private async resolveOperationsEscalationUserIds(userIds: string[], organizationId: string) {
+    const uniqueUserIds = [...new Set(userIds)];
+    if (!uniqueUserIds.length) return [];
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: uniqueUserIds }, organizationId, isActive: true, deletedAt: null },
+      select: { id: true }
+    });
+    if (users.length !== uniqueUserIds.length) throw new BadRequestException("Each escalation recipient must be an active user in this organization.");
+    return uniqueUserIds;
   }
 
   private optionalString(value: string | null | undefined) {

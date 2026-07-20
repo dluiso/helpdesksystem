@@ -293,6 +293,7 @@ model Organization {
   deviceViews          UserDeviceView[]
   auditLogs            AuditLog[]
   projects             Project[]
+  projectDecisionDigests ProjectDecisionDigest[]
 
   @@map("organizations")
 }
@@ -378,6 +379,9 @@ model SystemSetting {
   operationsCapacityBaseline Int      @default(12)
   operationsCapacityWarningPercent Int @default(75)
   operationsDueSoonDays      Int      @default(7)
+  operationsDecisionEscalationUserIds String[] @default([])
+  operationsDecisionDailyDigestEnabled Boolean @default(false)
+  operationsDecisionDailyDigestTime String @default("08:00")
   passwordResetEnabled       Boolean  @default(true)
   passwordResetTokenTtlMinutes Int     @default(30)
   mfaUserManagedEnabled      Boolean  @default(true)
@@ -521,6 +525,7 @@ model User {
   assignedProjectMilestones ProjectMilestone[] @relation("ProjectMilestoneAssignee")
   assignedProjectDecisions ProjectDecision[] @relation("ProjectDecisionOwner")
   projectDecisionAlerts ProjectDecisionAlert[] @relation("ProjectDecisionAlertRecipient")
+  projectDecisionDigests ProjectDecisionDigest[] @relation("ProjectDecisionDigestRecipient")
 
   @@index([organizationId])
   @@index([deletedAt])
@@ -2152,6 +2157,20 @@ model ProjectDecisionAlert {
   @@unique([decisionId, reason, alertDate, recipientUserId])
   @@index([recipientUserId, createdAt])
   @@map("project_decision_alerts")
+}
+
+model ProjectDecisionDigest {
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String       @db.Uuid
+  recipientUserId String       @db.Uuid
+  digestDate      DateTime     @db.Date
+  createdAt       DateTime     @default(now())
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  recipient       User         @relation("ProjectDecisionDigestRecipient", fields: [recipientUserId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, recipientUserId, digestDate])
+  @@index([recipientUserId, createdAt])
+  @@map("project_decision_digests")
 }
 
 model ProjectWorkItem {
