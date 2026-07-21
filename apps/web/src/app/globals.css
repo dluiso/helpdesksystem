@@ -9298,16 +9298,216 @@ a.dashboard-list-row:hover {
   color: var(--text-muted);
 }
 
+.operations-queue-heading {
+  grid-template-columns: minmax(190px, 0.42fr) minmax(560px, 1.25fr) auto;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.operations-queue-heading h2 {
+  font-size: 21px;
+  line-height: 1.15;
+}
+
+.operations-queue-heading p,
+.operations-queue-heading > .muted {
+  font-size: 12px;
+}
+
+.operations-queue-heading > .muted {
+  white-space: nowrap;
+}
+
+.operations-queue-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-subtle);
+}
+
+.operations-queue-filters > svg {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.operations-queue-filters .input {
+  width: clamp(105px, 10vw, 150px);
+  min-width: 105px;
+  min-height: 30px;
+  padding: 4px 23px 4px 7px;
+  font-size: 11px;
+}
+
+.operations-queue-filters .icon-button {
+  width: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+}
+
 .operations-table-scroll {
   overflow-x: auto;
 }
 
 .operations-table {
-  min-width: 1200px;
+  min-width: 1120px;
 }
 
 .operations-table td {
   vertical-align: middle;
+}
+
+.operations-queue-panel .operations-table {
+  table-layout: fixed;
+}
+
+.operations-queue-panel .operations-table th,
+.operations-queue-panel .operations-table td {
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.operations-queue-panel .operations-table th:first-child {
+  width: 29%;
+}
+
+.operations-queue-panel .operations-table th:nth-child(2) {
+  width: 7%;
+}
+
+.operations-queue-panel .operations-table th:nth-child(3) {
+  width: 17%;
+}
+
+.operations-queue-panel .operations-table th:nth-child(4) {
+  width: 16%;
+}
+
+.operations-queue-panel .operations-table th:nth-child(5) {
+  width: 11%;
+}
+
+.operations-queue-panel .operations-table th:nth-child(6),
+.operations-queue-panel .operations-table th:nth-child(7) {
+  width: 9%;
+}
+
+.operations-queue-panel .operations-table th:last-child {
+  width: 110px;
+}
+
+.operations-queue-panel .operations-table th button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-weight: 850;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.operations-queue-panel .operations-table th button svg {
+  color: var(--text-muted);
+}
+
+.operations-queue-panel .operations-table th button.active,
+.operations-queue-panel .operations-table th button.active svg {
+  color: var(--brand-primary);
+}
+
+.operations-queue-panel .operations-table td:nth-child(6),
+.operations-queue-panel .operations-table td:nth-child(7) {
+  white-space: nowrap;
+}
+
+.operations-queue-panel .operations-work-cell {
+  gap: 2px;
+}
+
+.operations-queue-panel .operations-work-cell a {
+  font-size: 11px;
+}
+
+.operations-queue-panel .operations-work-cell strong,
+.operations-queue-panel .operations-context-cell strong {
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.operations-queue-panel .operations-context-cell,
+.operations-queue-panel .operations-status-cell {
+  gap: 2px;
+}
+
+.operations-queue-panel .operations-kind-pill {
+  padding: 3px 6px;
+  font-size: 10px;
+}
+
+.operations-queue-panel .operations-row-actions .button,
+.operations-queue-panel .operations-action-control .input,
+.operations-queue-panel .operations-action-control .icon-button {
+  min-height: 30px;
+}
+
+.operations-queue-panel .operations-action-control {
+  grid-template-columns: minmax(72px, 1fr) 30px;
+  min-width: 0;
+  width: 100%;
+}
+
+.operations-queue-panel .operations-action-control .input {
+  min-width: 0;
+  padding-right: 22px;
+  font-size: 11px;
+}
+
+.operations-queue-panel .operations-row-actions .button {
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
+.operations-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  min-height: 46px;
+  padding: 7px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--text-muted);
+  background: var(--surface-subtle);
+  font-size: 12px;
+}
+
+.operations-pagination label,
+.operations-pagination-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.operations-pagination .input {
+  width: 68px;
+  min-height: 30px;
+  padding: 4px 22px 4px 7px;
+  font-size: 12px;
+}
+
+.operations-pagination .icon-button {
+  width: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
 }
 
 .operations-decision-table {
@@ -9706,6 +9906,15 @@ a.dashboard-list-row:hover {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .operations-queue-heading {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .operations-queue-filters {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
   .operations-executive-grid {
     grid-template-columns: 1fr;
   }
@@ -9736,6 +9945,24 @@ a.dashboard-list-row:hover {
 
   .operations-summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .operations-queue-filters {
+    flex-wrap: wrap;
+  }
+
+  .operations-queue-filters > svg {
+    display: none;
+  }
+
+  .operations-queue-filters .input {
+    width: calc(50% - 3px);
+    flex: 1 1 calc(50% - 3px);
+  }
+
+  .operations-pagination {
+    justify-content: space-between;
+    flex-wrap: wrap;
   }
 
   .operations-period-control {

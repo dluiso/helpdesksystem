@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CalendarClock, Check, CircleAlert, ClipboardCheck, Download, FolderKanban, Mail, PenLine, RefreshCw, Ticket, UsersRound, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, CalendarClock, Check, ChevronLeft, ChevronRight, CircleAlert, ClipboardCheck, Download, Filter, FolderKanban, Mail, PenLine, RefreshCw, Ticket, UsersRound, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
@@ -9,6 +9,9 @@ type WorkKind = "TICKET" | "EVENT" | "EVENT_TASK" | "PROJECT";
 type Period = "ALL" | "TODAY" | "7_DAYS" | "30_DAYS";
 type QueueMode = "ATTENTION" | "ALL";
 type DecisionStatus = "OPEN" | "IN_PROGRESS";
+type QueueSortKey = "work" | "source" | "owner" | "client" | "status" | "dueAt" | "updatedAt";
+type SortDirection = "asc" | "desc";
+type PageSize = "20" | "50" | "100" | "ALL";
 
 interface WorkItem {
   id: string;
@@ -118,6 +121,12 @@ function SummaryCard({ icon: Icon, title, value, note, tone = "default" }: { ico
   );
 }
 
+function SortButton({ column, activeColumn, direction, children, onSort }: { column: QueueSortKey; activeColumn: QueueSortKey; direction: SortDirection; children: string; onSort: (column: QueueSortKey) => void }) {
+  const active = column === activeColumn;
+  const Icon = !active ? ArrowUpDown : direction === "asc" ? ArrowUp : ArrowDown;
+  return <button className={active ? "active" : ""} type="button" onClick={() => onSort(column)} aria-label={`Sort by ${children} ${active && direction === "asc" ? "descending" : "ascending"}`}>{children}<Icon size={13} aria-hidden="true" /></button>;
+}
+
 export function OperationsWorkspace() {
   const [overview, setOverview] = useState<OperationsOverview | null>(null);
   const [period, setPeriod] = useState<Period>("7_DAYS");
@@ -128,6 +137,14 @@ export function OperationsWorkspace() {
   const [statusDrafts, setStatusDrafts] = useState<Record<string, string>>({});
   const [updatingItemId, setUpdatingItemId] = useState<string | null>(null);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [sourceFilter, setSourceFilter] = useState("ALL");
+  const [ownerFilter, setOwnerFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [planningFilter, setPlanningFilter] = useState<"ALL" | "PLANNED" | "UNSCHEDULED">("ALL");
+  const [sortKey, setSortKey] = useState<QueueSortKey>("updatedAt");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [pageSize, setPageSize] = useState<PageSize>("20");
+  const [page, setPage] = useState(1);
   const [decisionOwner, setDecisionOwner] = useState("ALL");
   const [decisionStatus, setDecisionStatus] = useState<"ALL" | DecisionStatus>("ALL");
   const [decisionAttentionOnly, setDecisionAttentionOnly] = useState(true);
@@ -158,7 +175,7 @@ export function OperationsWorkspace() {
     void load();
   }, []);
 
-  const visibleItems = useMemo(() => {
+  const queueCandidates = useMemo(() => {
     if (!overview) return [];
     const query = search.trim().toLowerCase();
     const now = new Date();
@@ -174,6 +191,65 @@ export function OperationsWorkspace() {
       return timeMatches && (queueMode === "ALL" || item.attention) && (!query || text.includes(query));
     });
   }, [overview, period, queueMode, search]);
+
+  const queueOwners = useMemo(() => [...new Set((overview?.items ?? []).flatMap((item) => item.internalOwners.length ? item.internalOwners : item.owner ? [item.owner] : []))].sort((left, right) => left.localeCompare(right)), [overview?.items]);
+  const queueStatuses = useMemo(() => [...new Set((overview?.items ?? []).map((item) => item.status))].sort((left, right) => label(left).localeCompare(label(right))), [overview?.items]);
+
+  const visibleItems = useMemo(() => {
+    const filtered = queueCandidates.filter((item) => {
+      const ownerMatches = ownerFilter === "ALL" || (ownerFilter === "UNASSIGNED" ? !item.owner : item.owner === ownerFilter || item.internalOwners.includes(ownerFilter));
+      const planningMatches = planningFilter === "ALL" || (planningFilter === "PLANNED" ? Boolean(item.dueAt) : !item.dueAt);
+      return (sourceFilter === "ALL" || item.kind === sourceFilter) && ownerMatches && (statusFilter === "ALL" || item.status === statusFilter) && planningMatches;
+    });
+
+    const valueFor = (item: WorkItem) => {
+      if (sortKey === "work") return `${item.reference} ${item.title}`;
+      if (sortKey === "source") return kindLabel(item.kind);
+      if (sortKey === "owner") return item.owner;
+      if (sortKey === "client") return `${item.clientName ?? ""} ${item.teamName ?? ""}`;
+      if (sortKey === "status") return `${item.status} ${item.priority ?? item.health ?? ""}`;
+      return item[sortKey];
+    };
+
+    return [...filtered].sort((left, right) => {
+      const leftValue = valueFor(left);
+      const rightValue = valueFor(right);
+      if (leftValue === null && rightValue === null) return left.reference.localeCompare(right.reference);
+      if (leftValue === null) return 1;
+      if (rightValue === null) return -1;
+      const comparison = sortKey === "dueAt" || sortKey === "updatedAt"
+        ? new Date(leftValue).getTime() - new Date(rightValue).getTime()
+        : leftValue.localeCompare(rightValue, undefined, { numeric: true, sensitivity: "base" });
+      return (sortDirection === "asc" ? comparison : -comparison) || left.reference.localeCompare(right.reference);
+    });
+  }, [ownerFilter, planningFilter, queueCandidates, sortDirection, sortKey, sourceFilter, statusFilter]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [ownerFilter, pageSize, period, planningFilter, queueMode, search, sortDirection, sortKey, sourceFilter, statusFilter]);
+
+  const pageSizeNumber = pageSize === "ALL" ? Math.max(visibleItems.length, 1) : Number(pageSize);
+  const pageCount = Math.max(1, Math.ceil(visibleItems.length / pageSizeNumber));
+  const currentPage = Math.min(page, pageCount);
+  const pageItems = pageSize === "ALL" ? visibleItems : visibleItems.slice((currentPage - 1) * pageSizeNumber, currentPage * pageSizeNumber);
+  const firstVisibleItem = visibleItems.length ? (currentPage - 1) * pageSizeNumber + 1 : 0;
+  const lastVisibleItem = pageSize === "ALL" ? visibleItems.length : Math.min(currentPage * pageSizeNumber, visibleItems.length);
+  const filtersActive = sourceFilter !== "ALL" || ownerFilter !== "ALL" || statusFilter !== "ALL" || planningFilter !== "ALL";
+
+  const sortQueue = (column: QueueSortKey) => {
+    if (sortKey === column) setSortDirection((current) => current === "asc" ? "desc" : "asc");
+    else {
+      setSortKey(column);
+      setSortDirection("asc");
+    }
+  };
+
+  const clearQueueFilters = () => {
+    setSourceFilter("ALL");
+    setOwnerFilter("ALL");
+    setStatusFilter("ALL");
+    setPlanningFilter("ALL");
+  };
 
   const canUpdateStatus = (item: WorkItem) => item.kind === "TICKET" ? Boolean(overview?.capabilities.updateTicketStatus) : item.kind === "PROJECT" ? false : Boolean(overview?.capabilities.updateEventStatus);
 
@@ -275,20 +351,28 @@ export function OperationsWorkspace() {
       {executive?.summary.activeProjects ? <section className="panel operations-executive-panel"><div className="section-heading operations-section-heading"><div><h2>Executive project review</h2><p>Delivery health, overdue commitments, and decision ownership.</p></div>{overview?.capabilities.exportProjectReports ? <div className="operations-executive-downloads"><a className="button secondary" href={`${apiBaseUrl}/reports/projects/executive-export?format=csv`}><Download size={15} aria-hidden="true" /> CSV</a><a className="button secondary" href={`${apiBaseUrl}/reports/projects/executive-export?format=xlsx`}><Download size={15} aria-hidden="true" /> Excel</a><a className="button secondary" href={`${apiBaseUrl}/reports/projects/executive-export?format=pdf`}><Download size={15} aria-hidden="true" /> PDF</a></div> : null}</div><div className="operations-executive-grid"><SummaryCard icon={FolderKanban} title="At risk" value={executive.summary.atRiskProjects} note={`${executive.summary.activeProjects} active projects`} tone={executive.summary.atRiskProjects ? "attention" : "default"} /><SummaryCard icon={ClipboardCheck} title="Overdue decisions" value={executive.summary.overdueDecisions} note={`${executive.summary.unassignedDecisions} unassigned`} tone={executive.summary.overdueDecisions ? "attention" : "default"} /><SummaryCard icon={AlertTriangle} title="Overdue milestones" value={executive.summary.overdueMilestones} note="Across active project plans" tone={executive.summary.overdueMilestones ? "attention" : "default"} /></div>{overview?.capabilities.scheduleProjectReports ? <div className="operations-executive-schedule"><Mail size={16} aria-hidden="true" /><input className="input" value={executiveRecipients} onChange={(event) => setExecutiveRecipients(event.target.value)} placeholder="Schedule recipient emails" aria-label="Executive report recipient emails" /><select className="input" value={executiveFrequency} onChange={(event) => setExecutiveFrequency(event.target.value as "weekly" | "monthly")} aria-label="Executive report frequency"><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select><button className="button secondary" type="button" onClick={() => void scheduleExecutiveReport()}>Schedule PDF</button></div> : null}</section> : executive ? <section className="operations-project-empty" aria-label="Project planning"><FolderKanban size={18} aria-hidden="true" /><span>No active project plans yet.</span><Link href="/projects">Create a project plan</Link></section> : null}
 
       <section className="panel operations-queue-panel">
-        <div className="section-heading operations-section-heading">
+        <div className="section-heading operations-section-heading operations-queue-heading">
           <div>
             <h2>Operational queue</h2>
-            <p>{loading ? "Refreshing work data..." : `Showing ${visibleItems.length} of ${overview?.items.length ?? 0} ${queueScopeLabel}`}</p>
+            <p>{loading ? "Refreshing work data..." : `Showing ${firstVisibleItem}-${lastVisibleItem} of ${visibleItems.length} matching ${queueScopeLabel}`}</p>
+          </div>
+          <div className="operations-queue-filters" aria-label="Filter operational queue">
+            <Filter size={15} aria-hidden="true" />
+            <select className="input" value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)} aria-label="Filter by source"><option value="ALL">All sources</option>{(["TICKET", "EVENT", "EVENT_TASK", "PROJECT"] as WorkKind[]).map((kind) => <option value={kind} key={kind}>{kindLabel(kind)}</option>)}</select>
+            <select className="input" value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} aria-label="Filter by owner"><option value="ALL">All owners</option><option value="UNASSIGNED">Unassigned</option>{queueOwners.map((owner) => <option value={owner} key={owner}>{owner}</option>)}</select>
+            <select className="input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter by status"><option value="ALL">All statuses</option>{queueStatuses.map((status) => <option value={status} key={status}>{label(status)}</option>)}</select>
+            <select className="input" value={planningFilter} onChange={(event) => setPlanningFilter(event.target.value as typeof planningFilter)} aria-label="Filter by planning"><option value="ALL">Any planning</option><option value="PLANNED">Planned</option><option value="UNSCHEDULED">Unscheduled</option></select>
+            {filtersActive ? <button className="button secondary icon-button" type="button" onClick={clearQueueFilters} title="Clear queue filters" aria-label="Clear queue filters"><X size={14} aria-hidden="true" /></button> : null}
           </div>
           {overview ? <span className="muted">Updated {formatDateTime(overview.generatedAt)}</span> : null}
         </div>
         <div className="operations-table-scroll">
           <table className="table operations-table">
             <thead>
-              <tr><th>Work item</th><th>Source</th><th>Owner</th><th>Client / Team</th><th>Status</th><th>Target / Event</th><th>Updated</th><th>Action</th></tr>
+              <tr><th><SortButton column="work" activeColumn={sortKey} direction={sortDirection} onSort={sortQueue}>Work item</SortButton></th><th><SortButton column="source" activeColumn={sortKey} direction={sortDirection} onSort={sortQueue}>Source</SortButton></th><th><SortButton column="owner" activeColumn={sortKey} direction={sortDirection} onSort={sortQueue}>Owner</SortButton></th><th><SortButton column="client" activeColumn={sortKey} direction={sortDirection} onSort={sortQueue}>Client / Team</SortButton></th><th><SortButton column="status" activeColumn={sortKey} direction={sortDirection} onSort={sortQueue}>Status</SortButton></th><th><SortButton column="dueAt" activeColumn={sortKey} direction={sortDirection} onSort={sortQueue}>Target / Event</SortButton></th><th><SortButton column="updatedAt" activeColumn={sortKey} direction={sortDirection} onSort={sortQueue}>Updated</SortButton></th><th>Action</th></tr>
             </thead>
             <tbody>
-              {visibleItems.map((item) => (
+              {pageItems.map((item) => (
                 <tr key={`${item.kind}-${item.id}`}>
                   <td>
                     <div className="operations-work-cell">
@@ -320,6 +404,11 @@ export function OperationsWorkspace() {
             </tbody>
           </table>
         </div>
+        <footer className="operations-pagination">
+          <span>{firstVisibleItem}-{lastVisibleItem} of {visibleItems.length}</span>
+          <label><span>Rows</span><select className="input" value={pageSize} onChange={(event) => setPageSize(event.target.value as PageSize)}><option value="20">20</option><option value="50">50</option><option value="100">100</option><option value="ALL">All</option></select></label>
+          <div className="operations-pagination-actions"><button className="button secondary icon-button" type="button" onClick={() => setPage(Math.max(1, currentPage - 1))} disabled={currentPage <= 1} title="Previous page" aria-label="Previous page"><ChevronLeft size={15} aria-hidden="true" /></button><span>Page {currentPage} of {pageCount}</span><button className="button secondary icon-button" type="button" onClick={() => setPage(Math.min(pageCount, currentPage + 1))} disabled={currentPage >= pageCount} title="Next page" aria-label="Next page"><ChevronRight size={15} aria-hidden="true" /></button></div>
+        </footer>
       </section>
 
       <section className="panel operations-decision-panel">
