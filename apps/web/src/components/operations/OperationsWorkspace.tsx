@@ -241,7 +241,6 @@ export function OperationsWorkspace() {
       <section className="operations-toolbar panel" aria-label="Operations filters">
         <div className="operations-toolbar-copy">
           <strong>Active work queue</strong>
-          <span className="muted">Prioritized operational visibility. Updates remain in their source modules.</span>
         </div>
         <div className="operations-toolbar-controls">
           <div className="segmented-control" aria-label="Queue mode">
