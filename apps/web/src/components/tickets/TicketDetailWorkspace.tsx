@@ -95,6 +95,7 @@ interface Ticket {
   description: string | null;
   status: string;
   priority: string;
+  targetDate: string | null;
   source: string;
   senderEmail: string | null;
   senderDomain: string | null;
@@ -156,6 +157,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const [externalSpecialists, setExternalSpecialists] = useState<ExternalSpecialist[]>([]);
   const [assignedUserIds, setAssignedUserIds] = useState<string[]>([]);
   const [assignedTeamId, setAssignedTeamId] = useState("");
+  const [targetDate, setTargetDate] = useState("");
   const [watcherIds, setWatcherIds] = useState<string[]>([]);
   const [externalAssignmentId, setExternalAssignmentId] = useState("");
   const [externalDraft, setExternalDraft] = useState({ name: "", email: "", phone: "", company: "" });
@@ -215,6 +217,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       }
       setAssignedUserIds(ticketData.assignees?.length ? ticketData.assignees.map((assignment) => assignment.user.id) : ticketData.assignedUserId ? [ticketData.assignedUserId] : []);
       setAssignedTeamId(ticketData.assignedTeamId ?? "");
+      setTargetDate(ticketData.targetDate ? ticketData.targetDate.slice(0, 10) : "");
       setWatcherIds(ticketData.watchers.map((watcher) => watcher.user.id));
     } catch {
       setError("Unable to load ticket.");
@@ -262,6 +265,25 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       setAssignmentNotice("Assignment saved.");
     } catch {
       setError("Unable to save assignment.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function savePlanning(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setAssignmentNotice(null);
+    setError(null);
+    try {
+      const updated = await apiFetch<Ticket>(`/tickets/${ticketId}/planning`, {
+        method: "PATCH",
+        body: JSON.stringify({ targetDate: targetDate || null })
+      });
+      setTicket((current) => current ? { ...current, targetDate: updated.targetDate } : current);
+      setAssignmentNotice("Target date saved.");
+    } catch {
+      setError("Unable to save ticket planning date.");
     } finally {
       setSaving(false);
     }
@@ -647,6 +669,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
             <dl className="detail-list">
               <div><dt>Status</dt><dd><span className={`status-pill ${statusClass(ticket.status)}`}>{label(ticket.status)}</span></dd></div>
               <div><dt>Priority</dt><dd>{label(ticket.priority)}</dd></div>
+              <div><dt>Target date</dt><dd>{ticket.targetDate ? new Date(ticket.targetDate).toLocaleDateString() : "Not planned"}</dd></div>
               <div><dt>Source</dt><dd>{label(ticket.source)}</dd></div>
               <div><dt>Sender</dt><dd className="ticket-detail-email" title={ticket.senderEmail ?? undefined}>{ticket.senderEmail ?? "Not set"}</dd></div>
               <div><dt>Inline images</dt><dd>{inlineAttachments.length}</dd></div>
@@ -654,6 +677,17 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
               {ticket.mergedAt ? <div><dt>Merged</dt><dd>{new Date(ticket.mergedAt).toLocaleString()}</dd></div> : null}
             </dl>
           </div>
+          <form className="panel ticket-assignment-panel" onSubmit={savePlanning}>
+            <h3>Operational planning</h3>
+            <label className="field">
+              <span>Target date</span>
+              <input className="input" type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} />
+            </label>
+            <button className="button secondary" type="submit" disabled={saving}>
+              <Save size={16} aria-hidden="true" />
+              <span>Save Target Date</span>
+            </button>
+          </form>
           {ticket.mergedTickets.length > 0 ? (
             <div className="panel ticket-merged-panel">
               <h3>Merged Tickets</h3>

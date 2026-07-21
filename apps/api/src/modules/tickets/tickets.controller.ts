@@ -13,6 +13,7 @@ import { ListTicketsQueryDto } from "./dto/list-tickets-query.dto";
 import { MergeTicketsDto } from "./dto/merge-tickets.dto";
 import { UpdateTicketAssignmentDto } from "./dto/update-ticket-assignment.dto";
 import { UpdateTicketWatchersDto } from "./dto/update-ticket-watchers.dto";
+import { UpdateTicketPlanningDto } from "./dto/update-ticket-planning.dto";
 import { UpsertTicketViewDto } from "./dto/upsert-ticket-view.dto";
 import { TicketsService } from "./tickets.service";
 
@@ -107,6 +108,12 @@ export class TicketsController {
     @CurrentUser() user: AuthenticatedUser
   ) {
     return this.ticketsService.updateAssignment(ticketId, body, user);
+  }
+
+  @Patch(":ticketId/planning")
+  @RequirePermissions("tickets.update")
+  updatePlanning(@Param("ticketId") ticketId: string, @Body() body: UpdateTicketPlanningDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.ticketsService.updatePlanning(ticketId, body, user);
   }
 
   @Patch(":ticketId/watchers")

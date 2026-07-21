@@ -43,7 +43,7 @@ function formatDate(date: Date, timezone: string, dateFormat: string, timeFormat
 
 export function SystemStatusClock() {
   const [summary, setSummary] = useState<SystemHealthSummary | null>(null);
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState<Date | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -78,6 +78,7 @@ export function SystemStatusClock() {
   }, []);
 
   useEffect(() => {
+    setNow(new Date());
     const interval = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(interval);
   }, []);
@@ -86,7 +87,7 @@ export function SystemStatusClock() {
   const timezone = summary?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const dateFormat = summary?.dateFormat ?? "MMM dd, yyyy";
   const timeFormat = summary?.timeFormat ?? "12h";
-  const label = formatDate(now, timezone, dateFormat, timeFormat);
+  const label = now ? formatDate(now, timezone, dateFormat, timeFormat) : "Loading time";
   const title = useMemo(() => {
     if (failed) return "System health unavailable. Open System Health.";
     if (!summary) return "System health loading.";

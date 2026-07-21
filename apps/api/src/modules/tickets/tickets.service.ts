@@ -17,6 +17,7 @@ import { AddTicketExternalSpecialistDto } from "./dto/add-ticket-external-specia
 import { ListTicketsQueryDto } from "./dto/list-tickets-query.dto";
 import { MergeTicketsDto } from "./dto/merge-tickets.dto";
 import { UpdateTicketAssignmentDto } from "./dto/update-ticket-assignment.dto";
+import { UpdateTicketPlanningDto } from "./dto/update-ticket-planning.dto";
 import { UpsertTicketViewDto } from "./dto/upsert-ticket-view.dto";
 
 export interface CreateInboundEmailTicketInput {
@@ -1159,6 +1160,25 @@ export class TicketsService {
         priority: input.priority ?? null,
         status: input.status ?? null
       }
+    });
+
+    return ticket;
+  }
+
+  async updatePlanning(ticketId: string, input: UpdateTicketPlanningDto, user: AuthenticatedUser) {
+    const existingTicket = await this.ensureTicketExists(ticketId, user);
+    const targetDate = input.targetDate ? new Date(input.targetDate) : null;
+    const ticket = await this.prisma.ticket.update({
+      where: { id: existingTicket.id },
+      data: { targetDate }
+    });
+
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "Ticket",
+      entityId: ticket.id,
+      action: "ticket.planning_updated",
+      metadata: { targetDate: ticket.targetDate?.toISOString() ?? null }
     });
 
     return ticket;

@@ -910,6 +910,7 @@ model Ticket {
   description                String?
   status                     TicketStatus   @default(NEW)
   priority                   TicketPriority @default(NORMAL)
+  targetDate                 DateTime?
   source                     TicketSource   @default(MANUAL)
   assignedUserId             String?        @db.Uuid
   assignedGroupId            String?        @db.Uuid
@@ -960,6 +961,7 @@ model Ticket {
   @@index([senderDomain])
   @@index([mailboxId])
   @@index([status, priority])
+  @@index([targetDate])
   @@index([assignedUserId])
   @@index([firstReadAt])
   @@index([firstReadByUserId])

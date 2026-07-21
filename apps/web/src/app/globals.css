@@ -9152,6 +9152,10 @@ a.dashboard-list-row:hover {
   gap: 8px;
 }
 
+.operations-period-control button {
+  min-width: 62px;
+}
+
 .operations-attention-toggle {
   display: inline-flex;
   align-items: center;
@@ -9332,6 +9336,16 @@ a.dashboard-list-row:hover {
   padding: 0;
 }
 
+.operations-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.operations-row-actions .button {
+  min-height: 34px;
+}
+
 .operations-workload-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -9415,6 +9429,36 @@ a.dashboard-list-row:hover {
   overflow-x: auto;
 }
 
+.operations-planning-callout,
+.operations-project-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--line);
+  color: var(--text-muted);
+  background: var(--surface-subtle);
+  font-size: 13px;
+}
+
+.operations-planning-callout {
+  color: var(--warning);
+  font-weight: 750;
+}
+
+.operations-planning-callout a,
+.operations-project-empty a {
+  margin-left: auto;
+  color: var(--brand-primary);
+  font-weight: 800;
+}
+
+.operations-project-empty {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+
 .operations-forecast-table,
 .operations-workload-detail-table {
   min-width: 700px;
@@ -9462,6 +9506,92 @@ a.dashboard-list-row:hover {
 
 .operations-executive-schedule select {
   width: 118px;
+}
+
+.operations-workload-drawer-backdrop {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.operations-workload-drawer {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  width: min(640px, 100vw);
+  height: 100%;
+  background: var(--surface-raised);
+  box-shadow: -18px 0 42px rgba(15, 23, 42, 0.2);
+}
+
+.operations-drawer-summary {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-subtle);
+}
+
+.operations-drawer-summary span {
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.operations-drawer-list {
+  display: grid;
+  align-content: start;
+  overflow-y: auto;
+}
+
+.operations-drawer-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.operations-drawer-item > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.operations-drawer-item a {
+  width: fit-content;
+  color: var(--brand-primary);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.operations-drawer-item strong,
+.operations-drawer-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operations-drawer-item span,
+.operations-drawer-item small,
+.operations-drawer-item time {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.operations-drawer-item > div:last-child {
+  align-content: start;
+  text-align: right;
+}
+
+.operations-drawer-item.attention {
+  box-shadow: inset 3px 0 0 var(--danger);
 }
 
 .projects-templates-panel {
@@ -9569,6 +9699,22 @@ a.dashboard-list-row:hover {
 
   .operations-summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .operations-period-control {
+    grid-column: 1 / -1;
+  }
+
+  .operations-workload-drawer {
+    width: 100vw;
+  }
+
+  .operations-drawer-item {
+    grid-template-columns: 1fr;
+  }
+
+  .operations-drawer-item > div:last-child {
+    text-align: left;
   }
 }
 

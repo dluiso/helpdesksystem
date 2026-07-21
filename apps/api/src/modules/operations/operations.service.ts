@@ -60,6 +60,10 @@ export interface WorkloadDetail {
   reference: string;
   title: string;
   dueAt: Date | null;
+  clientName: string | null;
+  status: string;
+  priority: TicketPriority | null;
+  updatedAt: Date;
   href: string;
   attention: boolean;
 }
@@ -86,6 +90,7 @@ export class OperationsService {
           subject: true,
           status: true,
           priority: true,
+          targetDate: true,
           updatedAt: true,
           client: { select: { name: true } },
           assignedUser: { select: { firstName: true, lastName: true } },
@@ -176,7 +181,9 @@ export class OperationsService {
       const owners = [ticket.assignedUser, ...ticket.assignees.map((assignment) => assignment.user)]
         .filter((assignee): assignee is { firstName: string; lastName: string } => Boolean(assignee))
         .map((assignee) => this.userName(assignee));
-      const attention = (!owners.length && !ticket.assignedTeam) || ticket.priority === TicketPriority.CRITICAL || ticket.priority === TicketPriority.URGENT;
+      const overdue = ticket.targetDate !== null && ticket.targetDate < now;
+      const dueSoon = ticket.targetDate !== null && ticket.targetDate <= nextWeek;
+      const attention = (!owners.length && !ticket.assignedTeam) || ticket.priority === TicketPriority.CRITICAL || ticket.priority === TicketPriority.URGENT || overdue || dueSoon;
       return {
         id: ticket.id,
         kind: "TICKET",
@@ -187,7 +194,7 @@ export class OperationsService {
         priority: ticket.priority,
         owner: this.uniqueNames(owners),
         teamName: ticket.assignedTeam?.name ?? null,
-        dueAt: null,
+        dueAt: ticket.targetDate,
         updatedAt: ticket.updatedAt,
         href: `/tickets/${ticket.ticketNumber}`,
         attention,
@@ -338,7 +345,9 @@ export class OperationsService {
       },
       capabilities: {
         updateTicketStatus: user.permissions.includes("tickets.assign"),
-        updateEventStatus: user.permissions.includes("event_services.update")
+        updateEventStatus: user.permissions.includes("event_services.update"),
+        exportProjectReports: user.permissions.includes("reports.export"),
+        scheduleProjectReports: user.permissions.includes("reports.manage")
       },
       items,
       decisions,
@@ -372,7 +381,7 @@ export class OperationsService {
         current.operational += 1;
         current.total += 1;
         if (item.attention) current.attention += 1;
-        current.details.push({ id: `${item.kind}-${item.id}`, kind: item.kind, reference: item.reference, title: item.title, dueAt: item.dueAt, href: item.href, attention: item.attention });
+        current.details.push({ id: `${item.kind}-${item.id}`, kind: item.kind, reference: item.reference, title: item.title, dueAt: item.dueAt, clientName: item.clientName, status: item.status, priority: item.priority, updatedAt: item.updatedAt, href: item.href, attention: item.attention });
         work.set(owner, current);
       }
     }
@@ -381,14 +390,14 @@ export class OperationsService {
       current.projectCommitments += 1;
       current.total += 1;
       if (commitment.attention) current.attention += 1;
-      current.details.push({ id: commitment.id, kind: commitment.kind, reference: "Project", title: commitment.title, dueAt: commitment.dueAt, href: commitment.href, attention: commitment.attention });
+      current.details.push({ id: commitment.id, kind: commitment.kind, reference: "Project", title: commitment.title, dueAt: commitment.dueAt, clientName: null, status: "OPEN", priority: null, updatedAt: new Date(0), href: commitment.href, attention: commitment.attention });
       work.set(commitment.owner, current);
     }
     return [...work.values()]
       .map((entry) => {
         const warningThreshold = Math.ceil(capacityBaseline * (capacityWarningPercent / 100));
         const capacityStatus: CapacityStatus = entry.total >= capacityBaseline ? "OVER_CAPACITY" : entry.total >= warningThreshold ? "NEAR_CAPACITY" : "AVAILABLE";
-        return { ...entry, details: entry.details.sort((left, right) => this.dateRank(left.dueAt, new Date(0)) - this.dateRank(right.dueAt, new Date(0))), capacityPercent: Math.min(100, Math.round((entry.total / capacityBaseline) * 100)), capacityStatus };
+        return { ...entry, details: entry.details.sort((left, right) => this.dateRank(left.dueAt, left.updatedAt) - this.dateRank(right.dueAt, right.updatedAt)), capacityPercent: Math.round((entry.total / capacityBaseline) * 100), capacityStatus };
       })
       .sort((left, right) => this.capacityRank(right.capacityStatus) - this.capacityRank(left.capacityStatus) || right.attention - left.attention || right.total - left.total || left.owner.localeCompare(right.owner))
       .slice(0, 12);

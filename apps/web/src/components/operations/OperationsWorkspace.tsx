@@ -1,12 +1,13 @@
 "use client";
 
-import { AlertTriangle, CalendarClock, Check, CircleAlert, ClipboardCheck, Download, FolderKanban, Mail, RefreshCw, Ticket, UsersRound, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, Check, CircleAlert, ClipboardCheck, Download, FolderKanban, Mail, PenLine, RefreshCw, Ticket, UsersRound, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
 
 type WorkKind = "TICKET" | "EVENT" | "EVENT_TASK" | "PROJECT";
 type Period = "ALL" | "TODAY" | "7_DAYS" | "30_DAYS";
+type QueueMode = "ATTENTION" | "ALL";
 type DecisionStatus = "OPEN" | "IN_PROGRESS";
 
 interface WorkItem {
@@ -67,10 +68,12 @@ interface OperationsOverview {
   capabilities: {
     updateTicketStatus: boolean;
     updateEventStatus: boolean;
+    exportProjectReports: boolean;
+    scheduleProjectReports: boolean;
   };
   items: WorkItem[];
   decisions: OperationsDecision[];
-  workload: Array<{ owner: string; operational: number; projectCommitments: number; total: number; attention: number; capacityPercent: number; capacityStatus: "AVAILABLE" | "NEAR_CAPACITY" | "OVER_CAPACITY"; details: Array<{ id: string; kind: string; reference: string; title: string; dueAt: string | null; href: string; attention: boolean }> }>;
+  workload: Array<{ owner: string; operational: number; projectCommitments: number; total: number; attention: number; capacityPercent: number; capacityStatus: "AVAILABLE" | "NEAR_CAPACITY" | "OVER_CAPACITY"; details: Array<{ id: string; kind: string; reference: string; title: string; dueAt: string | null; clientName: string | null; status: string; priority: string | null; updatedAt: string; href: string; attention: boolean }> }>;
   forecast: { weeks: Array<{ startAt: string; endAt: string; label: string }>; owners: Array<{ owner: string; weeks: number[]; unscheduled: number; totalPlanned: number; capacityBaseline: number }> };
 }
 
@@ -118,12 +121,13 @@ function SummaryCard({ icon: Icon, title, value, note, tone = "default" }: { ico
 export function OperationsWorkspace() {
   const [overview, setOverview] = useState<OperationsOverview | null>(null);
   const [period, setPeriod] = useState<Period>("7_DAYS");
-  const [attentionOnly, setAttentionOnly] = useState(true);
+  const [queueMode, setQueueMode] = useState<QueueMode>("ATTENTION");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [statusDrafts, setStatusDrafts] = useState<Record<string, string>>({});
   const [updatingItemId, setUpdatingItemId] = useState<string | null>(null);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [decisionOwner, setDecisionOwner] = useState("ALL");
   const [decisionStatus, setDecisionStatus] = useState<"ALL" | DecisionStatus>("ALL");
   const [decisionAttentionOnly, setDecisionAttentionOnly] = useState(true);
@@ -167,9 +171,9 @@ export function OperationsWorkspace() {
       const dueDate = item.dueAt ? new Date(item.dueAt) : null;
       const timeMatches = period === "ALL" || !dueDate || (dueDate >= now && dueDate <= end) || (item.attention && dueDate < now);
       const text = [item.reference, item.title, item.clientName, item.owner, item.teamName, item.status, item.health, item.priority].filter(Boolean).join(" ").toLowerCase();
-      return timeMatches && (!attentionOnly || item.attention) && (!query || text.includes(query));
+      return timeMatches && (queueMode === "ALL" || item.attention) && (!query || text.includes(query));
     });
-  }, [attentionOnly, overview, period, search]);
+  }, [overview, period, queueMode, search]);
 
   const canUpdateStatus = (item: WorkItem) => item.kind === "TICKET" ? Boolean(overview?.capabilities.updateTicketStatus) : item.kind === "PROJECT" ? false : Boolean(overview?.capabilities.updateEventStatus);
 
@@ -205,12 +209,16 @@ export function OperationsWorkspace() {
         return next;
       });
       await load();
+      setEditingItemId(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to update work item status.");
     } finally {
       setUpdatingItemId(null);
     }
   };
+
+  const unscheduledCount = useMemo(() => (overview?.forecast.owners ?? []).reduce((sum, entry) => sum + entry.unscheduled, 0), [overview?.forecast.owners]);
+  const queueScopeLabel = queueMode === "ATTENTION" ? "attention items" : "active items";
 
   const scheduleExecutiveReport = async () => {
     const recipientEmails = executiveRecipients.split(/[;,\s]+/).map((email) => email.trim()).filter(Boolean);
@@ -236,17 +244,17 @@ export function OperationsWorkspace() {
           <span className="muted">Prioritized operational visibility. Updates remain in their source modules.</span>
         </div>
         <div className="operations-toolbar-controls">
-          <div className="segmented-control" aria-label="Queue range">
+          <div className="segmented-control" aria-label="Queue mode">
+            <button type="button" className={queueMode === "ATTENTION" ? "active" : ""} aria-pressed={queueMode === "ATTENTION"} onClick={() => setQueueMode("ATTENTION")}>Needs attention</button>
+            <button type="button" className={queueMode === "ALL" ? "active" : ""} aria-pressed={queueMode === "ALL"} onClick={() => setQueueMode("ALL")}>All work</button>
+          </div>
+          <div className="segmented-control operations-period-control" aria-label="Queue range">
             {(["TODAY", "7_DAYS", "30_DAYS", "ALL"] as Period[]).map((value) => (
               <button key={value} type="button" className={period === value ? "active" : ""} aria-pressed={period === value} onClick={() => setPeriod(value)}>
                 {value === "TODAY" ? "Today" : value === "7_DAYS" ? "7 days" : value === "30_DAYS" ? "30 days" : "All"}
               </button>
             ))}
           </div>
-          <label className="operations-attention-toggle">
-            <input type="checkbox" checked={attentionOnly} onChange={(event) => setAttentionOnly(event.target.checked)} />
-            Needs attention
-          </label>
           <input className="input operations-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search work" aria-label="Search work" />
           <button className="button secondary icon-button" type="button" onClick={() => void load()} disabled={loading} title="Refresh operations data" aria-label="Refresh operations data">
             <RefreshCw size={16} className={loading ? "spin" : ""} aria-hidden="true" />
@@ -265,20 +273,20 @@ export function OperationsWorkspace() {
         <SummaryCard icon={AlertTriangle} title="Blocked tasks" value={overview?.summary.blockedTasks ?? 0} note="Event service tasks requiring follow-up" tone={(overview?.summary.blockedTasks ?? 0) > 0 ? "attention" : "default"} />
       </section>
 
-      {executive ? <section className="panel operations-executive-panel"><div className="section-heading operations-section-heading"><div><h2>Executive project review</h2><p>Delivery health, overdue commitments, and decision ownership.</p></div><div className="operations-executive-downloads"><a className="button secondary" href={`${apiBaseUrl}/reports/projects/executive-export?format=csv`}><Download size={15} aria-hidden="true" /> CSV</a><a className="button secondary" href={`${apiBaseUrl}/reports/projects/executive-export?format=xlsx`}><Download size={15} aria-hidden="true" /> Excel</a><a className="button secondary" href={`${apiBaseUrl}/reports/projects/executive-export?format=pdf`}><Download size={15} aria-hidden="true" /> PDF</a></div></div><div className="operations-executive-grid"><SummaryCard icon={FolderKanban} title="At risk" value={executive.summary.atRiskProjects} note={`${executive.summary.activeProjects} active projects`} tone={executive.summary.atRiskProjects ? "attention" : "default"} /><SummaryCard icon={ClipboardCheck} title="Overdue decisions" value={executive.summary.overdueDecisions} note={`${executive.summary.unassignedDecisions} unassigned`} tone={executive.summary.overdueDecisions ? "attention" : "default"} /><SummaryCard icon={AlertTriangle} title="Overdue milestones" value={executive.summary.overdueMilestones} note="Across active project plans" tone={executive.summary.overdueMilestones ? "attention" : "default"} /></div><div className="operations-executive-schedule"><Mail size={16} aria-hidden="true" /><input className="input" value={executiveRecipients} onChange={(event) => setExecutiveRecipients(event.target.value)} placeholder="Schedule recipient emails" aria-label="Executive report recipient emails" /><select className="input" value={executiveFrequency} onChange={(event) => setExecutiveFrequency(event.target.value as "weekly" | "monthly")} aria-label="Executive report frequency"><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select><button className="button secondary" type="button" onClick={() => void scheduleExecutiveReport()}>Schedule PDF</button></div></section> : null}
+      {executive?.summary.activeProjects ? <section className="panel operations-executive-panel"><div className="section-heading operations-section-heading"><div><h2>Executive project review</h2><p>Delivery health, overdue commitments, and decision ownership.</p></div>{overview?.capabilities.exportProjectReports ? <div className="operations-executive-downloads"><a className="button secondary" href={`${apiBaseUrl}/reports/projects/executive-export?format=csv`}><Download size={15} aria-hidden="true" /> CSV</a><a className="button secondary" href={`${apiBaseUrl}/reports/projects/executive-export?format=xlsx`}><Download size={15} aria-hidden="true" /> Excel</a><a className="button secondary" href={`${apiBaseUrl}/reports/projects/executive-export?format=pdf`}><Download size={15} aria-hidden="true" /> PDF</a></div> : null}</div><div className="operations-executive-grid"><SummaryCard icon={FolderKanban} title="At risk" value={executive.summary.atRiskProjects} note={`${executive.summary.activeProjects} active projects`} tone={executive.summary.atRiskProjects ? "attention" : "default"} /><SummaryCard icon={ClipboardCheck} title="Overdue decisions" value={executive.summary.overdueDecisions} note={`${executive.summary.unassignedDecisions} unassigned`} tone={executive.summary.overdueDecisions ? "attention" : "default"} /><SummaryCard icon={AlertTriangle} title="Overdue milestones" value={executive.summary.overdueMilestones} note="Across active project plans" tone={executive.summary.overdueMilestones ? "attention" : "default"} /></div>{overview?.capabilities.scheduleProjectReports ? <div className="operations-executive-schedule"><Mail size={16} aria-hidden="true" /><input className="input" value={executiveRecipients} onChange={(event) => setExecutiveRecipients(event.target.value)} placeholder="Schedule recipient emails" aria-label="Executive report recipient emails" /><select className="input" value={executiveFrequency} onChange={(event) => setExecutiveFrequency(event.target.value as "weekly" | "monthly")} aria-label="Executive report frequency"><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select><button className="button secondary" type="button" onClick={() => void scheduleExecutiveReport()}>Schedule PDF</button></div> : null}</section> : executive ? <section className="operations-project-empty" aria-label="Project planning"><FolderKanban size={18} aria-hidden="true" /><span>No active project plans yet.</span><Link href="/projects">Create a project plan</Link></section> : null}
 
       <section className="panel operations-queue-panel">
         <div className="section-heading operations-section-heading">
           <div>
             <h2>Operational queue</h2>
-            <p>{loading ? "Refreshing work data..." : `${visibleItems.length} active items in view`}</p>
+            <p>{loading ? "Refreshing work data..." : `Showing ${visibleItems.length} of ${overview?.items.length ?? 0} ${queueScopeLabel}`}</p>
           </div>
           {overview ? <span className="muted">Updated {formatDateTime(overview.generatedAt)}</span> : null}
         </div>
         <div className="operations-table-scroll">
           <table className="table operations-table">
             <thead>
-              <tr><th>Work item</th><th>Source</th><th>Owner</th><th>Client / Team</th><th>Status</th><th>Due / Event</th><th>Updated</th><th>Quick action</th></tr>
+              <tr><th>Work item</th><th>Source</th><th>Owner</th><th>Client / Team</th><th>Status</th><th>Target / Event</th><th>Updated</th><th>Action</th></tr>
             </thead>
             <tbody>
               {visibleItems.map((item) => (
@@ -296,7 +304,7 @@ export function OperationsWorkspace() {
                   <td>{formatDate(item.dueAt)}</td>
                   <td>{formatDate(item.updatedAt)}</td>
                   <td>
-                    {canUpdateStatus(item) ? (
+                    {canUpdateStatus(item) && editingItemId === item.id ? (
                       <div className="operations-action-control">
                         <select className="input" value={statusDrafts[item.id] ?? item.status} onChange={(event) => setStatusDrafts((current) => ({ ...current, [item.id]: event.target.value }))} disabled={updatingItemId === item.id} aria-label={`Update ${item.reference} status`}>
                           {statusOptions(item).map((status) => <option value={status} key={status}>{label(status)}</option>)}
@@ -305,7 +313,7 @@ export function OperationsWorkspace() {
                           <Check size={15} aria-hidden="true" />
                         </button>
                       </div>
-                    ) : <span className="muted">View only</span>}
+                    ) : <div className="operations-row-actions"><Link className="button secondary" href={item.href}>Open</Link>{canUpdateStatus(item) ? <button className="button secondary icon-button" type="button" onClick={() => setEditingItemId(item.id)} title={`Update ${item.reference} status`} aria-label={`Update ${item.reference} status`}><PenLine size={14} aria-hidden="true" /></button> : null}</div>}
                   </td>
                 </tr>
               ))}
@@ -333,17 +341,18 @@ export function OperationsWorkspace() {
       <section className="panel operations-workload-panel">
         <div className="section-heading operations-section-heading"><div><h2>Capacity and work distribution</h2><p>Projected load combines operational assignments with project commitments. Baseline: {overview?.summary.capacityBaseline ?? 12} items; warning at {overview?.summary.capacityWarningPercent ?? 75}%.</p></div><UsersRound size={19} aria-hidden="true" /></div>
         <div className="operations-workload-list">
-          {(overview?.workload ?? []).map((entry) => <button className={`operations-workload-row ${entry.capacityStatus.toLowerCase().replace("_", "-")}`} type="button" key={entry.owner} onClick={() => setSelectedWorkloadOwner(entry.owner)} aria-label={`Open ${entry.owner} workload`}><strong>{entry.owner}</strong><span>{entry.total}/{overview?.summary.capacityBaseline ?? 12} projected</span><small>{entry.operational} · {entry.projectCommitments} project · {entry.attention} attention</small><em>{label(entry.capacityStatus)}</em><div className="operations-capacity-meter" aria-label={`${entry.owner} projected capacity ${entry.capacityPercent}%`}><span style={{ width: `${entry.capacityPercent}%` }} /></div></button>)}
+          {(overview?.workload ?? []).map((entry) => <button className={`operations-workload-row ${entry.capacityStatus.toLowerCase().replace("_", "-")}`} type="button" key={entry.owner} onClick={() => setSelectedWorkloadOwner(entry.owner)} aria-label={`Open ${entry.owner} workload`}><strong>{entry.owner}</strong><span>{entry.total}/{overview?.summary.capacityBaseline ?? 12} projected · {entry.capacityPercent}%</span><small>{entry.operational} operational · {entry.projectCommitments} project · {entry.attention} attention</small><em>{label(entry.capacityStatus)}</em><div className="operations-capacity-meter" aria-label={`${entry.owner} projected capacity ${entry.capacityPercent}%`}><span style={{ width: `${Math.min(entry.capacityPercent, 100)}%` }} /></div></button>)}
           {!loading && !overview?.workload.length ? <div className="dashboard-empty">No assigned active work.</div> : null}
         </div>
       </section>
 
       <section className="panel operations-forecast-panel">
         <div className="section-heading operations-section-heading"><div><h2>Four-week capacity forecast</h2><p>Planned due dates by specialist; unscheduled work remains visible.</p></div><CalendarClock size={19} aria-hidden="true" /></div>
+        {unscheduledCount ? <div className="operations-planning-callout"><CalendarClock size={16} aria-hidden="true" /><span>{unscheduledCount} assigned items have no target date and are excluded from the weekly plan.</span><Link href="/tickets">Plan tickets</Link></div> : null}
         <div className="operations-forecast-scroll"><table className="table operations-forecast-table"><thead><tr><th>Specialist</th>{(overview?.forecast.weeks ?? []).map((week) => <th key={week.startAt}>Week of {week.label}</th>)}<th>Unscheduled</th></tr></thead><tbody>{(overview?.forecast.owners ?? []).map((entry) => <tr key={entry.owner}><td><button className="operations-owner-link" type="button" onClick={() => setSelectedWorkloadOwner(entry.owner)}>{entry.owner}</button></td>{entry.weeks.map((count, index) => <td key={`${entry.owner}-${index}`}><span className={count >= entry.capacityBaseline ? "operations-forecast-alert" : ""}>{count}</span></td>)}<td>{entry.unscheduled || "-"}</td></tr>)}{!loading && !overview?.forecast.owners.length ? <tr><td colSpan={6}><div className="dashboard-empty">No assigned capacity to forecast.</div></td></tr> : null}</tbody></table></div>
       </section>
 
-      {selectedWorkload ? <section className="panel operations-workload-detail"><div className="section-heading operations-section-heading"><div><h2>{selectedWorkload.owner}</h2><p>{selectedWorkload.total} projected items, including {selectedWorkload.projectCommitments} project commitments.</p></div><button className="button secondary icon-button" type="button" onClick={() => setSelectedWorkloadOwner(null)} title="Close workload" aria-label="Close workload"><X size={16} aria-hidden="true" /></button></div><div className="operations-table-scroll"><table className="table operations-workload-detail-table"><thead><tr><th>Work</th><th>Type</th><th>Due</th><th></th></tr></thead><tbody>{selectedWorkload.details.map((item) => <tr key={item.id}><td><div className="operations-work-cell"><strong>{item.title}</strong><span>{item.reference}</span></div></td><td>{item.kind.replace("_", " ")}</td><td className={item.attention ? "operations-unassigned" : ""}>{formatDate(item.dueAt)}</td><td><Link className="button secondary" href={item.href}>Open</Link></td></tr>)}</tbody></table></div></section> : null}
+      {selectedWorkload ? <div className="operations-workload-drawer-backdrop" role="presentation" onClick={() => setSelectedWorkloadOwner(null)}><aside className="operations-workload-drawer" role="dialog" aria-modal="true" aria-label={`${selectedWorkload.owner} workload`} onClick={(event) => event.stopPropagation()}><div className="section-heading operations-section-heading"><div><h2>{selectedWorkload.owner}</h2><p>{selectedWorkload.total} projected items · {selectedWorkload.capacityPercent}% of baseline.</p></div><button className="button secondary icon-button" type="button" onClick={() => setSelectedWorkloadOwner(null)} title="Close workload" aria-label="Close workload"><X size={16} aria-hidden="true" /></button></div><div className="operations-drawer-summary"><span>{selectedWorkload.operational} operational</span><span>{selectedWorkload.projectCommitments} project commitments</span><span>{selectedWorkload.attention} need attention</span></div><div className="operations-drawer-list">{selectedWorkload.details.map((item) => <article className={`operations-drawer-item${item.attention ? " attention" : ""}`} key={item.id}><div><Link href={item.href}>{item.reference}</Link><strong>{item.title}</strong><span>{item.clientName ?? label(item.kind)} · {label(item.status)}{item.priority ? ` · ${label(item.priority)}` : ""}</span></div><div><time className={item.attention ? "operations-unassigned" : ""}>{item.dueAt ? `Target ${formatDate(item.dueAt)}` : "Unscheduled"}</time><small>Updated {formatDate(item.updatedAt)}</small></div></article>)}</div></aside></div> : null}
     </div>
   );
 }
