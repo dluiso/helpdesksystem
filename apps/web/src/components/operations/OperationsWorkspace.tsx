@@ -2,6 +2,7 @@
 
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, CalendarClock, Check, ChevronLeft, ChevronRight, CircleAlert, ClipboardCheck, Download, Filter, FolderKanban, Mail, PenLine, RefreshCw, Ticket, UsersRound, X } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
 
@@ -108,17 +109,17 @@ function kindLabel(kind: WorkKind) {
   return kind === "PROJECT" ? "Project" : "Ticket";
 }
 
-function SummaryCard({ icon: Icon, title, value, note, tone = "default" }: { icon: typeof Ticket; title: string; value: number; note: string; tone?: "default" | "attention" }) {
-  return (
-    <div className={`operations-summary-card${tone === "attention" ? " attention" : ""}`}>
+function SummaryCard({ icon: Icon, title, value, note, tone = "default", onClick, active = false }: { icon: typeof Ticket; title: string; value: number; note: string; tone?: "default" | "attention"; onClick?: () => void; active?: boolean }) {
+  const content = <>
       <div className="operations-summary-icon"><Icon size={18} aria-hidden="true" /></div>
       <div>
         <span>{title}</span>
         <strong>{value}</strong>
         <small>{note}</small>
       </div>
-    </div>
-  );
+    </>;
+  const className = `operations-summary-card${tone === "attention" ? " attention" : ""}${onClick ? " interactive" : ""}${active ? " active" : ""}`;
+  return onClick ? <button className={className} type="button" onClick={onClick} aria-label={`${title}: ${value}. ${note}`}>{content}</button> : <div className={className}>{content}</div>;
 }
 
 function SortButton({ column, activeColumn, direction, children, onSort }: { column: QueueSortKey; activeColumn: QueueSortKey; direction: SortDirection; children: string; onSort: (column: QueueSortKey) => void }) {
@@ -128,6 +129,7 @@ function SortButton({ column, activeColumn, direction, children, onSort }: { col
 }
 
 export function OperationsWorkspace() {
+  const router = useRouter();
   const [overview, setOverview] = useState<OperationsOverview | null>(null);
   const [period, setPeriod] = useState<Period>("7_DAYS");
   const [queueMode, setQueueMode] = useState<QueueMode>("ATTENTION");
@@ -251,6 +253,35 @@ export function OperationsWorkspace() {
     setPlanningFilter("ALL");
   };
 
+  const scrollToSection = (sectionId: string) => {
+    window.requestAnimationFrame(() => document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
+  const focusQueue = (next: { mode: QueueMode; source?: WorkKind; owner?: string; status?: string }) => {
+    setPeriod("ALL");
+    setQueueMode(next.mode);
+    setSearch("");
+    setSourceFilter(next.source ?? "ALL");
+    setOwnerFilter(next.owner ?? "ALL");
+    setStatusFilter(next.status ?? "ALL");
+    setPlanningFilter("ALL");
+    setPage(1);
+    scrollToSection("operations-queue");
+  };
+
+  const focusDecisions = () => {
+    setDecisionOwner("ALL");
+    setDecisionStatus("ALL");
+    setDecisionAttentionOnly(false);
+    scrollToSection("operations-decisions");
+  };
+
+  const focusCapacityAlert = () => {
+    const alertedOwner = overview?.workload.find((entry) => entry.capacityStatus === "OVER_CAPACITY") ?? overview?.workload.find((entry) => entry.capacityStatus === "NEAR_CAPACITY");
+    if (alertedOwner) setSelectedWorkloadOwner(alertedOwner.owner);
+    else scrollToSection("operations-capacity");
+  };
+
   const canUpdateStatus = (item: WorkItem) => item.kind === "TICKET" ? Boolean(overview?.capabilities.updateTicketStatus) : item.kind === "PROJECT" ? false : Boolean(overview?.capabilities.updateEventStatus);
 
   const decisionOwners = useMemo(() => [...new Set((overview?.decisions ?? []).map((decision) => decision.owner).filter((owner): owner is string => Boolean(owner)))].sort((left, right) => left.localeCompare(right)), [overview?.decisions]);
@@ -340,17 +371,17 @@ export function OperationsWorkspace() {
       {error ? <div className="alert error">Unable to load Operations Center. {error}</div> : null}
 
       <section className="operations-summary-grid" aria-label="Operations summary">
-        <SummaryCard icon={CircleAlert} title="Needs attention" value={overview?.summary.attentionItems ?? 0} note={`${overview?.summary.overdueItems ?? 0} overdue work items`} tone="attention" />
-        <SummaryCard icon={Ticket} title="Unassigned tickets" value={overview?.summary.unassignedTickets ?? 0} note={`${overview?.summary.activeTickets ?? 0} active tickets`} tone={(overview?.summary.unassignedTickets ?? 0) > 0 ? "attention" : "default"} />
-        <SummaryCard icon={FolderKanban} title="Project commitments" value={overview?.summary.projectCommitments ?? 0} note={`${overview?.summary.atRiskProjects ?? 0} at risk · ${overview?.summary.unassignedProjectCommitments ?? 0} unassigned`} tone={(overview?.summary.atRiskProjects ?? 0) > 0 || (overview?.summary.unassignedProjectCommitments ?? 0) > 0 ? "attention" : "default"} />
-        <SummaryCard icon={ClipboardCheck} title="Open decisions" value={overview?.summary.openProjectDecisions ?? 0} note="Project actions needing ownership or closure" tone={(overview?.summary.openProjectDecisions ?? 0) > 0 ? "attention" : "default"} />
-        <SummaryCard icon={CalendarClock} title="Capacity alerts" value={overview?.summary.overCapacity ?? 0} note={`${overview?.summary.nearCapacity ?? 0} nearing ${overview?.summary.capacityWarningPercent ?? 75}% of capacity`} tone={(overview?.summary.overCapacity ?? 0) > 0 ? "attention" : "default"} />
-        <SummaryCard icon={AlertTriangle} title="Blocked tasks" value={overview?.summary.blockedTasks ?? 0} note="Event service tasks requiring follow-up" tone={(overview?.summary.blockedTasks ?? 0) > 0 ? "attention" : "default"} />
+        <SummaryCard icon={CircleAlert} title="Needs attention" value={overview?.summary.attentionItems ?? 0} note={`${overview?.summary.overdueItems ?? 0} overdue work items`} tone="attention" onClick={() => focusQueue({ mode: "ATTENTION" })} active={queueMode === "ATTENTION" && period === "ALL" && sourceFilter === "ALL" && ownerFilter === "ALL" && statusFilter === "ALL" && planningFilter === "ALL" && !search} />
+        <SummaryCard icon={Ticket} title="Unassigned tickets" value={overview?.summary.unassignedTickets ?? 0} note={`${overview?.summary.activeTickets ?? 0} active tickets`} tone={(overview?.summary.unassignedTickets ?? 0) > 0 ? "attention" : "default"} onClick={() => focusQueue({ mode: "ALL", source: "TICKET", owner: "UNASSIGNED" })} active={queueMode === "ALL" && period === "ALL" && sourceFilter === "TICKET" && ownerFilter === "UNASSIGNED" && statusFilter === "ALL" && planningFilter === "ALL" && !search} />
+        <SummaryCard icon={FolderKanban} title="Project commitments" value={overview?.summary.projectCommitments ?? 0} note={`${overview?.summary.atRiskProjects ?? 0} at risk · ${overview?.summary.unassignedProjectCommitments ?? 0} unassigned`} tone={(overview?.summary.atRiskProjects ?? 0) > 0 || (overview?.summary.unassignedProjectCommitments ?? 0) > 0 ? "attention" : "default"} onClick={() => router.push("/projects")} />
+        <SummaryCard icon={ClipboardCheck} title="Open decisions" value={overview?.summary.openProjectDecisions ?? 0} note="Project actions needing ownership or closure" tone={(overview?.summary.openProjectDecisions ?? 0) > 0 ? "attention" : "default"} onClick={focusDecisions} />
+        <SummaryCard icon={CalendarClock} title="Capacity alerts" value={overview?.summary.overCapacity ?? 0} note={`${overview?.summary.nearCapacity ?? 0} nearing ${overview?.summary.capacityWarningPercent ?? 75}% of capacity`} tone={(overview?.summary.overCapacity ?? 0) > 0 ? "attention" : "default"} onClick={focusCapacityAlert} />
+        <SummaryCard icon={AlertTriangle} title="Blocked tasks" value={overview?.summary.blockedTasks ?? 0} note="Event service tasks requiring follow-up" tone={(overview?.summary.blockedTasks ?? 0) > 0 ? "attention" : "default"} onClick={() => focusQueue({ mode: "ALL", source: "EVENT_TASK", status: "BLOCKED" })} active={queueMode === "ALL" && period === "ALL" && sourceFilter === "EVENT_TASK" && ownerFilter === "ALL" && statusFilter === "BLOCKED" && planningFilter === "ALL" && !search} />
       </section>
 
       {executive?.summary.activeProjects ? <section className="panel operations-executive-panel"><div className="section-heading operations-section-heading"><div><h2>Executive project review</h2><p>Delivery health, overdue commitments, and decision ownership.</p></div>{overview?.capabilities.exportProjectReports ? <div className="operations-executive-downloads"><a className="button secondary" href={`${apiBaseUrl}/reports/projects/executive-export?format=csv`}><Download size={15} aria-hidden="true" /> CSV</a><a className="button secondary" href={`${apiBaseUrl}/reports/projects/executive-export?format=xlsx`}><Download size={15} aria-hidden="true" /> Excel</a><a className="button secondary" href={`${apiBaseUrl}/reports/projects/executive-export?format=pdf`}><Download size={15} aria-hidden="true" /> PDF</a></div> : null}</div><div className="operations-executive-grid"><SummaryCard icon={FolderKanban} title="At risk" value={executive.summary.atRiskProjects} note={`${executive.summary.activeProjects} active projects`} tone={executive.summary.atRiskProjects ? "attention" : "default"} /><SummaryCard icon={ClipboardCheck} title="Overdue decisions" value={executive.summary.overdueDecisions} note={`${executive.summary.unassignedDecisions} unassigned`} tone={executive.summary.overdueDecisions ? "attention" : "default"} /><SummaryCard icon={AlertTriangle} title="Overdue milestones" value={executive.summary.overdueMilestones} note="Across active project plans" tone={executive.summary.overdueMilestones ? "attention" : "default"} /></div>{overview?.capabilities.scheduleProjectReports ? <div className="operations-executive-schedule"><Mail size={16} aria-hidden="true" /><input className="input" value={executiveRecipients} onChange={(event) => setExecutiveRecipients(event.target.value)} placeholder="Schedule recipient emails" aria-label="Executive report recipient emails" /><select className="input" value={executiveFrequency} onChange={(event) => setExecutiveFrequency(event.target.value as "weekly" | "monthly")} aria-label="Executive report frequency"><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select><button className="button secondary" type="button" onClick={() => void scheduleExecutiveReport()}>Schedule PDF</button></div> : null}</section> : executive ? <section className="operations-project-empty" aria-label="Project planning"><FolderKanban size={18} aria-hidden="true" /><span>No active project plans yet.</span><Link href="/projects">Create a project plan</Link></section> : null}
 
-      <section className="panel operations-queue-panel">
+      <section className="panel operations-queue-panel" id="operations-queue">
         <div className="section-heading operations-section-heading operations-queue-heading">
           <div>
             <h2>Operational queue</h2>
@@ -411,7 +442,7 @@ export function OperationsWorkspace() {
         </footer>
       </section>
 
-      <section className="panel operations-decision-panel">
+      <section className="panel operations-decision-panel" id="operations-decisions">
         <div className="section-heading operations-section-heading">
           <div><h2>Decision queue</h2><p>{loading ? "Refreshing project decisions..." : `${visibleDecisions.length} open decisions in view`}</p></div>
           <div className="operations-decision-controls">
@@ -426,7 +457,7 @@ export function OperationsWorkspace() {
         </tbody></table></div>
       </section>
 
-      <section className="panel operations-workload-panel">
+      <section className="panel operations-workload-panel" id="operations-capacity">
         <div className="section-heading operations-section-heading"><div><h2>Capacity and work distribution</h2><p>Projected load combines operational assignments with project commitments. Baseline: {overview?.summary.capacityBaseline ?? 12} items; warning at {overview?.summary.capacityWarningPercent ?? 75}%.</p></div><UsersRound size={19} aria-hidden="true" /></div>
         <div className="operations-workload-list">
           {(overview?.workload ?? []).map((entry) => <button className={`operations-workload-row ${entry.capacityStatus.toLowerCase().replace("_", "-")}`} type="button" key={entry.owner} onClick={() => setSelectedWorkloadOwner(entry.owner)} aria-label={`Open ${entry.owner} workload`}><strong>{entry.owner}</strong><span>{entry.total}/{overview?.summary.capacityBaseline ?? 12} projected · {entry.capacityPercent}%</span><small>{entry.operational} operational · {entry.projectCommitments} project · {entry.attention} attention</small><em>{label(entry.capacityStatus)}</em><div className="operations-capacity-meter" aria-label={`${entry.owner} projected capacity ${entry.capacityPercent}%`}><span style={{ width: `${Math.min(entry.capacityPercent, 100)}%` }} /></div></button>)}
