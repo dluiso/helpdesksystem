@@ -1,9 +1,9 @@
 "use client";
 
-import { AlertTriangle, CalendarClock, Check, CircleAlert, ClipboardCheck, FolderKanban, RefreshCw, Ticket, UsersRound } from "lucide-react";
+import { AlertTriangle, CalendarClock, Check, CircleAlert, ClipboardCheck, Download, FolderKanban, Mail, RefreshCw, Ticket, UsersRound, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiBaseUrl, apiFetch } from "@/lib/api";
 
 type WorkKind = "TICKET" | "EVENT" | "EVENT_TASK" | "PROJECT";
 type Period = "ALL" | "TODAY" | "7_DAYS" | "30_DAYS";
@@ -70,7 +70,13 @@ interface OperationsOverview {
   };
   items: WorkItem[];
   decisions: OperationsDecision[];
-  workload: Array<{ owner: string; operational: number; projectCommitments: number; total: number; attention: number; capacityPercent: number; capacityStatus: "AVAILABLE" | "NEAR_CAPACITY" | "OVER_CAPACITY" }>;
+  workload: Array<{ owner: string; operational: number; projectCommitments: number; total: number; attention: number; capacityPercent: number; capacityStatus: "AVAILABLE" | "NEAR_CAPACITY" | "OVER_CAPACITY"; details: Array<{ id: string; kind: string; reference: string; title: string; dueAt: string | null; href: string; attention: boolean }> }>;
+  forecast: { weeks: Array<{ startAt: string; endAt: string; label: string }>; owners: Array<{ owner: string; weeks: number[]; unscheduled: number; totalPlanned: number; capacityBaseline: number }> };
+}
+
+interface ExecutiveProjectSummary {
+  summary: { activeProjects: number; atRiskProjects: number; overdueDecisions: number; unassignedDecisions: number; overdueMilestones: number };
+  detail: Array<{ projectId: string; projectName: string; health: string; targetDate: string | null; risk: boolean }>;
 }
 
 function label(value: string) {
@@ -121,12 +127,22 @@ export function OperationsWorkspace() {
   const [decisionOwner, setDecisionOwner] = useState("ALL");
   const [decisionStatus, setDecisionStatus] = useState<"ALL" | DecisionStatus>("ALL");
   const [decisionAttentionOnly, setDecisionAttentionOnly] = useState(true);
+  const [selectedWorkloadOwner, setSelectedWorkloadOwner] = useState<string | null>(null);
+  const [executive, setExecutive] = useState<ExecutiveProjectSummary | null>(null);
+  const [executiveRecipients, setExecutiveRecipients] = useState("");
+  const [executiveFrequency, setExecutiveFrequency] = useState<"weekly" | "monthly">("weekly");
 
   const load = async () => {
     setLoading(true);
     setError("");
     try {
-      setOverview(await apiFetch<OperationsOverview>("/operations/overview"));
+      const nextOverview = await apiFetch<OperationsOverview>("/operations/overview");
+      setOverview(nextOverview);
+      try {
+        setExecutive(await apiFetch<ExecutiveProjectSummary>("/reports/projects/executive-summary"));
+      } catch {
+        setExecutive(null);
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to load Operations Center.");
     } finally {
@@ -158,6 +174,7 @@ export function OperationsWorkspace() {
   const canUpdateStatus = (item: WorkItem) => item.kind === "TICKET" ? Boolean(overview?.capabilities.updateTicketStatus) : item.kind === "PROJECT" ? false : Boolean(overview?.capabilities.updateEventStatus);
 
   const decisionOwners = useMemo(() => [...new Set((overview?.decisions ?? []).map((decision) => decision.owner).filter((owner): owner is string => Boolean(owner)))].sort((left, right) => left.localeCompare(right)), [overview?.decisions]);
+  const selectedWorkload = useMemo(() => overview?.workload.find((entry) => entry.owner === selectedWorkloadOwner) ?? null, [overview?.workload, selectedWorkloadOwner]);
   const visibleDecisions = useMemo(() => (overview?.decisions ?? []).filter((decision) => {
     const ownerMatches = decisionOwner === "ALL" || (decisionOwner === "UNASSIGNED" ? !decision.owner : decision.owner === decisionOwner);
     return ownerMatches && (decisionStatus === "ALL" || decision.status === decisionStatus) && (!decisionAttentionOnly || decision.attention);
@@ -192,6 +209,22 @@ export function OperationsWorkspace() {
       setError(cause instanceof Error ? cause.message : "Unable to update work item status.");
     } finally {
       setUpdatingItemId(null);
+    }
+  };
+
+  const scheduleExecutiveReport = async () => {
+    const recipientEmails = executiveRecipients.split(/[;,\s]+/).map((email) => email.trim()).filter(Boolean);
+    if (!recipientEmails.length) {
+      setError("Enter at least one recipient email for the executive report.");
+      return;
+    }
+    setError("");
+    try {
+      const definition = await apiFetch<{ id: string }>("/reports/definitions", { method: "POST", body: JSON.stringify({ name: `Executive Project Review ${Date.now()}`, reportType: "project-executive-report", filters: {} }) });
+      await apiFetch("/reports/schedules", { method: "POST", body: JSON.stringify({ definitionId: definition.id, name: "Executive Project Review", frequency: executiveFrequency, format: "pdf", recipientEmails }) });
+      setExecutiveRecipients("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to schedule executive project report.");
     }
   };
 
@@ -231,6 +264,8 @@ export function OperationsWorkspace() {
         <SummaryCard icon={CalendarClock} title="Capacity alerts" value={overview?.summary.overCapacity ?? 0} note={`${overview?.summary.nearCapacity ?? 0} nearing ${overview?.summary.capacityWarningPercent ?? 75}% of capacity`} tone={(overview?.summary.overCapacity ?? 0) > 0 ? "attention" : "default"} />
         <SummaryCard icon={AlertTriangle} title="Blocked tasks" value={overview?.summary.blockedTasks ?? 0} note="Event service tasks requiring follow-up" tone={(overview?.summary.blockedTasks ?? 0) > 0 ? "attention" : "default"} />
       </section>
+
+      {executive ? <section className="panel operations-executive-panel"><div className="section-heading operations-section-heading"><div><h2>Executive project review</h2><p>Delivery health, overdue commitments, and decision ownership.</p></div><div className="operations-executive-downloads"><a className="button secondary" href={`${apiBaseUrl}/reports/projects/executive-export?format=csv`}><Download size={15} aria-hidden="true" /> CSV</a><a className="button secondary" href={`${apiBaseUrl}/reports/projects/executive-export?format=xlsx`}><Download size={15} aria-hidden="true" /> Excel</a><a className="button secondary" href={`${apiBaseUrl}/reports/projects/executive-export?format=pdf`}><Download size={15} aria-hidden="true" /> PDF</a></div></div><div className="operations-executive-grid"><SummaryCard icon={FolderKanban} title="At risk" value={executive.summary.atRiskProjects} note={`${executive.summary.activeProjects} active projects`} tone={executive.summary.atRiskProjects ? "attention" : "default"} /><SummaryCard icon={ClipboardCheck} title="Overdue decisions" value={executive.summary.overdueDecisions} note={`${executive.summary.unassignedDecisions} unassigned`} tone={executive.summary.overdueDecisions ? "attention" : "default"} /><SummaryCard icon={AlertTriangle} title="Overdue milestones" value={executive.summary.overdueMilestones} note="Across active project plans" tone={executive.summary.overdueMilestones ? "attention" : "default"} /></div><div className="operations-executive-schedule"><Mail size={16} aria-hidden="true" /><input className="input" value={executiveRecipients} onChange={(event) => setExecutiveRecipients(event.target.value)} placeholder="Schedule recipient emails" aria-label="Executive report recipient emails" /><select className="input" value={executiveFrequency} onChange={(event) => setExecutiveFrequency(event.target.value as "weekly" | "monthly")} aria-label="Executive report frequency"><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select><button className="button secondary" type="button" onClick={() => void scheduleExecutiveReport()}>Schedule PDF</button></div></section> : null}
 
       <section className="panel operations-queue-panel">
         <div className="section-heading operations-section-heading">
@@ -298,10 +333,17 @@ export function OperationsWorkspace() {
       <section className="panel operations-workload-panel">
         <div className="section-heading operations-section-heading"><div><h2>Capacity and work distribution</h2><p>Projected load combines operational assignments with project commitments. Baseline: {overview?.summary.capacityBaseline ?? 12} items; warning at {overview?.summary.capacityWarningPercent ?? 75}%.</p></div><UsersRound size={19} aria-hidden="true" /></div>
         <div className="operations-workload-list">
-          {(overview?.workload ?? []).map((entry) => <div className={`operations-workload-row ${entry.capacityStatus.toLowerCase().replace("_", "-")}`} key={entry.owner}><strong>{entry.owner}</strong><span>{entry.total}/{overview?.summary.capacityBaseline ?? 12} projected</span><small>{entry.operational} operational · {entry.projectCommitments} project commitments · {entry.attention} need attention</small><em>{label(entry.capacityStatus)}</em><div className="operations-capacity-meter" aria-label={`${entry.owner} projected capacity ${entry.capacityPercent}%`}><span style={{ width: `${entry.capacityPercent}%` }} /></div></div>)}
+          {(overview?.workload ?? []).map((entry) => <button className={`operations-workload-row ${entry.capacityStatus.toLowerCase().replace("_", "-")}`} type="button" key={entry.owner} onClick={() => setSelectedWorkloadOwner(entry.owner)} aria-label={`Open ${entry.owner} workload`}><strong>{entry.owner}</strong><span>{entry.total}/{overview?.summary.capacityBaseline ?? 12} projected</span><small>{entry.operational} · {entry.projectCommitments} project · {entry.attention} attention</small><em>{label(entry.capacityStatus)}</em><div className="operations-capacity-meter" aria-label={`${entry.owner} projected capacity ${entry.capacityPercent}%`}><span style={{ width: `${entry.capacityPercent}%` }} /></div></button>)}
           {!loading && !overview?.workload.length ? <div className="dashboard-empty">No assigned active work.</div> : null}
         </div>
       </section>
+
+      <section className="panel operations-forecast-panel">
+        <div className="section-heading operations-section-heading"><div><h2>Four-week capacity forecast</h2><p>Planned due dates by specialist; unscheduled work remains visible.</p></div><CalendarClock size={19} aria-hidden="true" /></div>
+        <div className="operations-forecast-scroll"><table className="table operations-forecast-table"><thead><tr><th>Specialist</th>{(overview?.forecast.weeks ?? []).map((week) => <th key={week.startAt}>Week of {week.label}</th>)}<th>Unscheduled</th></tr></thead><tbody>{(overview?.forecast.owners ?? []).map((entry) => <tr key={entry.owner}><td><button className="operations-owner-link" type="button" onClick={() => setSelectedWorkloadOwner(entry.owner)}>{entry.owner}</button></td>{entry.weeks.map((count, index) => <td key={`${entry.owner}-${index}`}><span className={count >= entry.capacityBaseline ? "operations-forecast-alert" : ""}>{count}</span></td>)}<td>{entry.unscheduled || "-"}</td></tr>)}{!loading && !overview?.forecast.owners.length ? <tr><td colSpan={6}><div className="dashboard-empty">No assigned capacity to forecast.</div></td></tr> : null}</tbody></table></div>
+      </section>
+
+      {selectedWorkload ? <section className="panel operations-workload-detail"><div className="section-heading operations-section-heading"><div><h2>{selectedWorkload.owner}</h2><p>{selectedWorkload.total} projected items, including {selectedWorkload.projectCommitments} project commitments.</p></div><button className="button secondary icon-button" type="button" onClick={() => setSelectedWorkloadOwner(null)} title="Close workload" aria-label="Close workload"><X size={16} aria-hidden="true" /></button></div><div className="operations-table-scroll"><table className="table operations-workload-detail-table"><thead><tr><th>Work</th><th>Type</th><th>Due</th><th></th></tr></thead><tbody>{selectedWorkload.details.map((item) => <tr key={item.id}><td><div className="operations-work-cell"><strong>{item.title}</strong><span>{item.reference}</span></div></td><td>{item.kind.replace("_", " ")}</td><td className={item.attention ? "operations-unassigned" : ""}>{formatDate(item.dueAt)}</td><td><Link className="button secondary" href={item.href}>Open</Link></td></tr>)}</tbody></table></div></section> : null}
     </div>
   );
 }

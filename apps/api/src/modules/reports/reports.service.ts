@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Workbook } from "exceljs";
 import PDFDocument from "pdfkit";
-import { EventServiceRequestStatus, EventServiceTaskStatus, Prisma, TicketPriority, TicketSource, TicketStatus } from "@prisma/client";
+import { EventServiceRequestStatus, EventServiceTaskStatus, Prisma, ProjectDecisionStatus, ProjectHealth, ProjectMilestoneStatus, ProjectStatus, TicketPriority, TicketSource, TicketStatus } from "@prisma/client";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { MailDeliveryService } from "../mailboxes/mail-delivery.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -33,7 +33,7 @@ type GeneratedReport = {
   contentType: string;
   body: string | Buffer;
   format: ReportFormat;
-  result: Awaited<ReturnType<ReportsService["ticketSummary"]>> | Awaited<ReturnType<ReportsService["eventServiceSummary"]>>;
+  result: Awaited<ReturnType<ReportsService["ticketSummary"]>> | Awaited<ReturnType<ReportsService["eventServiceSummary"]>> | Awaited<ReturnType<ReportsService["executiveProjectSummary"]>>;
 };
 type TicketSummaryOptions = { detailMode?: "paged" | "all" };
 type EventSummaryOptions = { detailMode?: "paged" | "all" };
@@ -83,6 +83,9 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
   }
 
   listTemplates(reportType = "ticket-report") {
+    if (reportType === "project-executive-report") {
+      return [{ id: "project-executive-review", name: "Executive Project Review", description: "Delivery health, overdue milestones, and decisions that need leadership attention.", filters: {} }];
+    }
     if (reportType === "event-service-report") {
       return [
         {
@@ -455,6 +458,34 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  async executiveProjectSummary(user: AuthenticatedUser) {
+    const now = new Date();
+    const projects = await this.prisma.project.findMany({
+      where: { organizationId: user.organizationId, deletedAt: null },
+      select: {
+        id: true, name: true, status: true, health: true, targetDate: true, completedAt: true,
+        client: { select: { name: true } }, owner: { select: { firstName: true, lastName: true } },
+        milestones: { select: { status: true, dueAt: true } },
+        decisions: { where: { status: { notIn: [ProjectDecisionStatus.RESOLVED, ProjectDecisionStatus.CANCELLED] } }, select: { title: true, dueAt: true, owner: { select: { firstName: true, lastName: true } } } }
+      }, orderBy: [{ targetDate: "asc" }, { updatedAt: "desc" }], take: 500
+    });
+    const active = projects.filter((project) => project.status !== ProjectStatus.COMPLETED && project.status !== ProjectStatus.CANCELLED);
+    const detail = active.map((project) => {
+      const overdueMilestones = project.milestones.filter((milestone) => milestone.status !== ProjectMilestoneStatus.COMPLETED && milestone.dueAt && milestone.dueAt < now).length;
+      const overdueDecisions = project.decisions.filter((decision) => decision.dueAt && decision.dueAt < now).length;
+      const unassignedDecisions = project.decisions.filter((decision) => !decision.owner).length;
+      const overdueTarget = Boolean(project.targetDate && project.targetDate < now);
+      const risk = project.health !== ProjectHealth.ON_TRACK || overdueTarget || overdueMilestones > 0 || overdueDecisions > 0 || unassignedDecisions > 0;
+      return { projectId: project.id, projectName: project.name, clientName: project.client?.name ?? "Internal", owner: project.owner ? `${project.owner.firstName} ${project.owner.lastName}` : "Unassigned", status: project.status, health: project.health, targetDate: project.targetDate, overdueTarget, overdueMilestones, openDecisions: project.decisions.length, overdueDecisions, unassignedDecisions, risk };
+    });
+    return {
+      generatedAt: now,
+      summary: { activeProjects: active.length, atRiskProjects: detail.filter((project) => project.risk).length, onTrackProjects: detail.filter((project) => !project.risk).length, overdueDecisions: detail.reduce((sum, project) => sum + project.overdueDecisions, 0), unassignedDecisions: detail.reduce((sum, project) => sum + project.unassignedDecisions, 0), overdueMilestones: detail.reduce((sum, project) => sum + project.overdueMilestones, 0), completedProjects: projects.filter((project) => project.status === ProjectStatus.COMPLETED).length },
+      byHealth: [ProjectHealth.ON_TRACK, ProjectHealth.AT_RISK, ProjectHealth.OFF_TRACK].map((health) => ({ label: health, count: active.filter((project) => project.health === health).length })),
+      detail: detail.sort((left, right) => Number(right.risk) - Number(left.risk) || (left.targetDate?.getTime() ?? Number.MAX_SAFE_INTEGER) - (right.targetDate?.getTime() ?? Number.MAX_SAFE_INTEGER))
+    };
+  }
+
   async exportTickets(user: AuthenticatedUser, query: TicketReportExportQueryDto) {
     const format = query.format ?? "csv";
     const report = await this.generateTicketsReport(user, query, format);
@@ -466,6 +497,13 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     const format = query.format ?? "csv";
     const report = await this.generateEventServiceReport(user, query, format);
     await this.logReportExport(user, query, format, "downloaded", undefined, undefined, undefined, "event-service-report");
+    return report;
+  }
+
+  async exportExecutiveProjects(user: AuthenticatedUser, query: { format?: ReportFormat }) {
+    const format = query.format ?? "csv";
+    const report = await this.generateExecutiveProjectReport(user, format);
+    await this.logReportExport(user, query, format, "downloaded", undefined, undefined, undefined, "project-executive-report");
     return report;
   }
 
@@ -527,6 +565,18 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     return { sent: true, recipients, filename: report.filename };
   }
 
+  async sendExecutiveProjects(user: AuthenticatedUser, query: { format?: ReportFormat }, input: SendReportDto) {
+    const format = input.format ?? query.format ?? "pdf";
+    const report = await this.generateExecutiveProjectReport(user, format);
+    const recipients = this.normalizeEmails(input.recipientEmails);
+    if (!recipients.length) throw new BadRequestException("At least one recipient email is required.");
+    const subject = input.subject?.trim() || `Executive project report - ${new Date().toLocaleDateString()}`;
+    const message = input.message?.trim() || "Attached is the requested executive project report.";
+    await this.mailDelivery.sendTicketReply({ organizationId: user.organizationId, to: recipients, subject, bodyText: message, bodyHtml: `<p>${this.escapeHtml(message).replace(/\n/g, "<br />")}</p>`, rawAttachments: [{ originalFilename: report.filename, mimeType: report.contentType, sizeBytes: Buffer.byteLength(report.body), contentBytes: Buffer.isBuffer(report.body) ? report.body : Buffer.from(report.body), isInline: false }] });
+    await Promise.all(recipients.map((recipient) => this.logReportExport(user, query, format, "emailed", recipient, undefined, undefined, "project-executive-report")));
+    return { sent: true, recipients, filename: report.filename };
+  }
+
   private async generateTicketsReport(user: AuthenticatedUser, query: TicketReportQueryDto, format: ReportFormat): Promise<GeneratedReport> {
     if (format === "xlsx") return this.exportTicketsXlsx(user, query);
     if (format === "pdf") return this.exportTicketsPdf(user, query);
@@ -537,6 +587,30 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     if (format === "xlsx") return this.exportEventServicesXlsx(user, query);
     if (format === "pdf") return this.exportEventServicesPdf(user, query);
     return this.exportEventServicesCsv(user, query);
+  }
+
+  private async generateExecutiveProjectReport(user: AuthenticatedUser, format: ReportFormat): Promise<GeneratedReport> {
+    const result = await this.executiveProjectSummary(user);
+    const rows = result.detail.map((project) => [project.projectName, project.clientName, project.owner, project.status, project.health, project.targetDate?.toISOString().slice(0, 10) ?? "", project.overdueMilestones, project.openDecisions, project.overdueDecisions, project.unassignedDecisions, project.risk ? "Needs attention" : "On track"]);
+    const headers = ["Project", "Client", "Owner", "Status", "Health", "Target", "Overdue milestones", "Open decisions", "Overdue decisions", "Unassigned decisions", "Delivery signal"];
+    if (format === "xlsx") {
+      const workbook = new Workbook();
+      const summary = workbook.addWorksheet("Executive summary");
+      summary.addRows([["Executive Project Report"], ["Generated", result.generatedAt.toISOString()], ["Active projects", result.summary.activeProjects], ["At risk", result.summary.atRiskProjects], ["Overdue decisions", result.summary.overdueDecisions], ["Overdue milestones", result.summary.overdueMilestones]]);
+      const detail = workbook.addWorksheet("Projects"); detail.addRow(headers); detail.addRows(rows); detail.getRow(1).font = { bold: true }; detail.views = [{ state: "frozen", ySplit: 1 }]; detail.columns.forEach((column) => { column.width = 22; });
+      return { filename: `executive-project-report-${new Date().toISOString().slice(0, 10)}.xlsx`, contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", body: Buffer.from(await workbook.xlsx.writeBuffer()), format, result };
+    }
+    if (format === "pdf") {
+      const doc = new PDFDocument({ margin: 42, size: "LETTER" }); const chunks: Buffer[] = []; doc.on("data", (chunk: Buffer) => chunks.push(chunk)); const done = new Promise<void>((resolve) => doc.on("end", resolve));
+      doc.font("Helvetica-Bold").fontSize(20).text("Executive Project Report"); doc.moveDown(0.3); doc.font("Helvetica").fontSize(10).text(`Generated ${result.generatedAt.toLocaleString()}`); doc.moveDown();
+      doc.font("Helvetica-Bold").fontSize(11).text(`Active: ${result.summary.activeProjects}   At risk: ${result.summary.atRiskProjects}   Overdue decisions: ${result.summary.overdueDecisions}`); doc.moveDown();
+      for (const project of result.detail.slice(0, 45)) { doc.font("Helvetica-Bold").fontSize(10).text(project.projectName); doc.font("Helvetica").fontSize(9).text(`${project.clientName} | ${project.owner} | ${project.health.replace("_", " ")} | Target: ${project.targetDate?.toLocaleDateString() ?? "Not scheduled"}`); doc.text(`${project.overdueMilestones} overdue milestones, ${project.openDecisions} open decisions, ${project.overdueDecisions} overdue decisions`); doc.moveDown(0.45); }
+      doc.end(); await done;
+      return { filename: `executive-project-report-${new Date().toISOString().slice(0, 10)}.pdf`, contentType: "application/pdf", body: Buffer.concat(chunks), format, result };
+    }
+    const escape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const body = [["Executive Project Report"], ["Generated", result.generatedAt.toISOString()], [], headers, ...rows].map((row) => row.map(escape).join(",")).join("\n");
+    return { filename: `executive-project-report-${new Date().toISOString().slice(0, 10)}.csv`, contentType: "text/csv; charset=utf-8", body, format, result };
   }
 
   private async exportTicketsCsv(user: AuthenticatedUser, query: TicketReportQueryDto): Promise<GeneratedReport> {
@@ -923,7 +997,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     return schedule;
   }
 
-  private async logReportExport(user: AuthenticatedUser, query: TicketReportQueryDto | EventServiceReportQueryDto, format: ReportFormat, deliveryStatus: string, recipientEmail?: string, definitionId?: string | null, errorMessage?: string, reportType = "ticket-report") {
+  private async logReportExport(user: AuthenticatedUser, query: TicketReportQueryDto | EventServiceReportQueryDto | { format?: ReportFormat }, format: ReportFormat, deliveryStatus: string, recipientEmail?: string, definitionId?: string | null, errorMessage?: string, reportType = "ticket-report") {
     await this.prisma.reportExport.create({
       data: {
         organizationId: user.organizationId,
@@ -973,6 +1047,13 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
             recipientEmails: schedule.recipientEmails,
             format: schedule.format as ReportFormat,
             subject: `${schedule.name} - Event & Services report`,
+            message: `Attached is the scheduled report "${schedule.name}".`
+          });
+        } else if (reportType === "project-executive-report") {
+          await this.sendExecutiveProjects(authUser, { format: schedule.format as ReportFormat }, {
+            recipientEmails: schedule.recipientEmails,
+            format: schedule.format as ReportFormat,
+            subject: `${schedule.name} - Executive project report`,
             message: `Attached is the scheduled report "${schedule.name}".`
           });
         } else {

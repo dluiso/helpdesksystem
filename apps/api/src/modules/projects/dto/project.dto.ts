@@ -191,3 +191,37 @@ export class AddProjectDependencyDto {
   @IsUUID()
   dependsOnProjectId: string;
 }
+
+export class CreateProjectTemplateDto {
+  @IsUUID()
+  sourceProjectId: string;
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(120)
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string | null;
+}
+
+export class ApplyProjectTemplateDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(180)
+  name: string;
+
+  @IsOptional()
+  @IsUUID()
+  clientId?: string | null;
+
+  @IsOptional()
+  @IsUUID()
+  ownerId?: string | null;
+
+  @IsOptional()
+  @IsDateString()
+  startAt?: string | null;
+}

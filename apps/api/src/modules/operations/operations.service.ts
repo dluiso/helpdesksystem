@@ -13,6 +13,11 @@ type CapacityStatus = "AVAILABLE" | "NEAR_CAPACITY" | "OVER_CAPACITY";
 interface ProjectCommitment {
   owner: string;
   attention: boolean;
+  id: string;
+  kind: "PROJECT" | "MILESTONE" | "DECISION";
+  title: string;
+  dueAt: Date | null;
+  href: string;
 }
 
 export interface OperationsWorkItem {
@@ -47,6 +52,16 @@ export interface OperationsDecision {
   projectHealth: ProjectHealth;
   attention: boolean;
   href: string;
+}
+
+export interface WorkloadDetail {
+  id: string;
+  kind: string;
+  reference: string;
+  title: string;
+  dueAt: Date | null;
+  href: string;
+  attention: boolean;
 }
 
 @Injectable()
@@ -130,6 +145,8 @@ export class OperationsService {
               milestones: {
                 where: { status: { not: ProjectMilestoneStatus.COMPLETED } },
                 select: {
+                  id: true,
+                  title: true,
                   status: true,
                   dueAt: true,
                   assignedUser: { select: { firstName: true, lastName: true } }
@@ -231,7 +248,7 @@ export class OperationsService {
       const attention = project.health !== ProjectHealth.ON_TRACK || overdue || blockedMilestones > 0 || blockedDependencies > 0;
 
       if (project.owner) {
-        projectCommitments.push({ owner: this.userName(project.owner), attention });
+        projectCommitments.push({ owner: this.userName(project.owner), attention, id: `project-${project.id}`, kind: "PROJECT", title: project.name, dueAt: project.targetDate, href: `/projects?project=${project.id}` });
       } else {
         unassignedProjectCommitments += 1;
       }
@@ -241,10 +258,7 @@ export class OperationsService {
           unassignedProjectCommitments += 1;
           continue;
         }
-        projectCommitments.push({
-          owner: this.userName(milestone.assignedUser),
-          attention: milestone.status === ProjectMilestoneStatus.BLOCKED || (milestone.dueAt !== null && milestone.dueAt < now)
-        });
+        projectCommitments.push({ owner: this.userName(milestone.assignedUser), attention: milestone.status === ProjectMilestoneStatus.BLOCKED || (milestone.dueAt !== null && milestone.dueAt < now), id: `milestone-${milestone.id}`, kind: "MILESTONE", title: `${project.name}: ${milestone.title}`, dueAt: milestone.dueAt, href: `/projects?project=${project.id}` });
       }
 
       for (const decision of project.decisions) {
@@ -252,10 +266,7 @@ export class OperationsService {
           unassignedProjectCommitments += 1;
           continue;
         }
-        projectCommitments.push({
-          owner: this.userName(decision.owner),
-          attention: decision.status === ProjectDecisionStatus.OPEN || (decision.dueAt !== null && decision.dueAt < now)
-        });
+        projectCommitments.push({ owner: this.userName(decision.owner), attention: decision.status === ProjectDecisionStatus.OPEN || (decision.dueAt !== null && decision.dueAt < now), id: `decision-${decision.id}`, kind: "DECISION", title: `${project.name}: ${decision.title}`, dueAt: decision.dueAt, href: `/projects?project=${project.id}` });
       }
 
       return {
@@ -302,6 +313,7 @@ export class OperationsService {
       .sort((left, right) => Number(right.attention) - Number(left.attention) || this.priorityRank(right.priority) - this.priorityRank(left.priority) || this.dateRank(left.dueAt, left.updatedAt) - this.dateRank(right.dueAt, right.updatedAt))
       .slice(0, 160);
     const workload = this.workload(allItems, settings.capacityBaseline, settings.capacityWarningPercent, projectCommitments);
+    const forecast = this.forecast(allItems, projectCommitments, settings.capacityBaseline, now);
 
     return {
       generatedAt: now,
@@ -330,7 +342,8 @@ export class OperationsService {
       },
       items,
       decisions,
-      workload
+      workload,
+      forecast
     };
   }
 
@@ -352,31 +365,59 @@ export class OperationsService {
   }
 
   private workload(items: OperationsWorkItem[], capacityBaseline: number, capacityWarningPercent: number, projectCommitments: ProjectCommitment[] = []) {
-    const work = new Map<string, { owner: string; operational: number; projectCommitments: number; total: number; attention: number }>();
+    const work = new Map<string, { owner: string; operational: number; projectCommitments: number; total: number; attention: number; details: WorkloadDetail[] }>();
     for (const item of items) {
       for (const owner of item.internalOwners) {
-        const current = work.get(owner) ?? { owner, operational: 0, projectCommitments: 0, total: 0, attention: 0 };
+        const current = work.get(owner) ?? { owner, operational: 0, projectCommitments: 0, total: 0, attention: 0, details: [] };
         current.operational += 1;
         current.total += 1;
         if (item.attention) current.attention += 1;
+        current.details.push({ id: `${item.kind}-${item.id}`, kind: item.kind, reference: item.reference, title: item.title, dueAt: item.dueAt, href: item.href, attention: item.attention });
         work.set(owner, current);
       }
     }
     for (const commitment of projectCommitments) {
-      const current = work.get(commitment.owner) ?? { owner: commitment.owner, operational: 0, projectCommitments: 0, total: 0, attention: 0 };
+      const current = work.get(commitment.owner) ?? { owner: commitment.owner, operational: 0, projectCommitments: 0, total: 0, attention: 0, details: [] };
       current.projectCommitments += 1;
       current.total += 1;
       if (commitment.attention) current.attention += 1;
+      current.details.push({ id: commitment.id, kind: commitment.kind, reference: "Project", title: commitment.title, dueAt: commitment.dueAt, href: commitment.href, attention: commitment.attention });
       work.set(commitment.owner, current);
     }
     return [...work.values()]
       .map((entry) => {
         const warningThreshold = Math.ceil(capacityBaseline * (capacityWarningPercent / 100));
         const capacityStatus: CapacityStatus = entry.total >= capacityBaseline ? "OVER_CAPACITY" : entry.total >= warningThreshold ? "NEAR_CAPACITY" : "AVAILABLE";
-        return { ...entry, capacityPercent: Math.min(100, Math.round((entry.total / capacityBaseline) * 100)), capacityStatus };
+        return { ...entry, details: entry.details.sort((left, right) => this.dateRank(left.dueAt, new Date(0)) - this.dateRank(right.dueAt, new Date(0))), capacityPercent: Math.min(100, Math.round((entry.total / capacityBaseline) * 100)), capacityStatus };
       })
       .sort((left, right) => this.capacityRank(right.capacityStatus) - this.capacityRank(left.capacityStatus) || right.attention - left.attention || right.total - left.total || left.owner.localeCompare(right.owner))
       .slice(0, 12);
+  }
+
+  private forecast(items: OperationsWorkItem[], commitments: ProjectCommitment[], capacityBaseline: number, now: Date) {
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+    const weeks = Array.from({ length: 4 }, (_, index) => {
+      const startAt = new Date(start);
+      startAt.setDate(start.getDate() + index * 7);
+      const endAt = new Date(startAt);
+      endAt.setDate(startAt.getDate() + 7);
+      return { startAt, endAt, label: startAt.toLocaleDateString("en-US", { month: "short", day: "numeric" }) };
+    });
+    const owners = new Map<string, { owner: string; weeks: number[]; unscheduled: number }>();
+    const add = (owner: string, dueAt: Date | null) => {
+      const row = owners.get(owner) ?? { owner, weeks: [0, 0, 0, 0], unscheduled: 0 };
+      if (!dueAt) row.unscheduled += 1;
+      else {
+        const index = weeks.findIndex((week) => dueAt >= week.startAt && dueAt < week.endAt);
+        if (index >= 0) row.weeks[index] += 1;
+      }
+      owners.set(owner, row);
+    };
+    for (const item of items) for (const owner of item.internalOwners) add(owner, item.dueAt);
+    for (const commitment of commitments) add(commitment.owner, commitment.dueAt);
+    return { weeks, owners: [...owners.values()].map((entry) => ({ ...entry, totalPlanned: entry.weeks.reduce((sum, value) => sum + value, 0), capacityBaseline })).sort((left, right) => right.totalPlanned - left.totalPlanned || left.owner.localeCompare(right.owner)) };
   }
 
   private capacityRank(status: CapacityStatus) {

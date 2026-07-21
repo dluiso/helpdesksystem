@@ -9232,7 +9232,10 @@ a.dashboard-list-row:hover {
 
 .operations-queue-panel,
 .operations-decision-panel,
-.operations-workload-panel {
+.operations-workload-panel,
+.operations-forecast-panel,
+.operations-workload-detail,
+.operations-executive-panel {
   padding: 0;
   overflow: hidden;
 }
@@ -9337,13 +9340,24 @@ a.dashboard-list-row:hover {
 }
 
 .operations-workload-row {
+  width: 100%;
+  border: 1px solid var(--line);
+  color: inherit;
+  font: inherit;
+  text-align: left;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 3px 10px;
   padding: 11px;
-  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface-subtle);
+  cursor: pointer;
+}
+
+.operations-workload-row:hover,
+.operations-workload-row:focus-visible {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand-primary) 16%, transparent);
 }
 
 .operations-workload-row strong {
@@ -9397,6 +9411,115 @@ a.dashboard-list-row:hover {
   background: var(--danger);
 }
 
+.operations-forecast-scroll {
+  overflow-x: auto;
+}
+
+.operations-forecast-table,
+.operations-workload-detail-table {
+  min-width: 700px;
+}
+
+.operations-owner-link {
+  padding: 0;
+  border: 0;
+  color: var(--brand-primary);
+  background: transparent;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.operations-forecast-alert {
+  color: var(--danger);
+  font-weight: 800;
+}
+
+.operations-executive-downloads,
+.operations-executive-schedule {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.operations-executive-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px 18px;
+}
+
+.operations-executive-schedule {
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-subtle);
+}
+
+.operations-executive-schedule .input:first-of-type {
+  flex: 1 1 260px;
+}
+
+.operations-executive-schedule select {
+  width: 118px;
+}
+
+.projects-templates-panel {
+  overflow: hidden;
+}
+
+.projects-template-list {
+  display: grid;
+  gap: 8px;
+  padding: 14px 18px 18px;
+}
+
+.projects-template-row,
+.projects-save-template {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.projects-template-row {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+}
+
+.projects-template-row > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.projects-template-row span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.projects-template-actions,
+.projects-save-template {
+  flex-wrap: wrap;
+}
+
+.projects-template-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.projects-save-template {
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-subtle);
+}
+
+.projects-save-template .input {
+  max-width: 280px;
+}
+
 @media (max-width: 1120px) {
   .operations-toolbar {
     align-items: stretch;
@@ -9414,6 +9537,10 @@ a.dashboard-list-row:hover {
 
   .operations-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .operations-executive-grid {
+    grid-template-columns: 1fr;
   }
 }
 

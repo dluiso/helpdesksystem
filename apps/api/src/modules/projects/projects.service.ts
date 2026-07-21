@@ -4,7 +4,7 @@ import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
-import { AddProjectDependencyDto, AddProjectWorkItemDto, CreateProjectDecisionDto, CreateProjectDto, CreateProjectMilestoneDto, UpdateProjectDecisionDto, UpdateProjectDto, UpdateProjectMilestoneDto } from "./dto/project.dto";
+import { AddProjectDependencyDto, AddProjectWorkItemDto, ApplyProjectTemplateDto, CreateProjectDecisionDto, CreateProjectDto, CreateProjectMilestoneDto, CreateProjectTemplateDto, UpdateProjectDecisionDto, UpdateProjectDto, UpdateProjectMilestoneDto } from "./dto/project.dto";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DECISION_ALERT_SCAN_INTERVAL_MS = 15 * 60 * 1000;
@@ -32,7 +32,7 @@ export class ProjectsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async list(user: AuthenticatedUser) {
-    const [items, clients, assignableUsers] = await Promise.all([
+    const [items, clients, assignableUsers, templates] = await Promise.all([
       this.prisma.project.findMany({
         where: { organizationId: user.organizationId, deletedAt: null },
         include: this.projectInclude(),
@@ -44,13 +44,15 @@ export class ProjectsService implements OnModuleInit, OnModuleDestroy {
         : Promise.resolve([]),
       user.permissions.includes("projects.update")
         ? this.prisma.user.findMany({ where: { organizationId: user.organizationId, isActive: true, deletedAt: null }, select: { id: true, firstName: true, lastName: true }, orderBy: [{ firstName: "asc" }, { lastName: "asc" }], take: 250 })
-        : Promise.resolve([])
+        : Promise.resolve([]),
+      this.listTemplates(user)
     ]);
 
     return {
       items,
       clients,
       assignableUsers,
+      templates,
       capabilities: {
         create: user.permissions.includes("projects.create"),
         update: user.permissions.includes("projects.update"),
@@ -61,6 +63,56 @@ export class ProjectsService implements OnModuleInit, OnModuleDestroy {
 
   async get(projectId: string, user: AuthenticatedUser) {
     return this.ensureProject(projectId, user);
+  }
+
+  async listTemplates(user: AuthenticatedUser) {
+    return this.prisma.projectTemplate.findMany({ where: { organizationId: user.organizationId }, include: this.projectTemplateInclude(), orderBy: [{ updatedAt: "desc" }, { name: "asc" }], take: 100 });
+  }
+
+  async createTemplate(input: CreateProjectTemplateDto, user: AuthenticatedUser) {
+    const source = await this.ensureProject(input.sourceProjectId, user);
+    const baseline = source.startAt ?? source.createdAt;
+    try {
+      const template = await this.prisma.projectTemplate.create({
+        data: {
+          organizationId: user.organizationId, createdById: user.id, name: input.name.trim(), description: this.optionalTrim(input.description) ?? source.description,
+          projectStatus: source.status === ProjectStatus.COMPLETED || source.status === ProjectStatus.CANCELLED ? ProjectStatus.PLANNING : source.status,
+          projectHealth: source.health, durationDays: this.dayOffset(baseline, source.targetDate),
+          milestones: { create: source.milestones.map((milestone, index) => ({ title: milestone.title, description: milestone.description, status: milestone.status === ProjectMilestoneStatus.COMPLETED ? ProjectMilestoneStatus.NOT_STARTED : milestone.status, dueOffsetDays: this.dayOffset(baseline, milestone.dueAt), assignToOwner: Boolean(milestone.assignedUserId), sortOrder: index })) },
+          decisions: { create: source.decisions.map((decision, index) => ({ title: decision.title, description: decision.description, dueOffsetDays: this.dayOffset(baseline, decision.dueAt), assignToOwner: Boolean(decision.ownerId), sortOrder: index })) }
+        }, include: this.projectTemplateInclude()
+      });
+      await this.auditLogs.create({ organizationId: user.organizationId, userId: user.id, entityType: "ProjectTemplate", entityId: template.id, action: "project.template_created", metadata: { sourceProjectId: source.id, name: template.name, milestoneCount: template.milestones.length, decisionCount: template.decisions.length } });
+      return template;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") throw new ConflictException("A project template with this name already exists.");
+      throw error;
+    }
+  }
+
+  async applyTemplate(templateId: string, input: ApplyProjectTemplateDto, user: AuthenticatedUser) {
+    const template = await this.prisma.projectTemplate.findFirst({ where: { id: templateId, organizationId: user.organizationId }, include: this.projectTemplateInclude() });
+    if (!template) throw new NotFoundException("Project template was not found.");
+    const clientId = await this.resolveClientId(input.clientId, user.organizationId);
+    const ownerId = input.ownerId === undefined ? user.id : await this.resolveAssignableUserId(input.ownerId, user.organizationId);
+    const startAt = this.parseDate(input.startAt) ?? new Date();
+    const project = await this.prisma.$transaction(async (transaction) => {
+      const created = await transaction.project.create({ data: { organizationId: user.organizationId, clientId, ownerId, name: input.name.trim(), description: template.description, status: template.projectStatus, health: template.projectHealth, startAt, targetDate: this.dateWithOffset(startAt, template.durationDays) } });
+      if (template.milestones.length) await transaction.projectMilestone.createMany({ data: template.milestones.map((milestone) => ({ projectId: created.id, title: milestone.title, description: milestone.description, status: milestone.status, dueAt: this.dateWithOffset(startAt, milestone.dueOffsetDays), assignedUserId: milestone.assignToOwner ? ownerId : null })) });
+      if (template.decisions.length) await transaction.projectDecision.createMany({ data: template.decisions.map((decision) => ({ projectId: created.id, title: decision.title, description: decision.description, dueAt: this.dateWithOffset(startAt, decision.dueOffsetDays), ownerId: decision.assignToOwner ? ownerId : null, status: ProjectDecisionStatus.OPEN })) });
+      return created;
+    });
+    const result = await this.ensureProject(project.id, user);
+    await this.auditLogs.create({ organizationId: user.organizationId, userId: user.id, entityType: "Project", entityId: project.id, action: "project.template_applied", metadata: { templateId: template.id, templateName: template.name, ownerId, clientId } });
+    return result;
+  }
+
+  async removeTemplate(templateId: string, user: AuthenticatedUser) {
+    const template = await this.prisma.projectTemplate.findFirst({ where: { id: templateId, organizationId: user.organizationId }, select: { id: true, name: true } });
+    if (!template) throw new NotFoundException("Project template was not found.");
+    await this.prisma.projectTemplate.delete({ where: { id: template.id } });
+    await this.auditLogs.create({ organizationId: user.organizationId, userId: user.id, entityType: "ProjectTemplate", entityId: template.id, action: "project.template_deleted", metadata: { name: template.name } });
+    return { deleted: true };
   }
 
   async create(input: CreateProjectDto, user: AuthenticatedUser) {
@@ -489,6 +541,26 @@ export class ProjectsService implements OnModuleInit, OnModuleDestroy {
     if (!decision.owner) return "unassigned";
     if (decision.dueAt && decision.dueAt < now) return "overdue";
     return decision.project.health !== ProjectHealth.ON_TRACK ? "project at risk" : "needs review";
+  }
+
+  private dayOffset(start: Date, end: Date | null) {
+    if (!end) return null;
+    return Math.max(0, Math.round((end.getTime() - start.getTime()) / 86_400_000));
+  }
+
+  private dateWithOffset(start: Date, offset: number | null) {
+    if (offset === null || offset === undefined) return null;
+    const value = new Date(start);
+    value.setDate(value.getDate() + offset);
+    return value;
+  }
+
+  private projectTemplateInclude(): Prisma.ProjectTemplateInclude {
+    return {
+      createdBy: { select: { id: true, firstName: true, lastName: true } },
+      milestones: { orderBy: { sortOrder: "asc" } },
+      decisions: { orderBy: { sortOrder: "asc" } }
+    };
   }
 
   private projectInclude(): Prisma.ProjectInclude {

@@ -113,3 +113,9 @@ export class UpdateReportScheduleDto {
   @IsBoolean()
   isActive?: boolean;
 }
+
+export class ExecutiveProjectReportQueryDto {
+  @IsOptional()
+  @IsIn(["csv", "xlsx", "pdf"])
+  format?: "csv" | "xlsx" | "pdf";
+}

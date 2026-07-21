@@ -65,6 +65,7 @@ interface ProjectsResponse {
   items: Project[];
   clients: Array<{ id: string; name: string }>;
   assignableUsers: Array<{ id: string; firstName: string; lastName: string }>;
+  templates: Array<{ id: string; name: string; description: string | null; durationDays: number | null; milestones: Array<{ id: string }>; decisions: Array<{ id: string }> }>;
   capabilities: { create: boolean; update: boolean; delete: boolean };
 }
 
@@ -125,6 +126,8 @@ export function ProjectsWorkspace() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ProjectDraft>(emptyDraft);
   const [showCreate, setShowCreate] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [templateName, setTemplateName] = useState("");
   const [milestoneTitle, setMilestoneTitle] = useState("");
   const [milestoneDueAt, setMilestoneDueAt] = useState("");
   const [milestoneAssignedUserId, setMilestoneAssignedUserId] = useState("");
@@ -322,6 +325,50 @@ export function ProjectsWorkspace() {
     }
   };
 
+  const saveTemplate = async () => {
+    if (!selected || !templateName.trim()) return;
+    setSaving(true);
+    setError("");
+    try {
+      await apiFetch("/projects/templates", { method: "POST", body: JSON.stringify({ sourceProjectId: selected.id, name: templateName.trim() }) });
+      setTemplateName("");
+      await load(selected.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to save project template.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const applyTemplate = async (templateId: string) => {
+    const template = data?.templates.find((item) => item.id === templateId);
+    if (!template) return;
+    setSaving(true);
+    setError("");
+    try {
+      const project = await apiFetch<Project>(`/projects/templates/${templateId}/apply`, { method: "POST", body: JSON.stringify({ name: `${template.name} - ${new Date().toLocaleDateString()}`, ownerId: draft.ownerId || undefined, clientId: draft.clientId || undefined, startAt: new Date().toISOString().slice(0, 10) }) });
+      setShowTemplates(false);
+      await load(project.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to apply project template.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeTemplate = async (templateId: string) => {
+    if (!window.confirm("Delete this project template? Existing projects will not change.")) return;
+    setSaving(true);
+    try {
+      await apiFetch(`/projects/templates/${templateId}`, { method: "DELETE" });
+      await load(selected?.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to delete project template.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const addDependency = async (event: FormEvent) => {
     event.preventDefault();
     if (!selected || !dependencyProjectId) return;
@@ -421,6 +468,7 @@ export function ProjectsWorkspace() {
             <button className={projectView === "PORTFOLIO" ? "active" : ""} type="button" onClick={() => setProjectView("PORTFOLIO")}>Portfolio</button>
             <button className={projectView === "TIMELINE" ? "active" : ""} type="button" onClick={() => setProjectView("TIMELINE")}>Timeline</button>
           </div>
+          {data?.capabilities.create ? <button className="button secondary" type="button" onClick={() => setShowTemplates((current) => !current)}><ClipboardCheck size={16} aria-hidden="true" /> Templates</button> : null}
           <button className="button secondary icon-button" type="button" onClick={() => void load()} disabled={loading} title="Refresh projects" aria-label="Refresh projects"><RefreshCw size={16} className={loading ? "spin" : ""} aria-hidden="true" /></button>
           {data?.capabilities.create ? <button className="button" type="button" onClick={() => { setShowCreate(true); selectProject(null); }}><Plus size={16} aria-hidden="true" /> Add Project</button> : null}
         </div>
@@ -433,6 +481,8 @@ export function ProjectsWorkspace() {
         <ProjectFields draft={draft} clients={data?.clients ?? []} owners={data?.assignableUsers ?? []} onChange={updateDraft} />
         <div className="form-actions"><button className="button" type="submit" disabled={saving || !draft.name.trim()}><Save size={16} aria-hidden="true" /> Create Project</button></div>
       </form> : null}
+
+      {showTemplates ? <section className="panel projects-templates-panel"><div className="section-heading"><div><h2>Project templates</h2><p>Reusable project structures with their milestones and open decisions.</p></div><button className="button secondary icon-button" type="button" onClick={() => setShowTemplates(false)} title="Close templates" aria-label="Close templates"><X size={16} aria-hidden="true" /></button></div><div className="projects-template-list">{(data?.templates ?? []).map((template) => <div className="projects-template-row" key={template.id}><div><strong>{template.name}</strong><span>{template.milestones.length} milestones · {template.decisions.length} decisions · {template.durationDays ?? "No"} day target</span></div><div className="projects-template-actions"><button className="button secondary" type="button" onClick={() => void applyTemplate(template.id)} disabled={saving}><Plus size={15} aria-hidden="true" /> Use</button>{data?.capabilities.delete ? <button className="button secondary icon-button" type="button" onClick={() => void removeTemplate(template.id)} disabled={saving} title={`Delete ${template.name}`} aria-label={`Delete ${template.name}`}><Trash2 size={15} aria-hidden="true" /></button> : null}</div></div>)}{!data?.templates.length ? <div className="dashboard-empty">Save an existing project as a template to begin.</div> : null}</div></section> : null}
 
       {projectView === "TIMELINE" ? <section className="panel projects-timeline-panel">
         <div className="projects-timeline-heading">
@@ -460,6 +510,7 @@ export function ProjectsWorkspace() {
         <section className="panel projects-detail-panel">
           {!selected ? <div className="projects-empty"><FolderKanban size={28} aria-hidden="true" /><h2>Select a project</h2><p>Create or select a project to manage milestones and linked work.</p></div> : <>
             <div className="section-heading projects-detail-heading"><div><h2>{selected.name}</h2><p>Owner: {selected.owner ? `${selected.owner.firstName} ${selected.owner.lastName}` : "Unassigned"}</p></div>{data?.capabilities.delete ? <button className="button secondary icon-button" type="button" onClick={() => void removeProject()} disabled={saving} title="Archive project" aria-label="Archive project"><Trash2 size={16} aria-hidden="true" /></button> : null}</div>
+            {data?.capabilities.create ? <div className="projects-save-template"><input className="input" value={templateName} onChange={(event) => setTemplateName(event.target.value)} placeholder="Template name" maxLength={120} /><button className="button secondary" type="button" onClick={() => void saveTemplate()} disabled={saving || !templateName.trim()}><ClipboardCheck size={15} aria-hidden="true" /> Save as template</button></div> : null}
             {data?.capabilities.update ? <form className="projects-detail-form" onSubmit={(event) => void saveProject(event)}><ProjectFields draft={draft} clients={data?.clients ?? []} owners={data?.assignableUsers ?? []} onChange={updateDraft} /><div className="form-actions"><button className="button" type="submit" disabled={saving || !draft.name.trim()}><Save size={16} aria-hidden="true" /> Save Plan</button></div></form> : null}
 
             {blockedDependencies.length ? <div className="projects-dependency-alert"><AlertTriangle size={17} aria-hidden="true" /><span>{blockedDependencies.length === 1 ? `Blocked by ${blockedDependencies[0].dependsOnProject.name}.` : `Blocked by ${blockedDependencies.length} incomplete project dependencies.`}</span></div> : null}

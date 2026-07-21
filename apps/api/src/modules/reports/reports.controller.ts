@@ -5,7 +5,7 @@ import { AuthenticatedUser } from "../auth/auth.types";
 import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
 import { RequirePermissions } from "../permissions/decorators/require-permissions.decorator";
 import { PermissionsGuard } from "../permissions/guards/permissions.guard";
-import { CreateReportDefinitionDto, CreateReportScheduleDto, SendReportDto, UpdateReportDefinitionDto, UpdateReportScheduleDto } from "./dto/report-definition.dto";
+import { CreateReportDefinitionDto, CreateReportScheduleDto, ExecutiveProjectReportQueryDto, SendReportDto, UpdateReportDefinitionDto, UpdateReportScheduleDto } from "./dto/report-definition.dto";
 import { EventServiceReportExportQueryDto, EventServiceReportQueryDto, TicketReportExportQueryDto, TicketReportQueryDto } from "./dto/ticket-report-query.dto";
 import { ReportsService } from "./reports.service";
 
@@ -24,6 +24,27 @@ export class ReportsController {
   @RequirePermissions("reports.view")
   eventServiceSummary(@Query() query: EventServiceReportQueryDto, @CurrentUser() user: AuthenticatedUser) {
     return this.reportsService.eventServiceSummary(user, query);
+  }
+
+  @Get("projects/executive-summary")
+  @RequirePermissions("reports.view", "projects.view")
+  executiveProjectSummary(@CurrentUser() user: AuthenticatedUser) {
+    return this.reportsService.executiveProjectSummary(user);
+  }
+
+  @Get("projects/executive-export")
+  @RequirePermissions("reports.export", "projects.view")
+  async exportExecutiveProjects(@Query() query: ExecutiveProjectReportQueryDto, @CurrentUser() user: AuthenticatedUser, @Res() response: Response) {
+    const exportResult = await this.reportsService.exportExecutiveProjects(user, query);
+    response.setHeader("Content-Type", exportResult.contentType);
+    response.setHeader("Content-Disposition", `attachment; filename="${exportResult.filename}"`);
+    response.send(exportResult.body);
+  }
+
+  @Post("projects/executive-send")
+  @RequirePermissions("reports.send", "projects.view")
+  sendExecutiveProjects(@Query() query: ExecutiveProjectReportQueryDto, @Body() body: SendReportDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.reportsService.sendExecutiveProjects(user, query, body);
   }
 
   @Get("definitions")

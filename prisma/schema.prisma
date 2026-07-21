@@ -293,6 +293,7 @@ model Organization {
   deviceViews          UserDeviceView[]
   auditLogs            AuditLog[]
   projects             Project[]
+  projectTemplates     ProjectTemplate[]
   projectDecisionDigests ProjectDecisionDigest[]
 
   @@map("organizations")
@@ -526,6 +527,7 @@ model User {
   assignedProjectDecisions ProjectDecision[] @relation("ProjectDecisionOwner")
   projectDecisionAlerts ProjectDecisionAlert[] @relation("ProjectDecisionAlertRecipient")
   projectDecisionDigests ProjectDecisionDigest[] @relation("ProjectDecisionDigestRecipient")
+  createdProjectTemplates ProjectTemplate[] @relation("ProjectTemplateCreatedBy")
 
   @@index([organizationId])
   @@index([deletedAt])
@@ -2102,6 +2104,57 @@ model Project {
   @@index([targetDate])
   @@index([deletedAt])
   @@map("projects")
+}
+
+model ProjectTemplate {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @db.Uuid
+  createdById    String?       @db.Uuid
+  name           String
+  description    String?
+  projectStatus  ProjectStatus @default(PLANNING)
+  projectHealth  ProjectHealth @default(ON_TRACK)
+  durationDays   Int?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy      User?         @relation("ProjectTemplateCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  milestones     ProjectTemplateMilestone[]
+  decisions      ProjectTemplateDecision[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, updatedAt])
+  @@index([createdById])
+  @@map("project_templates")
+}
+
+model ProjectTemplateMilestone {
+  id                String          @id @default(uuid()) @db.Uuid
+  templateId        String          @db.Uuid
+  title             String
+  description       String?
+  status            ProjectMilestoneStatus @default(NOT_STARTED)
+  dueOffsetDays     Int?
+  assignToOwner     Boolean         @default(true)
+  sortOrder         Int             @default(0)
+  template          ProjectTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId, sortOrder])
+  @@map("project_template_milestones")
+}
+
+model ProjectTemplateDecision {
+  id                String          @id @default(uuid()) @db.Uuid
+  templateId        String          @db.Uuid
+  title             String
+  description       String?
+  dueOffsetDays     Int?
+  assignToOwner     Boolean         @default(true)
+  sortOrder         Int             @default(0)
+  template          ProjectTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId, sortOrder])
+  @@map("project_template_decisions")
 }
 
 model ProjectMilestone {

@@ -4,7 +4,7 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { SessionAuthGuard } from "../auth/guards/session-auth.guard";
 import { RequirePermissions } from "../permissions/decorators/require-permissions.decorator";
 import { PermissionsGuard } from "../permissions/guards/permissions.guard";
-import { AddProjectDependencyDto, AddProjectWorkItemDto, CreateProjectDecisionDto, CreateProjectDto, CreateProjectMilestoneDto, UpdateProjectDecisionDto, UpdateProjectDto, UpdateProjectMilestoneDto } from "./dto/project.dto";
+import { AddProjectDependencyDto, AddProjectWorkItemDto, ApplyProjectTemplateDto, CreateProjectDecisionDto, CreateProjectDto, CreateProjectMilestoneDto, CreateProjectTemplateDto, UpdateProjectDecisionDto, UpdateProjectDto, UpdateProjectMilestoneDto } from "./dto/project.dto";
 import { ProjectsService } from "./projects.service";
 
 @Controller("projects")
@@ -16,6 +16,30 @@ export class ProjectsController {
   @RequirePermissions("projects.view")
   list(@CurrentUser() user: AuthenticatedUser) {
     return this.projects.list(user);
+  }
+
+  @Get("templates/list")
+  @RequirePermissions("projects.view")
+  listTemplates(@CurrentUser() user: AuthenticatedUser) {
+    return this.projects.listTemplates(user);
+  }
+
+  @Post("templates")
+  @RequirePermissions("projects.create")
+  createTemplate(@Body() body: CreateProjectTemplateDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.projects.createTemplate(body, user);
+  }
+
+  @Post("templates/:templateId/apply")
+  @RequirePermissions("projects.create")
+  applyTemplate(@Param("templateId") templateId: string, @Body() body: ApplyProjectTemplateDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.projects.applyTemplate(templateId, body, user);
+  }
+
+  @Delete("templates/:templateId")
+  @RequirePermissions("projects.delete")
+  removeTemplate(@Param("templateId") templateId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.projects.removeTemplate(templateId, user);
   }
 
   @Get(":projectId")
