@@ -182,7 +182,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {operationsActive ? (
                   <div className="nav-submenu" aria-label="Operations subnavigation">
                     {userPermissions.has("operations.view") ? <Link className={pathname === "/operations" ? "active" : ""} href="/operations" aria-current={pathname === "/operations" ? "page" : undefined}>Work Queue</Link> : null}
-                    {userPermissions.has("projects.view") ? <Link className={pathname === "/projects" ? "active" : ""} href="/projects" aria-current={pathname === "/projects" ? "page" : undefined}>Projects</Link> : null}
+                    {userPermissions.has("projects.view") ? <Link className={pathname === "/projects" || pathname.startsWith("/projects/") ? "active" : ""} href="/projects" aria-current={pathname === "/projects" || pathname.startsWith("/projects/") ? "page" : undefined}>Projects</Link> : null}
                   </div>
                 ) : null}
               </div>

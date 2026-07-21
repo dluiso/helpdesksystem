@@ -1,8 +1,8 @@
 "use client";
 
-import { AlertTriangle, CalendarRange, ClipboardCheck, FolderKanban, Link2, Milestone, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, CalendarRange, ChevronLeft, ChevronRight, ClipboardCheck, Eye, Filter, Link2, Milestone, Plus, RefreshCw, Save, Search, Trash2, X } from "lucide-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
@@ -13,6 +13,8 @@ type DecisionStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CANCELLED";
 type ProjectView = "PORTFOLIO" | "TIMELINE";
 type TimelineRange = "30" | "90" | "180";
 type TimelineEntryKind = "TARGET" | "MILESTONE" | "EVENT";
+type ProjectSortKey = "name" | "client" | "owner" | "status" | "health" | "progress" | "work" | "decisions" | "target";
+type ProjectPageSize = 20 | 50 | 100 | "ALL";
 
 interface ProjectMilestone {
   id: string;
@@ -120,12 +122,12 @@ function draftFromProject(project: Project): ProjectDraft {
 }
 
 export function ProjectsWorkspace() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const requestedProjectId = searchParams.get("project");
   const [data, setData] = useState<ProjectsResponse | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ProjectDraft>(emptyDraft);
-  const [showCreate, setShowCreate] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const [milestoneTitle, setMilestoneTitle] = useState("");
@@ -141,6 +143,14 @@ export function ProjectsWorkspace() {
   const [dependencyProjectId, setDependencyProjectId] = useState("");
   const [projectView, setProjectView] = useState<ProjectView>("PORTFOLIO");
   const [timelineRange, setTimelineRange] = useState<TimelineRange>("90");
+  const [projectQuery, setProjectQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ProjectStatus | "ALL">("ALL");
+  const [healthFilter, setHealthFilter] = useState<ProjectHealth | "ALL">("ALL");
+  const [ownerFilter, setOwnerFilter] = useState("ALL");
+  const [projectSortKey, setProjectSortKey] = useState<ProjectSortKey>("target");
+  const [projectSortDirection, setProjectSortDirection] = useState<"asc" | "desc">("asc");
+  const [projectPageSize, setProjectPageSize] = useState<ProjectPageSize>(20);
+  const [projectPage, setProjectPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -168,7 +178,8 @@ export function ProjectsWorkspace() {
     try {
       const response = await apiFetch<ProjectsResponse>("/projects");
       setData(response);
-      const next = response.items.find((project) => project.id === (preferredProjectId ?? selectedId ?? requestedProjectId)) ?? response.items[0] ?? null;
+      const targetId = preferredProjectId === undefined ? selectedId ?? requestedProjectId : preferredProjectId;
+      const next = targetId ? response.items.find((project) => project.id === targetId) ?? null : null;
       selectProject(next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to load projects.");
@@ -182,21 +193,6 @@ export function ProjectsWorkspace() {
   }, []);
 
   const updateDraft = (field: keyof ProjectDraft, value: string) => setDraft((current) => ({ ...current, [field]: value }));
-
-  const submitCreate = async (event: FormEvent) => {
-    event.preventDefault();
-    setSaving(true);
-    setError("");
-    try {
-      const project = await apiFetch<Project>("/projects", { method: "POST", body: JSON.stringify({ ...draft, clientId: draft.clientId || null, ownerId: draft.ownerId || undefined, startAt: draft.startAt || null, targetDate: draft.targetDate || null }) });
-      setShowCreate(false);
-      await load(project.id);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to create project.");
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const saveProject = async (event: FormEvent) => {
     event.preventDefault();
@@ -318,6 +314,7 @@ export function ProjectsWorkspace() {
     try {
       await apiFetch(`/projects/${selected.id}`, { method: "DELETE" });
       await load(null);
+      router.replace("/projects", { scroll: false });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to archive project.");
     } finally {
@@ -349,6 +346,7 @@ export function ProjectsWorkspace() {
       const project = await apiFetch<Project>(`/projects/templates/${templateId}/apply`, { method: "POST", body: JSON.stringify({ name: `${template.name} - ${new Date().toLocaleDateString()}`, ownerId: draft.ownerId || undefined, clientId: draft.clientId || undefined, startAt: new Date().toISOString().slice(0, 10) }) });
       setShowTemplates(false);
       await load(project.id);
+      router.replace(`/projects?project=${project.id}`, { scroll: false });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to apply project template.");
     } finally {
@@ -431,6 +429,35 @@ export function ProjectsWorkspace() {
     const project = data?.items.find((item) => item.id === projectId) ?? null;
     setProjectView("PORTFOLIO");
     selectProject(project);
+    router.replace(`/projects?project=${projectId}`, { scroll: false });
+  };
+
+  const closeProject = () => {
+    selectProject(null);
+    router.replace("/projects", { scroll: false });
+  };
+
+  const quickUpdateProject = async (project: Project, update: Partial<Pick<Project, "status" | "health">>) => {
+    setSaving(true);
+    setError("");
+    try {
+      await apiFetch(`/projects/${project.id}`, { method: "PATCH", body: JSON.stringify(update) });
+      await load(selected?.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to update project.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleProjectSort = (key: ProjectSortKey) => {
+    if (projectSortKey === key) {
+      setProjectSortDirection((current) => current === "asc" ? "desc" : "asc");
+    } else {
+      setProjectSortKey(key);
+      setProjectSortDirection("asc");
+    }
+    setProjectPage(1);
   };
   const commitments = useMemo(() => {
     if (!selected) return [];
@@ -459,10 +486,59 @@ export function ProjectsWorkspace() {
     return entries.sort((left, right) => (left.dueAt ? new Date(left.dueAt).getTime() : Number.MAX_SAFE_INTEGER) - (right.dueAt ? new Date(right.dueAt).getTime() : Number.MAX_SAFE_INTEGER));
   }, [selected]);
 
+  const filteredProjects = useMemo(() => {
+    const query = projectQuery.trim().toLowerCase();
+    const valueFor = (project: Project, key: ProjectSortKey) => {
+      const completedMilestones = project.milestones.filter((milestone) => milestone.status === "COMPLETED").length;
+      const openDecisions = project.decisions.filter((decision) => !["RESOLVED", "CANCELLED"].includes(decision.status)).length;
+      switch (key) {
+        case "name": return project.name.toLowerCase();
+        case "client": return (project.client?.name ?? "Internal").toLowerCase();
+        case "owner": return project.owner ? `${project.owner.firstName} ${project.owner.lastName}`.toLowerCase() : "";
+        case "status": return project.status;
+        case "health": return project.health;
+        case "progress": return project.milestones.length ? completedMilestones / project.milestones.length : 0;
+        case "work": return project.workItems.length;
+        case "decisions": return openDecisions;
+        case "target": return project.targetDate ? new Date(project.targetDate).getTime() : Number.MAX_SAFE_INTEGER;
+      }
+    };
+
+    return (data?.items ?? [])
+      .filter((project) => {
+        const searchable = `${project.name} ${project.description ?? ""} ${project.client?.name ?? "Internal"} ${project.owner ? `${project.owner.firstName} ${project.owner.lastName}` : "Unassigned"}`.toLowerCase();
+        return (!query || searchable.includes(query))
+          && (statusFilter === "ALL" || project.status === statusFilter)
+          && (healthFilter === "ALL" || project.health === healthFilter)
+          && (ownerFilter === "ALL" || (ownerFilter === "UNASSIGNED" ? !project.owner : project.owner?.id === ownerFilter));
+      })
+      .sort((left, right) => {
+        const leftValue = valueFor(left, projectSortKey);
+        const rightValue = valueFor(right, projectSortKey);
+        const comparison = typeof leftValue === "number" && typeof rightValue === "number"
+          ? leftValue - rightValue
+          : String(leftValue).localeCompare(String(rightValue));
+        return projectSortDirection === "asc" ? comparison : -comparison;
+      });
+  }, [data, healthFilter, ownerFilter, projectQuery, projectSortDirection, projectSortKey, statusFilter]);
+
+  const totalProjectPages = projectPageSize === "ALL" ? 1 : Math.max(1, Math.ceil(filteredProjects.length / projectPageSize));
+  const safeProjectPage = Math.min(projectPage, totalProjectPages);
+  const visibleProjects = projectPageSize === "ALL" ? filteredProjects : filteredProjects.slice((safeProjectPage - 1) * projectPageSize, safeProjectPage * projectPageSize);
+  const projectPageStart = filteredProjects.length ? (safeProjectPage - 1) * (projectPageSize === "ALL" ? filteredProjects.length : projectPageSize) + 1 : 0;
+  const projectPageEnd = projectPageSize === "ALL" ? filteredProjects.length : Math.min(filteredProjects.length, safeProjectPage * projectPageSize);
+
+  const renderProjectSort = (title: string, key: ProjectSortKey) => (
+    <button className={projectSortKey === key ? "active" : ""} type="button" onClick={() => toggleProjectSort(key)}>
+      {title}
+      {projectSortKey === key ? projectSortDirection === "asc" ? <ArrowUp size={13} aria-hidden="true" /> : <ArrowDown size={13} aria-hidden="true" /> : null}
+    </button>
+  );
+
   return (
     <div className="projects-workspace">
       <div className="projects-toolbar panel">
-        <div><strong>Project portfolio</strong><span className="muted">Projects coordinate existing work without changing its source ownership.</span></div>
+        <strong>Project portfolio</strong>
         <div className="projects-toolbar-actions">
           <div className="segmented-control" role="group" aria-label="Project view">
             <button className={projectView === "PORTFOLIO" ? "active" : ""} type="button" onClick={() => setProjectView("PORTFOLIO")}>Portfolio</button>
@@ -470,17 +546,11 @@ export function ProjectsWorkspace() {
           </div>
           {data?.capabilities.create ? <button className="button secondary" type="button" onClick={() => setShowTemplates((current) => !current)}><ClipboardCheck size={16} aria-hidden="true" /> Templates</button> : null}
           <button className="button secondary icon-button" type="button" onClick={() => void load()} disabled={loading} title="Refresh projects" aria-label="Refresh projects"><RefreshCw size={16} className={loading ? "spin" : ""} aria-hidden="true" /></button>
-          {data?.capabilities.create ? <button className="button" type="button" onClick={() => { setShowCreate(true); selectProject(null); }}><Plus size={16} aria-hidden="true" /> Add Project</button> : null}
+          {data?.capabilities.create ? <Link className="button" href="/projects/new"><Plus size={16} aria-hidden="true" /> Add Project</Link> : null}
         </div>
       </div>
 
       {error ? <div className="alert error">{error}</div> : null}
-
-      {showCreate ? <form className="panel projects-create-panel" onSubmit={(event) => void submitCreate(event)}>
-        <div className="section-heading"><div><h2>New project</h2><p>Create a planning container before linking operational work.</p></div><button className="button secondary icon-button" type="button" onClick={() => { setShowCreate(false); setDraft(selected ? draftFromProject(selected) : emptyDraft); }} title="Cancel" aria-label="Cancel"><X size={16} aria-hidden="true" /></button></div>
-        <ProjectFields draft={draft} clients={data?.clients ?? []} owners={data?.assignableUsers ?? []} onChange={updateDraft} />
-        <div className="form-actions"><button className="button" type="submit" disabled={saving || !draft.name.trim()}><Save size={16} aria-hidden="true" /> Create Project</button></div>
-      </form> : null}
 
       {showTemplates ? <section className="panel projects-templates-panel"><div className="section-heading"><div><h2>Project templates</h2><p>Reusable project structures with their milestones and open decisions.</p></div><button className="button secondary icon-button" type="button" onClick={() => setShowTemplates(false)} title="Close templates" aria-label="Close templates"><X size={16} aria-hidden="true" /></button></div><div className="projects-template-list">{(data?.templates ?? []).map((template) => <div className="projects-template-row" key={template.id}><div><strong>{template.name}</strong><span>{template.milestones.length} milestones · {template.decisions.length} decisions · {template.durationDays ?? "No"} day target</span></div><div className="projects-template-actions"><button className="button secondary" type="button" onClick={() => void applyTemplate(template.id)} disabled={saving}><Plus size={15} aria-hidden="true" /> Use</button>{data?.capabilities.delete ? <button className="button secondary icon-button" type="button" onClick={() => void removeTemplate(template.id)} disabled={saving} title={`Delete ${template.name}`} aria-label={`Delete ${template.name}`}><Trash2 size={15} aria-hidden="true" /></button> : null}</div></div>)}{!data?.templates.length ? <div className="dashboard-empty">Save an existing project as a template to begin.</div> : null}</div></section> : null}
 
@@ -498,18 +568,51 @@ export function ProjectsWorkspace() {
           </div>)}
           {!loading && !timelineEntries.length ? <div className="dashboard-empty">No project targets, milestones, or linked events fall within this timeline.</div> : null}
         </div>
-      </section> : <div className="projects-layout">
-        <section className="panel projects-list-panel">
-          <div className="section-heading"><div><h2>Projects</h2><p>{data?.items.length ?? 0} active planning records</p></div></div>
-          <div className="projects-list">
-            {data?.items.map((project) => <button className={`projects-list-row${project.id === selected?.id ? " selected" : ""}`} type="button" key={project.id} onClick={() => selectProject(project)}><span className={`projects-health-dot ${project.health.toLowerCase()}`} aria-hidden="true" /><span><strong>{project.name}</strong><small>{project.client?.name ?? "Internal"} · {label(project.status)}</small></span><time>{formatDate(project.targetDate)}</time></button>)}
-            {!loading && !data?.items.length ? <div className="dashboard-empty">No projects have been created.</div> : null}
+      </section> : <>
+        <section className="panel projects-portfolio-panel">
+          <div className="projects-portfolio-heading">
+            <div><h2>Projects</h2><p>{filteredProjects.length} of {data?.items.length ?? 0} planning records</p></div>
+            <div className="projects-portfolio-filters">
+              <Filter size={15} aria-hidden="true" />
+              <label className="projects-search"><Search size={14} aria-hidden="true" /><input value={projectQuery} onChange={(event) => { setProjectQuery(event.target.value); setProjectPage(1); }} placeholder="Search projects" aria-label="Search projects" /></label>
+              <select className="input" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value as ProjectStatus | "ALL"); setProjectPage(1); }} aria-label="Filter projects by status"><option value="ALL">All statuses</option>{(["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "CANCELLED"] as ProjectStatus[]).map((status) => <option value={status} key={status}>{label(status)}</option>)}</select>
+              <select className="input" value={healthFilter} onChange={(event) => { setHealthFilter(event.target.value as ProjectHealth | "ALL"); setProjectPage(1); }} aria-label="Filter projects by health"><option value="ALL">All health</option>{(["ON_TRACK", "AT_RISK", "OFF_TRACK"] as ProjectHealth[]).map((health) => <option value={health} key={health}>{label(health)}</option>)}</select>
+              <select className="input" value={ownerFilter} onChange={(event) => { setOwnerFilter(event.target.value); setProjectPage(1); }} aria-label="Filter projects by owner"><option value="ALL">All owners</option><option value="UNASSIGNED">Unassigned</option>{(data?.assignableUsers ?? []).map((owner) => <option value={owner.id} key={owner.id}>{owner.firstName} {owner.lastName}</option>)}</select>
+              <button className="button secondary icon-button" type="button" onClick={() => { setProjectQuery(""); setStatusFilter("ALL"); setHealthFilter("ALL"); setOwnerFilter("ALL"); setProjectPage(1); }} title="Clear filters" aria-label="Clear project filters"><X size={15} aria-hidden="true" /></button>
+            </div>
+          </div>
+          <div className="projects-table-scroll">
+            <table className="table projects-table">
+              <thead><tr><th>{renderProjectSort("Project", "name")}</th><th>{renderProjectSort("Client", "client")}</th><th>{renderProjectSort("Owner", "owner")}</th><th>{renderProjectSort("Status", "status")}</th><th>{renderProjectSort("Health", "health")}</th><th>{renderProjectSort("Progress", "progress")}</th><th>{renderProjectSort("Work", "work")}</th><th>{renderProjectSort("Decisions", "decisions")}</th><th>{renderProjectSort("Target", "target")}</th><th>Actions</th></tr></thead>
+              <tbody>
+                {visibleProjects.map((project) => {
+                  const completedMilestones = project.milestones.filter((milestone) => milestone.status === "COMPLETED").length;
+                  const openDecisions = project.decisions.filter((decision) => !["RESOLVED", "CANCELLED"].includes(decision.status)).length;
+                  const progress = project.milestones.length ? Math.round((completedMilestones / project.milestones.length) * 100) : 0;
+                  return <tr className={project.id === selected?.id ? "selected" : ""} key={project.id}>
+                    <td><button className="projects-project-link" type="button" onClick={() => showProjectInPortfolio(project.id)}><strong>{project.name}</strong>{project.description ? <small>{project.description}</small> : null}</button></td>
+                    <td>{project.client?.name ?? "Internal"}</td>
+                    <td>{project.owner ? `${project.owner.firstName} ${project.owner.lastName}` : <span className="projects-unassigned">Unassigned</span>}</td>
+                    <td>{data?.capabilities.update ? <select className="input projects-quick-select" value={project.status} onChange={(event) => void quickUpdateProject(project, { status: event.target.value as ProjectStatus })} disabled={saving}>{(["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "CANCELLED"] as ProjectStatus[]).map((status) => <option value={status} key={status}>{label(status)}</option>)}</select> : label(project.status)}</td>
+                    <td>{data?.capabilities.update ? <select className={`input projects-quick-select health-${project.health.toLowerCase()}`} value={project.health} onChange={(event) => void quickUpdateProject(project, { health: event.target.value as ProjectHealth })} disabled={saving}>{(["ON_TRACK", "AT_RISK", "OFF_TRACK"] as ProjectHealth[]).map((health) => <option value={health} key={health}>{label(health)}</option>)}</select> : label(project.health)}</td>
+                    <td><div className="projects-progress"><span><i style={{ width: `${progress}%` }} /></span><small>{completedMilestones}/{project.milestones.length}</small></div></td>
+                    <td>{project.workItems.length}</td><td>{openDecisions}</td><td>{formatDate(project.targetDate)}</td>
+                    <td><button className="button secondary projects-open-button" type="button" onClick={() => showProjectInPortfolio(project.id)}><Eye size={14} aria-hidden="true" /> Open</button></td>
+                  </tr>;
+                })}
+                {!loading && !visibleProjects.length ? <tr><td className="projects-table-empty" colSpan={10}>{data?.items.length ? "No projects match the current filters." : "No projects have been created."}</td></tr> : null}
+              </tbody>
+            </table>
+          </div>
+          <div className="projects-pagination">
+            <span>Showing {projectPageStart}-{projectPageEnd} of {filteredProjects.length}</span>
+            <label>Rows <select className="input" value={projectPageSize} onChange={(event) => { const value = event.target.value; setProjectPageSize(value === "ALL" ? "ALL" : Number(value) as 20 | 50 | 100); setProjectPage(1); }}><option value={20}>20</option><option value={50}>50</option><option value={100}>100</option><option value="ALL">All</option></select></label>
+            <div><button className="button secondary icon-button" type="button" onClick={() => setProjectPage((current) => Math.max(1, current - 1))} disabled={safeProjectPage <= 1} title="Previous page" aria-label="Previous project page"><ChevronLeft size={15} aria-hidden="true" /></button><span>Page {safeProjectPage} of {totalProjectPages}</span><button className="button secondary icon-button" type="button" onClick={() => setProjectPage((current) => Math.min(totalProjectPages, current + 1))} disabled={safeProjectPage >= totalProjectPages} title="Next page" aria-label="Next project page"><ChevronRight size={15} aria-hidden="true" /></button></div>
           </div>
         </section>
 
-        <section className="panel projects-detail-panel">
-          {!selected ? <div className="projects-empty"><FolderKanban size={28} aria-hidden="true" /><h2>{data?.items.length ? "Select a project" : "Start the project portfolio"}</h2><p>{data?.items.length ? "Choose a project to manage commitments, decisions, milestones, and linked work." : "Create the first delivery plan, then link its tickets and event requests as operational work."}</p>{!data?.items.length && data?.capabilities.create ? <button className="button" type="button" onClick={() => { setShowCreate(true); selectProject(null); }}><Plus size={16} aria-hidden="true" /> Create Project</button> : null}</div> : <>
-            <div className="section-heading projects-detail-heading"><div><h2>{selected.name}</h2><p>Owner: {selected.owner ? `${selected.owner.firstName} ${selected.owner.lastName}` : "Unassigned"}</p></div>{data?.capabilities.delete ? <button className="button secondary icon-button" type="button" onClick={() => void removeProject()} disabled={saving} title="Archive project" aria-label="Archive project"><Trash2 size={16} aria-hidden="true" /></button> : null}</div>
+        {selected ? <section className="panel projects-detail-panel">
+            <div className="section-heading projects-detail-heading"><div><h2>{selected.name}</h2><p>Owner: {selected.owner ? `${selected.owner.firstName} ${selected.owner.lastName}` : "Unassigned"}</p></div><div className="projects-detail-actions"><button className="button secondary icon-button" type="button" onClick={closeProject} title="Close project detail" aria-label="Close project detail"><X size={16} aria-hidden="true" /></button>{data?.capabilities.delete ? <button className="button secondary icon-button" type="button" onClick={() => void removeProject()} disabled={saving} title="Archive project" aria-label="Archive project"><Trash2 size={16} aria-hidden="true" /></button> : null}</div></div>
             {data?.capabilities.create ? <div className="projects-save-template"><input className="input" value={templateName} onChange={(event) => setTemplateName(event.target.value)} placeholder="Template name" maxLength={120} /><button className="button secondary" type="button" onClick={() => void saveTemplate()} disabled={saving || !templateName.trim()}><ClipboardCheck size={15} aria-hidden="true" /> Save as template</button></div> : null}
             {data?.capabilities.update ? <form className="projects-detail-form" onSubmit={(event) => void saveProject(event)}><ProjectFields draft={draft} clients={data?.clients ?? []} owners={data?.assignableUsers ?? []} onChange={updateDraft} /><div className="form-actions"><button className="button" type="submit" disabled={saving || !draft.name.trim()}><Save size={16} aria-hidden="true" /> Save Plan</button></div></form> : null}
 
@@ -538,9 +641,8 @@ export function ProjectsWorkspace() {
               <div className="projects-dependency-list">{selected.dependencies.map((dependency) => <div className="projects-dependency-row" key={dependency.id}><div><strong>{dependency.dependsOnProject.name}</strong><span>{label(dependency.dependsOnProject.status)} · Target {formatDate(dependency.dependsOnProject.targetDate)}</span></div>{data?.capabilities.update ? <button className="button secondary icon-button" type="button" onClick={() => void removeDependency(dependency.id)} disabled={saving} title="Remove dependency" aria-label={`Remove ${dependency.dependsOnProject.name}`}><Trash2 size={15} aria-hidden="true" /></button> : null}</div>)}{!selected.dependencies.length ? <span className="muted">No project dependencies.</span> : null}</div>
               {data?.capabilities.update && availableDependencies.length ? <form className="projects-inline-form projects-dependency-form" onSubmit={(event) => void addDependency(event)}><select className="input" value={dependencyProjectId} onChange={(event) => setDependencyProjectId(event.target.value)}><option value="">Select prerequisite project</option>{availableDependencies.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select><button className="button secondary" type="submit" disabled={saving || !dependencyProjectId}><Plus size={15} aria-hidden="true" /> Add dependency</button></form> : null}
             </div>
-          </>}
-        </section>
-      </div>}
+        </section> : null}
+      </>}
     </div>
   );
 }

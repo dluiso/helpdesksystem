@@ -5,13 +5,10 @@ import { Suspense } from "react";
 export default function ProjectsPage() {
   return (
     <AppShell>
-      <div className="page-header projects-page-header">
-        <div>
-          <span className="projects-page-eyebrow">Planning</span>
-          <h1>Projects</h1>
-          <p className="muted">Coordinate operational initiatives without changing the ticket and event workflows that support them.</p>
-        </div>
-      </div>
+      <header className="projects-page-heading">
+        <span className="projects-page-eyebrow">Planning</span>
+        <h1>Projects</h1>
+      </header>
       <Suspense fallback={null}><ProjectsWorkspace /></Suspense>
     </AppShell>
   );
