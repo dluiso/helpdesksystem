@@ -6,7 +6,8 @@ export type AiTicketAction =
   | "summarize"
   | "translate"
   | "change_tone"
-  | "paraphrase";
+  | "paraphrase"
+  | "ticket_brief";
 
 export interface AiProviderInput {
   action: AiTicketAction;

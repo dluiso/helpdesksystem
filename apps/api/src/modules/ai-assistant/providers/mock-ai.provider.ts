@@ -4,6 +4,21 @@ import { AiProviderInput, AiProviderPort, AiProviderResult } from "./ai-provider
 @Injectable()
 export class MockAiProvider implements AiProviderPort {
   async complete(input: AiProviderInput): Promise<AiProviderResult> {
+    if (input.action === "ticket_brief") {
+      return {
+        model: "mock",
+        text: JSON.stringify({
+          goal: "Understand and resolve the customer's request.",
+          summary: "Review the latest customer message and confirm the required outcome.",
+          recommendedActions: ["Review the ticket context", "Confirm any missing details", "Complete and verify the requested work"],
+          missingInformation: [],
+          risks: [],
+          suggestedResponse: "We are reviewing your request and will confirm the next steps shortly.",
+          confidence: 0.5
+        })
+      };
+    }
+
     if (input.action === "complete_draft") {
       return {
         model: "mock",

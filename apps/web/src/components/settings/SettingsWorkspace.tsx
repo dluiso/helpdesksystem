@@ -535,6 +535,7 @@ const AI_ACTIONS = [
   { type: "complete_draft", label: "Autocomplete draft" },
   { type: "fix_grammar", label: "Fix grammar" },
   { type: "summarize", label: "Summarize ticket" },
+  { type: "ticket_brief", label: "Ticket goal and resolution brief" },
   { type: "translate", label: "Translate" },
   { type: "change_tone", label: "Change tone" }
 ];
@@ -5114,7 +5115,7 @@ export function SettingsWorkspace() {
                         </label>
                         <div className="ai-action-name">
                           <strong>{action.label}</strong>
-                          <span className="muted">Ticket writing assistance</span>
+                          <span className="muted">{actionType === "ticket_brief" ? "Goal, next steps, and response guidance" : "Ticket writing assistance"}</span>
                         </div>
                         <label>
                           <span>Provider</span>

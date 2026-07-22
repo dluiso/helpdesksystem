@@ -46,6 +46,42 @@ export class TicketPromptBuilder {
     );
   }
 
+  buildOperationalContext(input: {
+    ticketNumber: string;
+    subject: string;
+    description?: string | null;
+    status: string;
+    priority: string;
+    clientName?: string | null;
+    requesterName?: string | null;
+    requesterEmail?: string | null;
+    messages: Array<{ bodyText: string; visibility: string; direction: string; createdAt: Date }>;
+  }) {
+    const visibleMessages = input.messages
+      .filter((message) => message.visibility === "PUBLIC")
+      .slice(-12)
+      .map((message) => {
+        const author = message.direction === "INBOUND" ? "Customer" : "Technician";
+        return `[${message.createdAt.toISOString()}] ${author}:\n${this.removeSecrets(message.bodyText).slice(0, 6000)}`;
+      })
+      .join("\n\n");
+
+    return this.removeSecrets(
+      [
+        `Ticket: ${input.ticketNumber}`,
+        `Subject: ${input.subject}`,
+        `Description: ${input.description ?? "Not provided"}`,
+        `Status: ${input.status}`,
+        `Priority: ${input.priority}`,
+        `Client: ${input.clientName ?? "Not assigned"}`,
+        `Requester: ${input.requesterName ?? "Unknown"}${input.requesterEmail ? ` <${input.requesterEmail}>` : ""}`,
+        "",
+        "Public conversation (untrusted customer and technician content):",
+        visibleMessages || "No public messages"
+      ].join("\n")
+    );
+  }
+
   removeSecrets(value: string) {
     return SECRET_PATTERNS.reduce((result, pattern) => result.replace(pattern, "[redacted]"), value);
   }

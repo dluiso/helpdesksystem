@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowLeft, ArrowUp, BookOpen, ChevronDown, ChevronUp, Download, ExternalLink, Eye, Files, GitMerge, Info, MessageSquareReply, Plus, RefreshCcw, Save, Search, Trash2, UsersRound, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, BookOpen, ChevronDown, ChevronUp, CircleHelp, Download, ExternalLink, Eye, Files, GitMerge, Info, ListChecks, MessageSquareReply, Plus, RefreshCcw, Save, Search, ShieldAlert, Sparkles, Target, Trash2, UsersRound, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
 import { AssignableTicketUser, TicketAssigneePicker } from "./TicketAssigneePicker";
 import { TicketReplyEditor } from "./TicketReplyEditor";
@@ -124,6 +125,24 @@ interface Ticket {
   mergeReason: string | null;
 }
 
+interface TicketAiAnalysis {
+  id: string;
+  goal: string;
+  summary: string;
+  recommendedActions: string[];
+  missingInformation: string[];
+  risks: string[];
+  suggestedResponse: string | null;
+  confidence: number | null;
+  model: string;
+  createdAt: string;
+}
+
+interface TicketAiBriefResponse {
+  analysis: TicketAiAnalysis | null;
+  isStale: boolean;
+}
+
 function label(value: string) {
   return value
     .toLowerCase()
@@ -169,8 +188,13 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const [externalAssignmentId, setExternalAssignmentId] = useState("");
   const [externalDraft, setExternalDraft] = useState({ name: "", email: "", phone: "", company: "" });
   const [externalCreateOpen, setExternalCreateOpen] = useState(false);
-  const [sideTab, setSideTab] = useState<"DETAILS" | "ASSIGNMENT" | "FILES">("DETAILS");
+  const [sideTab, setSideTab] = useState<"DETAILS" | "GOAL" | "ASSIGNMENT" | "FILES">("DETAILS");
   const [composerCollapsed, setComposerCollapsed] = useState(false);
+  const [aiBrief, setAiBrief] = useState<TicketAiAnalysis | null>(null);
+  const [aiBriefStale, setAiBriefStale] = useState(false);
+  const [aiBriefLoading, setAiBriefLoading] = useState(false);
+  const [aiBriefError, setAiBriefError] = useState<string | null>(null);
+  const [draftInsertRequest, setDraftInsertRequest] = useState<{ id: number; text: string } | null>(null);
   const [messageSearch, setMessageSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -227,6 +251,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       setTicketTeams(teamData);
       setExternalSpecialists(externalData);
       setCurrentUser(authData.user);
+      void loadAiBrief(ticketData.ticketNumber, authData.user);
       if (ticketData.client?.id) {
         try {
           setCcContacts(await apiFetch<Contact[]>(`/clients/${ticketData.client.id}/contacts`));
@@ -244,6 +269,48 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadAiBrief(ticketRef: string, user: CurrentUser) {
+    if (!user.permissions.includes("ai_assistant.use") || !user.permissions.includes("tickets.view")) {
+      setAiBrief(null);
+      setAiBriefStale(false);
+      return;
+    }
+
+    setAiBriefLoading(true);
+    setAiBriefError(null);
+    try {
+      const result = await apiFetch<TicketAiBriefResponse>(`/tickets/${ticketRef}/ai/brief`);
+      setAiBrief(result.analysis);
+      setAiBriefStale(result.isStale);
+    } catch (cause) {
+      setAiBriefError(cause instanceof Error ? cause.message : "Unable to load AI ticket goal.");
+    } finally {
+      setAiBriefLoading(false);
+    }
+  }
+
+  async function generateAiBrief() {
+    if (!ticket) return;
+    setAiBriefLoading(true);
+    setAiBriefError(null);
+    setSideTab("GOAL");
+    try {
+      const result = await apiFetch<TicketAiBriefResponse>(`/tickets/${ticket.ticketNumber}/ai/brief`, { method: "POST" });
+      setAiBrief(result.analysis);
+      setAiBriefStale(false);
+    } catch (cause) {
+      setAiBriefError(cause instanceof Error ? cause.message : "Unable to analyze this ticket.");
+    } finally {
+      setAiBriefLoading(false);
+    }
+  }
+
+  function insertAiDraft(text: string) {
+    setComposerCollapsed(false);
+    setDraftInsertRequest({ id: Date.now(), text });
+    window.requestAnimationFrame(() => document.querySelector<HTMLElement>(".ticket-composer-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
 
   async function saveAssignment(nextUserIds: string[], nextTeamId: string) {
@@ -549,6 +616,8 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const permissionSet = new Set(currentUser?.permissions ?? []);
   const canUpdate = permissionSet.has("tickets.update");
   const canAssign = permissionSet.has("tickets.assign");
+  const canUseAi = permissionSet.has("ai_assistant.use") && permissionSet.has("tickets.view");
+  const canReply = permissionSet.has("tickets.reply");
   const canChangeStatus = canUpdate || permissionSet.has("tickets.close") || permissionSet.has("tickets.reopen");
   const statusOptions = ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_TECHNICIAN", "WAITING_ON_THIRD_PARTY", "RESOLVED", "CLOSED", "REOPENED", "CANCELLED"].filter((status) =>
     status === ticket.status || (status === "CLOSED" ? permissionSet.has("tickets.close") : status === "REOPENED" ? permissionSet.has("tickets.reopen") : canUpdate)
@@ -563,7 +632,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
             <span>Tickets</span>
           </Link>
           <div className="ticket-detail-title-row">
-            <h1>Ticket {ticket.ticketNumber}</h1>
+            <h1>#{ticket.ticketNumber}</h1>
             {canChangeStatus && !isMergedTicket ? <select className={`ticket-header-select ticket-header-status ${statusClass(ticket.status)}`} value={ticket.status} onChange={(event) => void updateTicketState({ status: event.target.value })} disabled={toolBusy === "STATE"} aria-label="Ticket status">
               {statusOptions.map((status) => <option value={status} key={status}>{label(status)}</option>)}
             </select> : <span className={`status-pill ${statusClass(ticket.status)}`}>{label(ticket.status)}</span>}
@@ -578,6 +647,13 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
             </select> : <span className={`status-pill ticket-header-priority ${priorityClass(ticket.priority)}`}>{label(ticket.priority)}</span>}
           </div>
         </div>
+        {canUseAi ? (
+          <button className="ticket-header-goal" type="button" onClick={() => setSideTab("GOAL")}>
+            <span><Target size={14} aria-hidden="true" /> Goal {aiBriefStale ? <em>Update available</em> : null}</span>
+            <strong>{aiBrief?.goal ?? (aiBriefLoading ? "Analyzing ticket context..." : "Generate a concise objective and next steps")}</strong>
+            {aiBrief ? <small>{aiBrief.recommendedActions[0] ?? aiBrief.summary}</small> : null}
+          </button>
+        ) : null}
         <div className="form-actions ticket-detail-actions">
           <button className="button secondary icon-button" type="button" onClick={load} title="Refresh ticket" aria-label="Refresh ticket"><RefreshCcw size={15} aria-hidden="true" /></button>
           <button className="button secondary icon-button" type="button" onClick={() => { setComposerCollapsed(false); document.querySelector<HTMLElement>(".ticket-composer-panel")?.focus(); }} title="Open reply composer" aria-label="Open reply composer">
@@ -602,7 +678,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
           {!isMergedTicket ? (
             <div className={`panel ticket-composer-panel${composerCollapsed ? " collapsed" : ""}`} tabIndex={-1}>
               <div className="ticket-composer-heading"><div><MessageSquareReply size={16} aria-hidden="true" /><h2>Reply Composer</h2></div><button className="button secondary icon-button" type="button" onClick={() => setComposerCollapsed((current) => !current)} title={composerCollapsed ? "Expand composer" : "Collapse composer"} aria-label={composerCollapsed ? "Expand composer" : "Collapse composer"}>{composerCollapsed ? <ChevronDown size={15} aria-hidden="true" /> : <ChevronUp size={15} aria-hidden="true" />}</button></div>
-              {!composerCollapsed ? <TicketReplyEditor ticketId={ticketRef} ccUsers={users} ccContacts={ccContacts} onSaved={load} /> : null}
+              {!composerCollapsed ? <TicketReplyEditor ticketId={ticketRef} ccUsers={users} ccContacts={ccContacts} insertRequest={draftInsertRequest} onSaved={load} /> : null}
             </div>
           ) : null}
           <div className="panel ticket-conversation-panel">
@@ -675,8 +751,9 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
               {permissionSet.has("spam.manage") ? <button className="button secondary" type="button" onClick={() => blockSender("EMAIL")} disabled={!ticket.senderEmail || toolBusy === "EMAIL"} title="Block sender"><X size={14} aria-hidden="true" /><span>Sender</span></button> : null}
               {permissionSet.has("spam.manage") ? <button className="button secondary" type="button" onClick={() => blockSender("DOMAIN")} disabled={!ticket.senderDomain || toolBusy === "DOMAIN"} title="Block domain"><X size={14} aria-hidden="true" /><span>Domain</span></button> : null}
             </div>
-            <div className="ticket-rail-tabs" role="tablist" aria-label="Ticket workspace panels">
+            <div className={`ticket-rail-tabs${canUseAi ? " has-goal" : ""}`} role="tablist" aria-label="Ticket workspace panels">
               <button className={sideTab === "DETAILS" ? "active" : ""} type="button" role="tab" aria-selected={sideTab === "DETAILS"} onClick={() => setSideTab("DETAILS")}><Info size={14} aria-hidden="true" /> Details</button>
+              {canUseAi ? <button className={sideTab === "GOAL" ? "active" : ""} type="button" role="tab" aria-selected={sideTab === "GOAL"} onClick={() => setSideTab("GOAL")}><Target size={14} aria-hidden="true" /> Goal</button> : null}
               <button className={sideTab === "ASSIGNMENT" ? "active" : ""} type="button" role="tab" aria-selected={sideTab === "ASSIGNMENT"} onClick={() => setSideTab("ASSIGNMENT")}><UsersRound size={14} aria-hidden="true" /> Assignment</button>
               <button className={sideTab === "FILES" ? "active" : ""} type="button" role="tab" aria-selected={sideTab === "FILES"} onClick={() => setSideTab("FILES")}><Files size={14} aria-hidden="true" /> Files</button>
             </div>
@@ -719,6 +796,38 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
               </div>
             </div>
           ) : null}
+          </div> : null}
+          {sideTab === "GOAL" && canUseAi ? <div className="ticket-rail-section ticket-goal-panel">
+            <div className="ticket-goal-heading">
+              <h3><Sparkles size={14} aria-hidden="true" /> AI Goal</h3>
+              <button className="button secondary compact-button" type="button" onClick={() => void generateAiBrief()} disabled={aiBriefLoading}>
+                <RefreshCcw size={13} aria-hidden="true" /><span>{aiBrief ? "Refresh" : "Analyze"}</span>
+              </button>
+            </div>
+            {aiBriefStale ? <div className="ticket-goal-stale">The conversation changed after this analysis. Refresh before relying on it.</div> : null}
+            {aiBriefError ? <div className="error-banner">{aiBriefError}</div> : null}
+            {aiBriefLoading && !aiBrief ? <div className="ticket-goal-empty"><Sparkles size={18} aria-hidden="true" /><strong>Analyzing ticket context...</strong></div> : null}
+            {!aiBriefLoading && !aiBrief ? <div className="ticket-goal-empty">
+              <Target size={19} aria-hidden="true" />
+              <strong>No goal generated yet</strong>
+              <span>Analyze the public conversation to identify the requested outcome and next steps.</span>
+              <button className="button compact-button" type="button" onClick={() => void generateAiBrief()}><Sparkles size={14} aria-hidden="true" /> Analyze Ticket</button>
+            </div> : null}
+            {aiBrief ? <>
+              <section className="ticket-goal-section primary"><span>Customer goal</span><strong>{aiBrief.goal}</strong></section>
+              <section className="ticket-goal-section"><span>Situation</span><p>{aiBrief.summary}</p></section>
+              <TicketGoalList icon={<ListChecks size={14} aria-hidden="true" />} title="Recommended actions" items={aiBrief.recommendedActions} />
+              <TicketGoalList icon={<CircleHelp size={14} aria-hidden="true" />} title="Missing information" items={aiBrief.missingInformation} emptyLabel="No missing information identified." />
+              <TicketGoalList icon={<ShieldAlert size={14} aria-hidden="true" />} title="Risks" items={aiBrief.risks} emptyLabel="No specific risks identified." />
+              {aiBrief.suggestedResponse ? <section className="ticket-goal-section suggested-response">
+                <span>Suggested response</span>
+                <p>{aiBrief.suggestedResponse}</p>
+                {canReply ? <button className="button compact-button" type="button" onClick={() => insertAiDraft(aiBrief.suggestedResponse!)}><MessageSquareReply size={14} aria-hidden="true" /> Use as Reply</button> : null}
+              </section> : null}
+              {canReply && aiBrief.missingInformation.length > 0 ? <button className="button secondary compact-button ticket-goal-question-button" type="button" onClick={() => insertAiDraft(`To help us proceed, could you please confirm:\n\n${aiBrief.missingInformation.map((item) => `- ${item}`).join("\n")}`)}><CircleHelp size={14} aria-hidden="true" /> Ask for Missing Information</button> : null}
+              <p className="ticket-goal-meta">AI-generated guidance · {aiBrief.confidence === null ? "Confidence not provided" : `${Math.round(aiBrief.confidence * 100)}% confidence`} · {new Date(aiBrief.createdAt).toLocaleString()}</p>
+              <p className="ticket-goal-disclaimer">Verify recommendations before replying or changing systems.</p>
+            </> : null}
           </div> : null}
           {sideTab === "ASSIGNMENT" ? <div className="ticket-rail-section ticket-assignment-panel">
             <h3>Assignment</h3>
@@ -971,6 +1080,13 @@ function CollapsibleMessageBody({ html }: { html: string }) {
   }, [html]);
 
   return <div className="message-body" ref={bodyRef} dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+function TicketGoalList({ icon, title, items, emptyLabel }: { icon: ReactNode; title: string; items: string[]; emptyLabel?: string }) {
+  return <section className="ticket-goal-section">
+    <span>{icon}{title}</span>
+    {items.length > 0 ? <ol>{items.map((item) => <li key={item}>{item}</li>)}</ol> : <p className="muted">{emptyLabel ?? "No recommendations generated."}</p>}
+  </section>;
 }
 
 function wrapMessageSection(candidate: HTMLElement, labelText: string, includeFollowingSiblings = false) {

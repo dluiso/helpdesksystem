@@ -12,48 +12,67 @@ import { AiTicketAction } from "./providers/ai-provider.interface";
 
 @Controller("tickets/:ticketId/ai")
 @UseGuards(SessionAuthGuard, PermissionsGuard)
-@RequirePermissions("ai_assistant.use")
 export class AiAssistantController {
   constructor(private readonly aiAssistantService: AiAssistantService) {}
 
   @Post("improve-reply")
+  @RequirePermissions("ai_assistant.use", "tickets.view", "tickets.reply")
   improveReply(@Param("ticketId") ticketId: string, @CurrentUser() user: AuthenticatedUser, @Body("draft") draft?: string) {
     return this.aiAssistantService.run(ticketId, "improve_reply", user, draft);
   }
 
   @Post("fix-grammar")
+  @RequirePermissions("ai_assistant.use", "tickets.view", "tickets.reply")
   fixGrammar(@Param("ticketId") ticketId: string, @CurrentUser() user: AuthenticatedUser, @Body("draft") draft?: string) {
     return this.aiAssistantService.run(ticketId, "fix_grammar", user, draft);
   }
 
   @Post("suggest-reply")
+  @RequirePermissions("ai_assistant.use", "tickets.view", "tickets.reply")
   suggestReply(@Param("ticketId") ticketId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.aiAssistantService.run(ticketId, "suggest_reply", user);
   }
 
   @Post("complete-draft")
+  @RequirePermissions("ai_assistant.use", "tickets.view", "tickets.reply")
   completeDraft(@Param("ticketId") ticketId: string, @CurrentUser() user: AuthenticatedUser, @Body("draft") draft?: string) {
     return this.aiAssistantService.run(ticketId, "complete_draft", user, draft);
   }
 
   @Post("summarize")
+  @RequirePermissions("ai_assistant.use", "tickets.view")
   summarize(@Param("ticketId") ticketId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.aiAssistantService.run(ticketId, "summarize", user);
   }
 
   @Post("translate")
+  @RequirePermissions("ai_assistant.use", "tickets.view", "tickets.reply")
   translate(@Param("ticketId") ticketId: string, @CurrentUser() user: AuthenticatedUser, @Body("draft") draft?: string) {
     return this.aiAssistantService.run(ticketId, "translate", user, draft);
   }
 
   @Post("change-tone")
+  @RequirePermissions("ai_assistant.use", "tickets.view", "tickets.reply")
   changeTone(@Param("ticketId") ticketId: string, @CurrentUser() user: AuthenticatedUser, @Body("draft") draft?: string) {
     return this.aiAssistantService.run(ticketId, "change_tone" as AiTicketAction, user, draft);
   }
 
   @Post("paraphrase")
+  @RequirePermissions("ai_assistant.use", "tickets.view", "tickets.reply")
   paraphrase(@Param("ticketId") ticketId: string, @CurrentUser() user: AuthenticatedUser, @Body("draft") draft?: string) {
     return this.aiAssistantService.run(ticketId, "paraphrase", user, draft);
+  }
+
+  @Get("brief")
+  @RequirePermissions("ai_assistant.use", "tickets.view")
+  getBrief(@Param("ticketId") ticketId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.aiAssistantService.getTicketBrief(ticketId, user);
+  }
+
+  @Post("brief")
+  @RequirePermissions("ai_assistant.use", "tickets.view")
+  generateBrief(@Param("ticketId") ticketId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.aiAssistantService.generateTicketBrief(ticketId, user);
   }
 }
 

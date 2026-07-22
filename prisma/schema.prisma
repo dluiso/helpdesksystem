@@ -274,6 +274,7 @@ model Organization {
   aiProviders         AiProviderConfig[]
   aiModels            AiModelConfig[]
   aiActionSettings    AiActionSetting[]
+  ticketAiAnalyses    TicketAiAnalysis[]
   spamBlockEntries    SpamBlockEntry[]
   blockedInboundEmails BlockedInboundEmail[]
   reportDefinitions   ReportDefinition[]
@@ -508,6 +509,7 @@ model User {
   signature           UserSignature?
   auditLogs           AuditLog[]
   aiRequestLogs       AiRequestLog[]
+  createdTicketAiAnalyses TicketAiAnalysis[] @relation("TicketAiAnalysisCreatedBy")
   createdKnowledgeArticles KnowledgeArticle[] @relation("KnowledgeArticleCreatedBy")
   updatedKnowledgeArticles KnowledgeArticle[] @relation("KnowledgeArticleUpdatedBy")
   uploadedKnowledgeArticleAttachments KnowledgeArticleAttachment[] @relation("KnowledgeArticleAttachmentUploadedBy")
@@ -952,6 +954,7 @@ model Ticket {
   watchers                   TicketWatcher[]
   notifications              Notification[]
   aiRequestLogs              AiRequestLog[]
+  aiAnalyses                 TicketAiAnalysis[]
   eventServiceRequests       EventServiceRequest[]
   projectWorkItems           ProjectWorkItem[]
 
@@ -1420,6 +1423,32 @@ model AiRequestLog {
   @@index([ticketId, createdAt])
   @@index([eventServiceRequestId, createdAt])
   @@map("ai_request_logs")
+}
+
+model TicketAiAnalysis {
+  id                    String     @id @default(uuid()) @db.Uuid
+  organizationId        String     @db.Uuid
+  ticketId              String     @db.Uuid
+  createdByUserId       String?    @db.Uuid
+  goal                  String
+  summary               String
+  recommendedActions    Json
+  missingInformation    Json
+  risks                 Json
+  suggestedResponse     String?
+  confidence            Float?
+  contextHash           String
+  sourceLastMessageAt   DateTime?
+  provider              AiProvider @default(MOCK)
+  model                 String
+  createdAt             DateTime   @default(now())
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ticket                Ticket     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  createdBy             User?      @relation("TicketAiAnalysisCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([ticketId, createdAt])
+  @@map("ticket_ai_analyses")
 }
 
 model AiProviderConfig {

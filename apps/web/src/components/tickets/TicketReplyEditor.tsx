@@ -68,10 +68,11 @@ interface TicketReplyEditorProps {
   ticketId?: string;
   ccUsers?: Array<{ id: string; firstName: string; lastName: string; email: string }>;
   ccContacts?: Array<{ id: string; firstName: string; lastName: string; email: string }>;
+  insertRequest?: { id: number; text: string } | null;
   onSaved?: () => void | Promise<void>;
 }
 
-export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onSaved }: TicketReplyEditorProps) {
+export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], insertRequest, onSaved }: TicketReplyEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const extrasRef = useRef<HTMLDetailsElement>(null);
   const draftRestoredRef = useRef(false);
@@ -146,6 +147,18 @@ export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onS
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!insertRequest || !editorRef.current) return;
+    if (getEditorTextWithoutSignature() && !window.confirm("Replace the current reply draft with the AI suggestion?")) return;
+
+    clearWritingSuggestions();
+    editorRef.current.innerHTML = composeDraftWithSignature(insertRequest.text);
+    setDraftText(getEditorText());
+    editorRef.current.focus();
+  // The request id intentionally drives each explicit insertion action.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [insertRequest?.id]);
 
   useEffect(() => {
     if (!ticketId || preview || aiBusy || saving) {
