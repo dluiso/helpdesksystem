@@ -73,6 +73,7 @@ interface TicketReplyEditorProps {
 
 export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onSaved }: TicketReplyEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
+  const draftRestoredRef = useRef(false);
   const autocompleteRequestRef = useRef(0);
   const signatureHtmlRef = useRef("");
   const signatureTextRef = useRef("");
@@ -89,6 +90,38 @@ export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onS
   const [autocompleteSuggestion, setAutocompleteSuggestion] = useState("");
   const [autocompleteDismissedFor, setAutocompleteDismissedFor] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!ticketId || !editorRef.current) return;
+    try {
+      const stored = window.localStorage.getItem(`ticket-reply-draft:${ticketId}`);
+      if (stored) {
+        const draft = JSON.parse(stored) as { html?: string; mode?: "public" | "internal"; ccEmails?: string[]; ccUserIds?: string[] };
+        editorRef.current.innerHTML = draft.html ?? "";
+        setDraftText(htmlToText(draft.html ?? ""));
+        setMode(draft.mode === "internal" ? "internal" : "public");
+        setCcEmails(Array.isArray(draft.ccEmails) ? draft.ccEmails : []);
+        setCcUserIds(Array.isArray(draft.ccUserIds) ? draft.ccUserIds : []);
+      }
+    } catch {
+      window.localStorage.removeItem(`ticket-reply-draft:${ticketId}`);
+    } finally {
+      draftRestoredRef.current = true;
+    }
+  }, [ticketId]);
+
+  useEffect(() => {
+    if (!ticketId || !draftRestoredRef.current || !editorRef.current) return;
+    const clone = editorRef.current.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll(`.${INLINE_AUTOCOMPLETE_CLASS}`).forEach((node) => node.remove());
+    const html = clone.innerHTML;
+    const hasDraft = Boolean(htmlToText(html) || ccEmails.length || ccUserIds.length);
+    if (!hasDraft) {
+      window.localStorage.removeItem(`ticket-reply-draft:${ticketId}`);
+      return;
+    }
+    window.localStorage.setItem(`ticket-reply-draft:${ticketId}`, JSON.stringify({ html, mode, ccEmails, ccUserIds }));
+  }, [ccEmails, ccUserIds, draftText, mode, ticketId]);
 
   useEffect(() => {
     let mounted = true;
@@ -484,6 +517,7 @@ export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onS
       setCcEmails([]);
       setCcUserIds([]);
       setShowActionMenu(false);
+      window.localStorage.removeItem(`ticket-reply-draft:${ticketId}`);
       await onSaved?.();
     } catch (requestError) {
       const detail = requestError instanceof Error ? requestError.message : "";
@@ -534,7 +568,7 @@ export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onS
     }
 
     if (mode === "internal") {
-      setError("Internal notes can only CC @internal users. Use Watchers for ongoing ticket updates.");
+      setError("Internal notes can only CC @internal users. Assign specialists for ongoing ticket notifications.");
       return;
     }
 

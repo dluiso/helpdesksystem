@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, BookOpen, Download, ExternalLink, Eye, GitMerge, Plus, RefreshCcw, Save, Search, Sparkles, Trash2, X } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ArrowDown, ArrowLeft, ArrowUp, BookOpen, ChevronDown, ChevronUp, Download, ExternalLink, Eye, Files, GitMerge, Info, MessageSquareReply, Plus, RefreshCcw, Save, Search, Trash2, UsersRound, X } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
+import { AssignableTicketUser, TicketAssigneePicker } from "./TicketAssigneePicker";
 import { TicketReplyEditor } from "./TicketReplyEditor";
 
 interface User {
@@ -12,6 +13,11 @@ interface User {
   firstName: string;
   lastName: string;
   email: string;
+  activeTicketCount?: number;
+}
+
+interface CurrentUser extends User {
+  permissions: string[];
 }
 
 interface Contact {
@@ -150,20 +156,25 @@ function mergeUsers(primary: User[], fallback: Array<User | null | undefined>) {
 
 export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const router = useRouter();
+  const conversationRef = useRef<HTMLDivElement>(null);
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [users, setUsers] = useState<User[]>([]);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [ccContacts, setCcContacts] = useState<Contact[]>([]);
   const [ticketTeams, setTicketTeams] = useState<TicketTeam[]>([]);
   const [externalSpecialists, setExternalSpecialists] = useState<ExternalSpecialist[]>([]);
   const [assignedUserIds, setAssignedUserIds] = useState<string[]>([]);
   const [assignedTeamId, setAssignedTeamId] = useState("");
   const [targetDate, setTargetDate] = useState("");
-  const [watcherIds, setWatcherIds] = useState<string[]>([]);
   const [externalAssignmentId, setExternalAssignmentId] = useState("");
   const [externalDraft, setExternalDraft] = useState({ name: "", email: "", phone: "", company: "" });
   const [externalCreateOpen, setExternalCreateOpen] = useState(false);
+  const [sideTab, setSideTab] = useState<"DETAILS" | "ASSIGNMENT" | "FILES">("DETAILS");
+  const [composerCollapsed, setComposerCollapsed] = useState(false);
+  const [messageSearch, setMessageSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [assignmentBusy, setAssignmentBusy] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [mergeSearch, setMergeSearch] = useState("");
   const [mergeCandidates, setMergeCandidates] = useState<MergeCandidate[]>([]);
@@ -184,6 +195,14 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   }, [ticket]);
   const isMergedTicket = ticket?.status === "MERGED";
   const selectedMergeTickets = useMemo(() => selectedMergeIds.map((id) => mergeCandidates.find((candidate) => candidate.id === id)).filter((candidate): candidate is MergeCandidate => Boolean(candidate)), [selectedMergeIds, mergeCandidates]);
+  const displayedMessages = useMemo(() => {
+    const query = messageSearch.trim().toLowerCase();
+    return [...(ticket?.messages ?? [])].reverse().filter((message) => {
+      if (!query) return true;
+      const author = message.authorUser ? `${message.authorUser.firstName} ${message.authorUser.lastName}` : message.authorContact ? `${message.authorContact.firstName} ${message.authorContact.lastName}` : message.senderEmail ?? "";
+      return `${author} ${message.bodyText} ${message.ccEmails.join(" ")}`.toLowerCase().includes(query);
+    });
+  }, [messageSearch, ticket?.messages]);
 
   async function load() {
     setLoading(true);
@@ -194,10 +213,11 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       if (ticketData.ticketNumber && ticketId !== ticketData.ticketNumber) {
         router.replace(`/tickets/${ticketData.ticketNumber}`);
       }
-      const [userData, teamData, externalData] = await Promise.all([
-        apiFetch<User[]>("/users/assignable").catch(() => []),
+      const [userData, teamData, externalData, authData] = await Promise.all([
+        apiFetch<AssignableTicketUser[]>("/tickets/assignment-options").catch(() => []),
         apiFetch<TicketTeam[]>("/ticket-teams").catch(() => []),
-        apiFetch<ExternalSpecialist[]>("/external-specialists").catch(() => [])
+        apiFetch<ExternalSpecialist[]>("/external-specialists").catch(() => []),
+        apiFetch<{ user: CurrentUser }>("/auth/me")
       ]);
       setUsers(mergeUsers(userData, [
         ticketData.assignedUser,
@@ -206,6 +226,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       ]));
       setTicketTeams(teamData);
       setExternalSpecialists(externalData);
+      setCurrentUser(authData.user);
       if (ticketData.client?.id) {
         try {
           setCcContacts(await apiFetch<Contact[]>(`/clients/${ticketData.client.id}/contacts`));
@@ -218,7 +239,6 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       setAssignedUserIds(ticketData.assignees?.length ? ticketData.assignees.map((assignment) => assignment.user.id) : ticketData.assignedUserId ? [ticketData.assignedUserId] : []);
       setAssignedTeamId(ticketData.assignedTeamId ?? "");
       setTargetDate(ticketData.targetDate ? ticketData.targetDate.slice(0, 10) : "");
-      setWatcherIds(ticketData.watchers.map((watcher) => watcher.user.id));
     } catch {
       setError("Unable to load ticket.");
     } finally {
@@ -226,31 +246,29 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
     }
   }
 
-  async function saveAssignment(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSaving(true);
+  async function saveAssignment(nextUserIds: string[], nextTeamId: string) {
+    const previousUserIds = assignedUserIds;
+    const previousTeamId = assignedTeamId;
+    setAssignedUserIds(nextUserIds);
+    setAssignedTeamId(nextTeamId);
+    setAssignmentBusy(true);
     setAssignmentNotice(null);
     setError(null);
     try {
       await apiFetch(`/tickets/${ticketId}/assignment`, {
         method: "PATCH",
         body: JSON.stringify({
-          assignedUserId: assignedUserIds[0] ?? null,
-          assignedUserIds,
-          assignedTeamId: assignedTeamId || null
+          assignedUserId: nextUserIds[0] ?? null,
+          assignedUserIds: nextUserIds,
+          assignedTeamId: nextTeamId || null
         })
-      });
-      await apiFetch(`/tickets/${ticketId}/watchers`, {
-        method: "PATCH",
-        body: JSON.stringify({ userIds: watcherIds })
       });
       setTicket((current) => {
         if (!current) {
           return current;
         }
-        const assignedUsers = users.filter((user) => assignedUserIds.includes(user.id));
-        const assignedTeam = ticketTeams.find((team) => team.id === assignedTeamId) ?? null;
-        const watchers = users.filter((user) => watcherIds.includes(user.id)).map((user) => ({ user }));
+        const assignedUsers = users.filter((user) => nextUserIds.includes(user.id));
+        const assignedTeam = ticketTeams.find((team) => team.id === nextTeamId) ?? null;
 
         return {
           ...current,
@@ -258,15 +276,16 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
           assignedUser: assignedUsers[0] ?? null,
           assignedTeamId: assignedTeam?.id ?? null,
           assignedTeam,
-          assignees: assignedUsers.map((user) => ({ user })),
-          watchers
+          assignees: assignedUsers.map((user) => ({ user }))
         };
       });
       setAssignmentNotice("Assignment saved.");
     } catch {
+      setAssignedUserIds(previousUserIds);
+      setAssignedTeamId(previousTeamId);
       setError("Unable to save assignment.");
     } finally {
-      setSaving(false);
+      setAssignmentBusy(false);
     }
   }
 
@@ -287,6 +306,27 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function updateTicketState(update: { status?: string; priority?: string }) {
+    setToolBusy("STATE");
+    setAssignmentNotice(null);
+    setError(null);
+    try {
+      const updated = await apiFetch<Ticket>(`/tickets/${ticketId}/state`, { method: "PATCH", body: JSON.stringify(update) });
+      setTicket(updated);
+      setAssignmentNotice(update.status ? "Status updated." : "Priority updated.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to update ticket.");
+    } finally {
+      setToolBusy(null);
+    }
+  }
+
+  function scrollConversation(position: "TOP" | "BOTTOM") {
+    const element = conversationRef.current;
+    if (!element) return;
+    element.scrollTo({ top: position === "TOP" ? 0 : element.scrollHeight, behavior: "smooth" });
   }
 
   async function createExternalSpecialist() {
@@ -344,14 +384,6 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
     } finally {
       setToolBusy(null);
     }
-  }
-
-  function toggleWatcher(userId: string) {
-    setWatcherIds((current) => (current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId]));
-  }
-
-  function toggleAssignee(userId: string) {
-    setAssignedUserIds((current) => (current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId]));
   }
 
   function toggleMergeCandidate(ticketId: string) {
@@ -507,14 +539,22 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   }
   const realAttachments = ticket.attachments.filter((attachment) => !isInlineEmailAsset(attachment));
   const inlineAttachments = ticket.attachments.filter((attachment) => isInlineEmailAsset(attachment));
+  const uniqueInlineAttachments = dedupeInlineAttachments(inlineAttachments);
   const downloadableAttachmentCount = ticket.attachments.filter((attachment) => attachment.scanStatus !== "BLOCKED" && attachment.scanStatus !== "SUSPICIOUS").length;
   const ticketRef = ticket.ticketNumber;
   const downloadAllUrl = `${apiBaseUrl}/tickets/${ticketRef}/attachments/download-all`;
   const clientLabel = ticket.client?.name ?? (ticket.senderDomain ? `Unmapped: ${ticket.senderDomain}` : "Unassigned");
+  const permissionSet = new Set(currentUser?.permissions ?? []);
+  const canUpdate = permissionSet.has("tickets.update");
+  const canAssign = permissionSet.has("tickets.assign");
+  const canChangeStatus = canUpdate || permissionSet.has("tickets.close") || permissionSet.has("tickets.reopen");
+  const statusOptions = ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_TECHNICIAN", "WAITING_ON_THIRD_PARTY", "RESOLVED", "CLOSED", "REOPENED", "CANCELLED"].filter((status) =>
+    status === ticket.status || (status === "CLOSED" ? permissionSet.has("tickets.close") : status === "REOPENED" ? permissionSet.has("tickets.reopen") : canUpdate)
+  );
 
   return (
     <>
-      <div className="page-header ticket-detail-header">
+      <header className="ticket-detail-header">
         <div className="ticket-detail-title-block">
           <Link className="ticket-detail-back-link" href="/tickets">
             <ArrowLeft size={15} aria-hidden="true" />
@@ -522,33 +562,27 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
           </Link>
           <div className="ticket-detail-title-row">
             <h1>Ticket {ticket.ticketNumber}</h1>
-            <span className={`status-pill ${statusClass(ticket.status)}`}>{label(ticket.status)}</span>
+            {canChangeStatus && !isMergedTicket ? <select className={`ticket-header-select ticket-header-status ${statusClass(ticket.status)}`} value={ticket.status} onChange={(event) => void updateTicketState({ status: event.target.value })} disabled={toolBusy === "STATE"} aria-label="Ticket status">
+              {statusOptions.map((status) => <option value={status} key={status}>{label(status)}</option>)}
+            </select> : <span className={`status-pill ${statusClass(ticket.status)}`}>{label(ticket.status)}</span>}
           </div>
           <p className="ticket-detail-subject">{ticket.subject}</p>
           <div className="ticket-detail-meta-row">
             <span>{clientLabel}</span>
             <span>{requester}</span>
             <span>{label(ticket.source)}</span>
-            <span className={`status-pill ${priorityClass(ticket.priority)}`}>{label(ticket.priority)}</span>
+            {canUpdate && !isMergedTicket ? <select className={`ticket-header-select ticket-header-priority ${priorityClass(ticket.priority)}`} value={ticket.priority} onChange={(event) => void updateTicketState({ priority: event.target.value })} disabled={toolBusy === "STATE"} aria-label="Ticket priority">
+              {["LOW", "NORMAL", "HIGH", "URGENT", "CRITICAL"].map((priority) => <option value={priority} key={priority}>{label(priority)}</option>)}
+            </select> : <span className={`status-pill ticket-header-priority ${priorityClass(ticket.priority)}`}>{label(ticket.priority)}</span>}
           </div>
         </div>
         <div className="form-actions ticket-detail-actions">
-          <button className="button secondary" type="button" onClick={load}>
-            <RefreshCcw size={16} aria-hidden="true" />
-            <span>Refresh</span>
-          </button>
-          {!isMergedTicket ? (
-            <button className="button secondary" type="button" onClick={openMergeModal}>
-              <GitMerge size={16} aria-hidden="true" />
-              <span>Merge</span>
-            </button>
-          ) : null}
-          <button className="button secondary" type="button">
-            <Sparkles size={16} aria-hidden="true" />
-            <span>AI Assist</span>
+          <button className="button secondary icon-button" type="button" onClick={load} title="Refresh ticket" aria-label="Refresh ticket"><RefreshCcw size={15} aria-hidden="true" /></button>
+          <button className="button secondary icon-button" type="button" onClick={() => { setComposerCollapsed(false); document.querySelector<HTMLElement>(".ticket-composer-panel")?.focus(); }} title="Open reply composer" aria-label="Open reply composer">
+            <MessageSquareReply size={16} aria-hidden="true" />
           </button>
         </div>
-      </div>
+      </header>
       {error ? <div className="error-banner">{error}</div> : null}
       {isMergedTicket ? (
         <div className="info-banner">
@@ -562,29 +596,21 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
         </div>
       ) : null}
       <section className="ticket-detail-layout">
-        <div className="grid">
-          {!isMergedTicket ? (
-            <div className="panel ticket-composer-panel">
-              <div className="section-heading compact-heading ticket-panel-heading">
-                <div>
-                  <h2>Reply Composer</h2>
-                  <p className="muted">Send a customer reply or save an internal note.</p>
-                </div>
-              </div>
-              <TicketReplyEditor ticketId={ticketRef} ccUsers={users} ccContacts={ccContacts} onSaved={load} />
-            </div>
-          ) : null}
+        <div className="ticket-main-workspace">
           <div className="panel ticket-conversation-panel">
-            <div className="section-heading compact-heading ticket-panel-heading">
-              <div>
-                <h2>Conversation</h2>
-                <p className="muted">Newest messages appear first.</p>
+            <div className="ticket-conversation-heading">
+              <div><h2>Conversation</h2><span>{displayedMessages.length} of {ticket.messages.length}</span></div>
+              <div className="ticket-conversation-controls">
+                <label><Search size={14} aria-hidden="true" /><input value={messageSearch} onChange={(event) => setMessageSearch(event.target.value)} placeholder="Search conversation" aria-label="Search conversation" /></label>
+                <button className="button secondary icon-button" type="button" onClick={() => scrollConversation("TOP")} title="Newest message" aria-label="Go to newest message"><ArrowUp size={14} aria-hidden="true" /></button>
+                <button className="button secondary icon-button" type="button" onClick={() => scrollConversation("BOTTOM")} title="Oldest message" aria-label="Go to oldest message"><ArrowDown size={14} aria-hidden="true" /></button>
               </div>
-              <span className="count-pill">{ticket.messages.length} message{ticket.messages.length === 1 ? "" : "s"}</span>
             </div>
-            <div className="timeline ticket-timeline">
+            <div className="ticket-conversation-scroll" ref={conversationRef}>
+              <div className="timeline ticket-timeline">
               {ticket.messages.length === 0 ? <p className="ticket-detail-empty">No messages yet.</p> : null}
-              {[...ticket.messages].reverse().map((message) => (
+              {ticket.messages.length > 0 && displayedMessages.length === 0 ? <p className="ticket-detail-empty">No messages match this search.</p> : null}
+              {displayedMessages.map((message) => (
                 <article className={`message ${message.direction === "INBOUND" ? "inbound" : "outbound"} ${message.visibility === "INTERNAL" ? "internal" : ""}`} key={message.id}>
                   <header className="message-header">
                     <div className="message-author-block">
@@ -617,10 +643,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
                     </div>
                   ) : null}
                   {message.sanitizedBodyHtml ? (
-                    <div
-                      className="message-body"
-                      dangerouslySetInnerHTML={{ __html: renderMessageHtml(ticketRef, message.sanitizedBodyHtml, mergeAttachments(message.attachments, ticket.attachments)) }}
-                    />
+                    <CollapsibleMessageBody html={renderMessageHtml(ticketRef, message.sanitizedBodyHtml, mergeAttachments(message.attachments, ticket.attachments))} />
                   ) : (
                     <p>{message.bodyText}</p>
                   )}
@@ -631,40 +654,33 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
                   />
                 </article>
               ))}
+              </div>
             </div>
           </div>
+          {!isMergedTicket ? (
+            <div className={`panel ticket-composer-panel${composerCollapsed ? " collapsed" : ""}`} tabIndex={-1}>
+              <div className="ticket-composer-heading"><div><MessageSquareReply size={16} aria-hidden="true" /><h2>Reply Composer</h2></div><button className="button secondary icon-button" type="button" onClick={() => setComposerCollapsed((current) => !current)} title={composerCollapsed ? "Expand composer" : "Collapse composer"} aria-label={composerCollapsed ? "Expand composer" : "Collapse composer"}>{composerCollapsed ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}</button></div>
+              {!composerCollapsed ? <TicketReplyEditor ticketId={ticketRef} ccUsers={users} ccContacts={ccContacts} onSaved={load} /> : null}
+            </div>
+          ) : null}
         </div>
         <aside className="ticket-side-panel">
-          <div className="panel ticket-tools-panel">
-            <h3>Ticket Tools</h3>
-            <button className="button secondary full-width-button" type="button" onClick={openMergeModal} disabled={isMergedTicket}>
-              <GitMerge size={16} aria-hidden="true" />
-              <span>Merge Tickets</span>
-            </button>
-            <button className="button secondary full-width-button" type="button" onClick={() => void createKnowledgeArticleDraft()} disabled={toolBusy === "KB"}>
-              <BookOpen size={16} aria-hidden="true" />
-              <span>Create KB Draft</span>
-            </button>
-            {isMergedTicket && ticket.mergedIntoTicket ? (
-              <Link className="button secondary full-width-button" href={`/tickets/${ticket.mergedIntoTicket.ticketNumber}`}>
-                <ExternalLink size={16} aria-hidden="true" />
-                <span>Open Primary</span>
-              </Link>
-            ) : null}
-            <button className="button secondary full-width-button" type="button" onClick={() => blockSender("EMAIL")} disabled={!ticket.senderEmail || toolBusy === "EMAIL"}>
-              <X size={16} aria-hidden="true" />
-              <span>Block Sender</span>
-            </button>
-            <button className="button secondary full-width-button" type="button" onClick={() => blockSender("DOMAIN")} disabled={!ticket.senderDomain || toolBusy === "DOMAIN"}>
-              <X size={16} aria-hidden="true" />
-              <span>Block Domain</span>
-            </button>
-            <button className="button danger full-width-button" type="button" onClick={() => void deleteCurrentTicket()} disabled={toolBusy === "DELETE"}>
-              <Trash2 size={16} aria-hidden="true" />
-              <span>{toolBusy === "DELETE" ? "Deleting..." : "Delete Ticket"}</span>
-            </button>
-          </div>
-          <div className="panel ticket-summary-panel">
+          <div className="panel ticket-rail-panel">
+            <div className="ticket-tools-heading"><h3>Ticket Tools</h3>{permissionSet.has("tickets.delete") ? <button className="button danger icon-button" type="button" onClick={() => void deleteCurrentTicket()} disabled={toolBusy === "DELETE"} title="Delete ticket" aria-label="Delete ticket"><Trash2 size={14} aria-hidden="true" /></button> : null}</div>
+            <div className="ticket-tools-grid">
+              {permissionSet.has("tickets.merge") ? <button className="button secondary" type="button" onClick={openMergeModal} disabled={isMergedTicket} title="Merge tickets"><GitMerge size={14} aria-hidden="true" /><span>Merge</span></button> : null}
+              {permissionSet.has("knowledge_base.create") ? <button className="button secondary" type="button" onClick={() => void createKnowledgeArticleDraft()} disabled={toolBusy === "KB"} title="Create Knowledge Base draft"><BookOpen size={14} aria-hidden="true" /><span>KB Draft</span></button> : null}
+              {permissionSet.has("spam.manage") ? <button className="button secondary" type="button" onClick={() => blockSender("EMAIL")} disabled={!ticket.senderEmail || toolBusy === "EMAIL"} title="Block sender"><X size={14} aria-hidden="true" /><span>Sender</span></button> : null}
+              {permissionSet.has("spam.manage") ? <button className="button secondary" type="button" onClick={() => blockSender("DOMAIN")} disabled={!ticket.senderDomain || toolBusy === "DOMAIN"} title="Block domain"><X size={14} aria-hidden="true" /><span>Domain</span></button> : null}
+            </div>
+            <div className="ticket-rail-tabs" role="tablist" aria-label="Ticket workspace panels">
+              <button className={sideTab === "DETAILS" ? "active" : ""} type="button" role="tab" aria-selected={sideTab === "DETAILS"} onClick={() => setSideTab("DETAILS")}><Info size={14} aria-hidden="true" /> Details</button>
+              <button className={sideTab === "ASSIGNMENT" ? "active" : ""} type="button" role="tab" aria-selected={sideTab === "ASSIGNMENT"} onClick={() => setSideTab("ASSIGNMENT")}><UsersRound size={14} aria-hidden="true" /> Assignment</button>
+              <button className={sideTab === "FILES" ? "active" : ""} type="button" role="tab" aria-selected={sideTab === "FILES"} onClick={() => setSideTab("FILES")}><Files size={14} aria-hidden="true" /> Files</button>
+            </div>
+            <div className="ticket-rail-content">
+            {assignmentNotice ? <span className="ticket-operation-notice">{assignmentNotice}</span> : null}
+            {sideTab === "DETAILS" ? <div className="ticket-rail-section">
             <h3>Ticket Details</h3>
             <dl className="detail-list">
               <div><dt>Status</dt><dd><span className={`status-pill ${statusClass(ticket.status)}`}>{label(ticket.status)}</span></dd></div>
@@ -676,20 +692,19 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
               <div><dt>Files</dt><dd>{realAttachments.length}</dd></div>
               {ticket.mergedAt ? <div><dt>Merged</dt><dd>{new Date(ticket.mergedAt).toLocaleString()}</dd></div> : null}
             </dl>
-          </div>
-          <form className="panel ticket-assignment-panel" onSubmit={savePlanning}>
+          {canUpdate ? <form className="ticket-planning-form" onSubmit={savePlanning}>
             <h3>Operational planning</h3>
             <label className="field">
               <span>Target date</span>
               <input className="input" type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} />
             </label>
-            <button className="button secondary" type="submit" disabled={saving}>
-              <Save size={16} aria-hidden="true" />
-              <span>Save Target Date</span>
+            <button className="button secondary compact-button" type="submit" disabled={saving}>
+              <Save size={14} aria-hidden="true" /><span>Save date</span>
             </button>
-          </form>
+          </form> : null}
+          {isMergedTicket && ticket.mergedIntoTicket ? <Link className="button secondary ticket-primary-link" href={`/tickets/${ticket.mergedIntoTicket.ticketNumber}`}><ExternalLink size={14} aria-hidden="true" /> Open Primary</Link> : null}
           {ticket.mergedTickets.length > 0 ? (
-            <div className="panel ticket-merged-panel">
+            <div className="ticket-merged-panel">
               <h3>Merged Tickets</h3>
               <div className="merge-reference-list">
                 {ticket.mergedTickets.map((mergedTicket) => (
@@ -702,22 +717,13 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
               </div>
             </div>
           ) : null}
-          <form className="panel form ticket-assignment-panel" onSubmit={saveAssignment}>
+          </div> : null}
+          {sideTab === "ASSIGNMENT" ? <div className="ticket-rail-section ticket-assignment-panel">
             <h3>Assignment</h3>
-            <label className="field">
-              <span>Specialists</span>
-              <div className="checkbox-row vertical">
-                {users.map((user) => (
-                  <label key={user.id}>
-                    <input type="checkbox" checked={assignedUserIds.includes(user.id)} onChange={() => toggleAssignee(user.id)} />
-                    {user.firstName} {user.lastName}
-                  </label>
-                ))}
-              </div>
-            </label>
+            <div className="field"><span>Specialists</span><TicketAssigneePicker users={users} selectedIds={assignedUserIds} currentUserId={currentUser?.id} disabled={!canAssign || assignmentBusy} onChange={(nextUserIds) => void saveAssignment(nextUserIds, assignedTeamId)} /></div>
             <label className="field">
               <span>Ticket Team</span>
-              <select className="input" value={assignedTeamId} onChange={(event) => setAssignedTeamId(event.target.value)}>
+              <select className="input" value={assignedTeamId} onChange={(event) => void saveAssignment(assignedUserIds, event.target.value)} disabled={!canAssign || assignmentBusy}>
                 <option value="">No team</option>
                 {ticketTeams.filter((team) => team.isActive).map((team) => (
                   <option key={team.id} value={team.id}>
@@ -726,24 +732,8 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
                 ))}
               </select>
             </label>
-            <div className="field">
-              <span>Notify / Watchers</span>
-              <div className="checkbox-row vertical">
-                {users.map((user) => (
-                  <label key={user.id}>
-                    <input type="checkbox" checked={watcherIds.includes(user.id)} onChange={() => toggleWatcher(user.id)} />
-                    {user.firstName} {user.lastName}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <button className="button" type="submit" disabled={saving}>
-              <Save size={16} aria-hidden="true" />
-              <span>{saving ? "Saving..." : "Save Assignment"}</span>
-            </button>
-            {assignmentNotice ? <span className="status-pill success">{assignmentNotice}</span> : null}
-          </form>
-          <div className="panel ticket-assignment-panel">
+            <p className="ticket-assignment-note">Assigned specialists receive ticket notifications automatically.</p>
+            <div className="ticket-external-section">
             <h3>External Specialists</h3>
             <div className="checkbox-row vertical">
               {ticket.externalSpecialists.length === 0 ? <span className="muted">No external specialists assigned.</span> : null}
@@ -754,13 +744,13 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
                     <br />
                     <small>{assignment.externalSpecialist.email}{assignment.externalSpecialist.phone ? ` · ${assignment.externalSpecialist.phone}` : ""}</small>
                   </span>
-                  <button className="icon-button" type="button" aria-label="Remove external specialist" onClick={() => void removeExternalFromTicket(assignment.id)} disabled={toolBusy === `external-remove-${assignment.id}`}>
+                  {canUpdate ? <button className="icon-button" type="button" aria-label="Remove external specialist" onClick={() => void removeExternalFromTicket(assignment.id)} disabled={toolBusy === `external-remove-${assignment.id}`}>
                     <X size={14} aria-hidden="true" />
-                  </button>
+                  </button> : null}
                 </label>
               ))}
             </div>
-            <div className="event-inline-controls">
+            {canUpdate ? <><div className="event-inline-controls">
               <select className="input compact-select" value={externalAssignmentId} onChange={(event) => setExternalAssignmentId(event.target.value)}>
                 <option value="">Select external specialist</option>
                 {externalSpecialists.filter((specialist) => specialist.isActive).map((specialist) => (
@@ -785,15 +775,11 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
                 <Plus size={16} aria-hidden="true" />
                 <span>Add External Contact</span>
               </button>
-            </div> : null}
-          </div>
-          <div className="panel ticket-files-panel">
-            <div className="section-heading compact-heading">
-              <div>
-                <h3>Ticket Files</h3>
-                <p className="muted">Files attached to messages. Inline email images are listed separately.</p>
-              </div>
+            </div> : null}</> : null}
             </div>
+          </div> : null}
+          {sideTab === "FILES" ? <div className="ticket-rail-section ticket-files-panel">
+            <h3>Ticket Files</h3>
             {downloadableAttachmentCount > 1 ? (
               <a className="button secondary compact-button ticket-download-all-button" href={downloadAllUrl} title="Download all ticket files as a ZIP">
                 <Download size={16} aria-hidden="true" />
@@ -802,11 +788,10 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
             ) : null}
             <MessageAttachments ticketId={ticketRef} attachments={realAttachments} variant="sidebar" />
             {inlineAttachments.length > 0 ? (
-              <div className="inline-attachments-summary">
-                <strong>Inline email images</strong>
-                <MessageAttachments ticketId={ticketRef} attachments={inlineAttachments} variant="sidebar" />
-              </div>
+              <details className="inline-attachments-summary"><summary>Inline email images <span>{uniqueInlineAttachments.length} unique · {inlineAttachments.length} total</span></summary><MessageAttachments ticketId={ticketRef} attachments={uniqueInlineAttachments} variant="sidebar" /></details>
             ) : null}
+          </div> : null}
+          </div>
           </div>
         </aside>
       </section>
@@ -946,6 +931,42 @@ function mergeAttachments(primary: TicketAttachment[], fallback: TicketAttachmen
     seen.add(attachment.id);
     return true;
   });
+}
+
+function dedupeInlineAttachments(attachments: TicketAttachment[]) {
+  const seen = new Set<string>();
+  return attachments.filter((attachment) => {
+    const key = `${attachment.originalFilename.toLowerCase()}|${attachment.mimeType}|${attachment.fileSize}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function CollapsibleMessageBody({ html }: { html: string }) {
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+
+    const selectors = "blockquote, .gmail_quote, .gmail_signature, [id^='divRplyFwdMsg']";
+    const candidates = Array.from(body.querySelectorAll<HTMLElement>(selectors));
+    candidates
+      .filter((candidate) => !candidate.parentElement?.closest(selectors))
+      .forEach((candidate) => {
+        const details = document.createElement("details");
+        details.className = "message-collapsible";
+        const summary = document.createElement("summary");
+        summary.textContent = candidate.matches(".gmail_signature") ? "Show signature" : "Show quoted message";
+        candidate.before(details);
+        details.append(summary, candidate);
+      });
+  }, [html]);
+
+  return <div className="message-body" ref={bodyRef} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 function cleanContentId(value: string | null) {

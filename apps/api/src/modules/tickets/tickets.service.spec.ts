@@ -775,4 +775,75 @@ describe("TicketsService", () => {
       })
     );
   });
+
+  it("only notifies specialists newly added to an existing assignment", async () => {
+    const user = {
+      id: "admin-1",
+      organizationId: "org-1",
+      email: "admin@example.com",
+      firstName: "Admin",
+      lastName: "User",
+      forcePasswordChange: false,
+      permissions: []
+    };
+    const existingTicket = { id: "ticket-1", ticketNumber: "AIT-100001" };
+    const prisma = {
+      ticket: {
+        findFirst: jest.fn().mockResolvedValue(existingTicket),
+        update: jest.fn().mockResolvedValue({ ...existingTicket, assignedUserId: "tech-1" })
+      },
+      user: {
+        findMany: jest.fn().mockResolvedValue([{ id: "tech-1" }, { id: "tech-2" }])
+      },
+      ticketAssignee: {
+        findMany: jest.fn().mockResolvedValue([{ userId: "tech-1" }]),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        create: jest.fn().mockResolvedValue({})
+      },
+      ticketWatcher: {
+        upsert: jest.fn().mockResolvedValue({})
+      }
+    };
+    const notifications = { notifyUser: jest.fn(), notifyNewTicketCreated: jest.fn() };
+    const service = new TicketsService(
+      prisma as never,
+      { create: jest.fn() } as never,
+      { sanitize: jest.fn((value: string) => value) } as never,
+      { resolveRequesterFromEmail: jest.fn() } as never,
+      { applyInboundRules: jest.fn() } as never,
+      { sendTicketReply: jest.fn() } as never,
+      notifications as never,
+      { sendForNewInboundTicket: jest.fn() } as never
+    );
+
+    await service.updateAssignment("AIT-100001", { assignedUserIds: ["tech-1", "tech-2"] }, user);
+
+    expect(prisma.ticketAssignee.create).toHaveBeenCalledTimes(1);
+    expect(prisma.ticketAssignee.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ userId: "tech-2" }) }));
+    expect(notifications.notifyUser).toHaveBeenCalledTimes(1);
+    expect(notifications.notifyUser).toHaveBeenCalledWith(expect.objectContaining({ userId: "tech-2" }));
+  });
+
+  it("requires the dedicated close permission for inline status changes", async () => {
+    const service = new TicketsService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never
+    );
+
+    await expect(service.updateState("AIT-100001", { status: "CLOSED" }, {
+      id: "user-1",
+      organizationId: "org-1",
+      email: "user@example.com",
+      firstName: "Test",
+      lastName: "User",
+      forcePasswordChange: false,
+      permissions: ["tickets.update"]
+    })).rejects.toThrow("permission to change this ticket status");
+  });
 });

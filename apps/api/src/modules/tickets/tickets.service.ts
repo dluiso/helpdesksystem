@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { MessageDirection, MessageVisibility, Prisma, TicketPriority, TicketSource, TicketStatus } from "@prisma/client";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
@@ -18,6 +18,7 @@ import { ListTicketsQueryDto } from "./dto/list-tickets-query.dto";
 import { MergeTicketsDto } from "./dto/merge-tickets.dto";
 import { UpdateTicketAssignmentDto } from "./dto/update-ticket-assignment.dto";
 import { UpdateTicketPlanningDto } from "./dto/update-ticket-planning.dto";
+import { UpdateTicketStateDto } from "./dto/update-ticket-state.dto";
 import { UpsertTicketViewDto } from "./dto/upsert-ticket-view.dto";
 
 export interface CreateInboundEmailTicketInput {
@@ -50,6 +51,29 @@ export class TicketsService {
     private readonly autoReplies: AutoRepliesService,
     private readonly externalSpecialists: ExternalSpecialistsService = { ensure: async () => { throw new NotFoundException("External specialist was not found."); } } as unknown as ExternalSpecialistsService
   ) {}
+
+  async assignmentOptions(user: AuthenticatedUser) {
+    const [users, activeTickets] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { organizationId: user.organizationId, deletedAt: null, isActive: true },
+        select: { id: true, email: true, firstName: true, lastName: true },
+        orderBy: [{ firstName: "asc" }, { lastName: "asc" }, { email: "asc" }],
+        take: 250
+      }),
+      this.prisma.ticket.findMany({
+        where: { organizationId: user.organizationId, deletedAt: null, status: { in: this.activeStatusFilter() } },
+        select: { assignedUserId: true, assignees: { select: { userId: true } } }
+      })
+    ]);
+    const counts = new Map<string, number>();
+    for (const ticket of activeTickets) {
+      const assignedIds = new Set([ticket.assignedUserId, ...ticket.assignees.map((assignment) => assignment.userId)].filter((userId): userId is string => Boolean(userId)));
+      for (const userId of assignedIds) {
+        counts.set(userId, (counts.get(userId) ?? 0) + 1);
+      }
+    }
+    return users.map((assignableUser) => ({ ...assignableUser, activeTicketCount: counts.get(assignableUser.id) ?? 0 }));
+  }
 
   async list(user: AuthenticatedUser, query: ListTicketsQueryDto = {}) {
     const where = this.buildTicketListWhere(user, query);
@@ -447,7 +471,7 @@ export class TicketsService {
     return staleBySpecialist.filter((item) => item.count > 0).sort((left, right) => right.count - left.count || left.name.localeCompare(right.name)).slice(0, 8);
   }
 
-  private activeStatusFilter() {
+  private activeStatusFilter(): TicketStatus[] {
     return [
       TicketStatus.NEW,
       TicketStatus.OPEN,
@@ -1133,17 +1157,17 @@ export class TicketsService {
         status: input.status
       }
     });
-    await this.syncTicketAssignees(internalTicketId, assignedUserIds, user.id);
+    const addedAssignedUserIds = await this.syncTicketAssignees(internalTicketId, assignedUserIds, user.id);
 
     await Promise.all(
-      assignedUserIds.map((assignedUserId) =>
+      addedAssignedUserIds.map((assignedUserId) =>
         this.addWatcherAndNotify(internalTicketId, assignedUserId, user.id, "Manual assignment", `Ticket assigned: ${ticket.ticketNumber}`, "ticketAssignedToMe")
       )
     );
-    if (input.assignedGroupId) {
+    if (input.assignedGroupId && input.assignedGroupId !== existingTicket.assignedGroupId) {
       await this.notifyGroupMembers(internalTicketId, input.assignedGroupId, user.id, "Manual group assignment", `Ticket assigned to your group: ${ticket.ticketNumber}`);
     }
-    if (input.assignedTeamId) {
+    if (input.assignedTeamId && input.assignedTeamId !== existingTicket.assignedTeamId) {
       await this.notifyTeamMembers(internalTicketId, input.assignedTeamId, user.id, "Manual team assignment", `Ticket assigned to your team: ${ticket.ticketNumber}`);
     }
 
@@ -1184,6 +1208,47 @@ export class TicketsService {
     return ticket;
   }
 
+  async updateState(ticketId: string, input: UpdateTicketStateDto, user: AuthenticatedUser) {
+    if (input.status === TicketStatus.MERGED) {
+      throw new BadRequestException("Use the merge workflow to mark tickets as merged.");
+    }
+    if (input.priority !== undefined && !user.permissions.includes("tickets.update")) {
+      throw new ForbiddenException("You do not have permission to update ticket priority.");
+    }
+    if (input.status !== undefined) {
+      const requiredPermission = input.status === TicketStatus.CLOSED
+        ? "tickets.close"
+        : input.status === TicketStatus.REOPENED
+          ? "tickets.reopen"
+          : "tickets.update";
+      if (!user.permissions.includes(requiredPermission)) {
+        throw new ForbiddenException("You do not have permission to change this ticket status.");
+      }
+    }
+
+    const existing = await this.ensureTicketExists(ticketId, user);
+    const activeStatus = input.status && this.activeStatusFilter().includes(input.status);
+    await this.prisma.ticket.update({
+      where: { id: existing.id },
+      data: {
+        status: input.status,
+        priority: input.priority,
+        ...(input.status === TicketStatus.CLOSED ? { closedAt: new Date() } : {}),
+        ...(input.status === TicketStatus.RESOLVED ? { resolvedAt: new Date() } : {}),
+        ...(activeStatus ? { closedAt: null, resolvedAt: null } : {}),
+        ...(input.status === TicketStatus.REOPENED ? { reopenedAt: new Date() } : {})
+      }
+    });
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "Ticket",
+      entityId: existing.id,
+      action: "ticket.state_updated",
+      metadata: { status: input.status ?? null, priority: input.priority ?? null }
+    });
+    return this.getById(existing.id, user);
+  }
+
   async bulkUpdate(input: BulkUpdateTicketsDto, user: AuthenticatedUser) {
     const ticketIds = [...new Set(input.ticketIds)];
     if (ticketIds.length === 0) {
@@ -1219,13 +1284,11 @@ export class TicketsService {
     await Promise.all(
       existingTickets.map(async (ticket) => {
         if (input.assignedUserIds !== undefined || input.assignedUserId !== undefined) {
-          await this.syncTicketAssignees(ticket.id, assignedUserIds, user.id);
-        }
-        await Promise.all(
-          assignedUserIds.map((assignedUserId) =>
+          const addedAssignedUserIds = await this.syncTicketAssignees(ticket.id, assignedUserIds, user.id);
+          await Promise.all(addedAssignedUserIds.map((assignedUserId) =>
             this.addWatcherAndNotify(ticket.id, assignedUserId, user.id, "Bulk assignment", `Ticket assigned: ${ticket.ticketNumber}`, "ticketAssignedToMe")
-          )
-        );
+          ));
+        }
         if (input.assignedGroupId) {
           await this.notifyGroupMembers(ticket.id, input.assignedGroupId, user.id, "Bulk group assignment", `Ticket assigned to your group: ${ticket.ticketNumber}`);
         }
@@ -1949,9 +2012,9 @@ export class TicketsService {
       }
     });
 
+    const addedUserIds = [...nextIds].filter((userId) => !currentIds.has(userId));
     await Promise.all(
-      [...nextIds]
-        .filter((userId) => !currentIds.has(userId))
+      addedUserIds
         .map((userId) =>
           this.prisma.ticketAssignee.create({
             data: {
@@ -1962,6 +2025,7 @@ export class TicketsService {
           })
         )
     );
+    return addedUserIds;
   }
 
   private async resolveCcEmails(ccEmails: string[], ccUserIds: string[], organizationId: string) {

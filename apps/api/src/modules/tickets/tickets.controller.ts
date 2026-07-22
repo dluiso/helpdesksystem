@@ -14,6 +14,7 @@ import { MergeTicketsDto } from "./dto/merge-tickets.dto";
 import { UpdateTicketAssignmentDto } from "./dto/update-ticket-assignment.dto";
 import { UpdateTicketWatchersDto } from "./dto/update-ticket-watchers.dto";
 import { UpdateTicketPlanningDto } from "./dto/update-ticket-planning.dto";
+import { UpdateTicketStateDto } from "./dto/update-ticket-state.dto";
 import { UpsertTicketViewDto } from "./dto/upsert-ticket-view.dto";
 import { TicketsService } from "./tickets.service";
 
@@ -44,6 +45,12 @@ export class TicketsController {
   @RequirePermissions("tickets.view")
   statistics(@CurrentUser() user: AuthenticatedUser) {
     return this.ticketsService.statistics(user);
+  }
+
+  @Get("assignment-options")
+  @RequirePermissions("tickets.view")
+  assignmentOptions(@CurrentUser() user: AuthenticatedUser) {
+    return this.ticketsService.assignmentOptions(user);
   }
 
   @Post("views")
@@ -114,6 +121,12 @@ export class TicketsController {
   @RequirePermissions("tickets.update")
   updatePlanning(@Param("ticketId") ticketId: string, @Body() body: UpdateTicketPlanningDto, @CurrentUser() user: AuthenticatedUser) {
     return this.ticketsService.updatePlanning(ticketId, body, user);
+  }
+
+  @Patch(":ticketId/state")
+  @RequirePermissions("tickets.view")
+  updateState(@Param("ticketId") ticketId: string, @Body() body: UpdateTicketStateDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.ticketsService.updateState(ticketId, body, user);
   }
 
   @Patch(":ticketId/watchers")
