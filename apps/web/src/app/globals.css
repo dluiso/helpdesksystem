@@ -7275,9 +7275,22 @@ select.public-event-input[multiple] {
 
 [data-theme="dark"] .signature-render:not(.editor-surface) [style*="color"],
 [data-theme="dark"] .message-body [style*="color"],
+[data-theme="dark"] .message-body [color],
 [data-theme="oled"] .signature-render:not(.editor-surface) [style*="color"],
-[data-theme="oled"] .message-body [style*="color"] {
+[data-theme="oled"] .message-body [style*="color"],
+[data-theme="oled"] .message-body [color] {
   color: var(--text) !important;
+}
+
+[data-theme="dark"] .message-body :is(p, div, span, td, th, font),
+[data-theme="oled"] .message-body :is(p, div, span, td, th, font) {
+  color: inherit;
+}
+
+[data-theme="dark"] .message-body :is([style*="background"], [bgcolor]),
+[data-theme="oled"] .message-body :is([style*="background"], [bgcolor]) {
+  background: transparent !important;
+  background-color: transparent !important;
 }
 
 [data-theme="dark"] .signature-render:not(.editor-surface) a,
@@ -14880,7 +14893,10 @@ button.operations-summary-card {
 .ticket-timeline .message { padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px; line-height: 1.45; }
 .ticket-timeline .message::before { inset: 10px auto 10px 0; }
 .ticket-timeline .message-header { margin-bottom: 7px; font-size: 11px; }
-.ticket-composer-panel { position: sticky; z-index: 8; top: 8px; flex: 0 0 auto; overflow: visible; box-shadow: var(--shadow-sm); }
+.ticket-composer-anchor { width: 0; height: 0; pointer-events: none; }
+.ticket-composer-panel { position: sticky; z-index: 8; top: 8px; flex: 0 0 auto; overflow: visible; box-shadow: var(--shadow-sm); transform: translateY(0); opacity: 1; transition: transform 180ms ease, opacity 140ms ease, box-shadow 180ms ease; will-change: transform; }
+.ticket-composer-panel.scroll-hidden { pointer-events: none; box-shadow: none; transform: translateY(calc(-100% - 16px)); opacity: 0; }
+.ticket-composer-panel.scroll-pinned { transform: translateY(0); opacity: 1; }
 .ticket-composer-panel.collapsed { max-height: 40px; overflow: hidden; }
 .ticket-composer-panel .ticket-reply-editor { gap: 7px; padding: 8px 10px 10px; }
 .ticket-composer-panel .editor-surface { min-height: 105px; max-height: 220px; padding: 10px; font-size: 12px; }
@@ -15184,10 +15200,14 @@ button.operations-summary-card {
   .ticket-header-goal { order: 3; width: 100%; max-width: none; flex-basis: 100%; border-top: 1px solid var(--line); border-left: 0; }
   .ticket-detail-layout { grid-template-columns: minmax(0, 1fr); height: auto; }
   .ticket-conversation-panel { max-height: none; }
-  .ticket-composer-panel { position: static; max-height: none; }
+  .ticket-composer-panel { position: static; max-height: none; transform: none; opacity: 1; }
   .ticket-side-panel { position: static; max-height: none; }
   .ticket-rail-panel { max-height: none; }
   .ticket-rail-content { overflow: visible; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticket-composer-panel { transition: none; }
 }
 
 @media (max-width: 720px) {

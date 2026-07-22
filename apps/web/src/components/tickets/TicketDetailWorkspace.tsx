@@ -180,6 +180,8 @@ function mergeUsers(primary: User[], fallback: Array<User | null | undefined>) {
 export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const router = useRouter();
   const conversationRef = useRef<HTMLDivElement>(null);
+  const composerAnchorRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
@@ -194,6 +196,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const [externalCreateOpen, setExternalCreateOpen] = useState(false);
   const [sideTab, setSideTab] = useState<"DETAILS" | "GOAL" | "ASSIGNMENT" | "FILES">("DETAILS");
   const [composerCollapsed, setComposerCollapsed] = useState(false);
+  const [composerScrollState, setComposerScrollState] = useState<"NORMAL" | "PINNED" | "HIDDEN">("NORMAL");
   const [aiBrief, setAiBrief] = useState<TicketAiAnalysis | null>(null);
   const [aiBriefStale, setAiBriefStale] = useState(false);
   const [aiBriefLoading, setAiBriefLoading] = useState(false);
@@ -313,6 +316,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
 
   function insertAiDraft(text: string) {
     setComposerCollapsed(false);
+    setComposerScrollState("PINNED");
     setDraftInsertRequest({ id: Date.now(), text });
     window.requestAnimationFrame(() => document.querySelector<HTMLElement>(".ticket-composer-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
@@ -603,6 +607,65 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showMergeModal, mergeSearch]);
 
+  useEffect(() => {
+    const desktopQuery = window.matchMedia("(min-width: 1101px)");
+    let lastScrollY = window.scrollY;
+    let accumulatedDistance = 0;
+    let direction = 0;
+    let frameId: number | null = null;
+
+    const updateComposerPosition = () => {
+      frameId = null;
+      const composer = composerRef.current;
+      const anchor = composerAnchorRef.current;
+      const currentScrollY = window.scrollY;
+      const delta = currentScrollY - lastScrollY;
+      lastScrollY = currentScrollY;
+
+      if (!desktopQuery.matches || !composer || !anchor || anchor.getBoundingClientRect().top >= 8) {
+        accumulatedDistance = 0;
+        direction = 0;
+        setComposerScrollState("NORMAL");
+        return;
+      }
+
+      if (composer.contains(document.activeElement)) {
+        accumulatedDistance = 0;
+        setComposerScrollState("PINNED");
+        return;
+      }
+
+      const nextDirection = Math.sign(delta);
+      if (nextDirection === 0) return;
+      if (nextDirection !== direction) {
+        direction = nextDirection;
+        accumulatedDistance = 0;
+      }
+      accumulatedDistance += Math.abs(delta);
+
+      if (accumulatedDistance >= 24) {
+        setComposerScrollState(direction > 0 ? "HIDDEN" : "PINNED");
+        accumulatedDistance = 0;
+      }
+    };
+
+    const handleScroll = () => {
+      if (frameId === null) frameId = window.requestAnimationFrame(updateComposerPosition);
+    };
+    const handleViewportChange = () => {
+      lastScrollY = window.scrollY;
+      updateComposerPosition();
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    desktopQuery.addEventListener("change", handleViewportChange);
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      desktopQuery.removeEventListener("change", handleViewportChange);
+      if (frameId !== null) window.cancelAnimationFrame(frameId);
+    };
+  }, []);
+
   if (loading) {
     return <div className="panel ticket-detail-loading">Loading ticket...</div>;
   }
@@ -660,7 +723,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
         ) : null}
         <div className="form-actions ticket-detail-actions">
           <button className="button secondary icon-button" type="button" onClick={load} title="Refresh ticket" aria-label="Refresh ticket"><RefreshCcw size={15} aria-hidden="true" /></button>
-          <button className="button secondary icon-button" type="button" onClick={() => { setComposerCollapsed(false); document.querySelector<HTMLElement>(".ticket-composer-panel")?.focus(); }} title="Open reply composer" aria-label="Open reply composer">
+          <button className="button secondary icon-button" type="button" onClick={() => { setComposerCollapsed(false); setComposerScrollState("PINNED"); composerRef.current?.focus(); }} title="Open reply composer" aria-label="Open reply composer">
             <MessageSquareReply size={16} aria-hidden="true" />
           </button>
         </div>
@@ -680,10 +743,11 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       <section className="ticket-detail-layout">
         <div className="ticket-main-workspace">
           {!isMergedTicket ? (
-            <div className={`panel ticket-composer-panel${composerCollapsed ? " collapsed" : ""}`} tabIndex={-1}>
+            <><div className="ticket-composer-anchor" ref={composerAnchorRef} aria-hidden="true" />
+            <div className={`panel ticket-composer-panel${composerCollapsed ? " collapsed" : ""} ${composerScrollState === "HIDDEN" ? "scroll-hidden" : composerScrollState === "PINNED" ? "scroll-pinned" : "scroll-normal"}`} ref={composerRef} tabIndex={-1}>
               <div className="ticket-composer-heading"><div><MessageSquareReply size={16} aria-hidden="true" /><h2>Reply Composer</h2></div><button className="button secondary icon-button" type="button" onClick={() => setComposerCollapsed((current) => !current)} title={composerCollapsed ? "Expand composer" : "Collapse composer"} aria-label={composerCollapsed ? "Expand composer" : "Collapse composer"}>{composerCollapsed ? <ChevronDown size={15} aria-hidden="true" /> : <ChevronUp size={15} aria-hidden="true" />}</button></div>
               {!composerCollapsed ? <TicketReplyEditor ticketId={ticketRef} ccUsers={users} ccContacts={ccContacts} insertRequest={draftInsertRequest} onSaved={load} /> : null}
-            </div>
+            </div></>
           ) : null}
           <div className="panel ticket-conversation-panel">
             <div className="ticket-conversation-heading">
