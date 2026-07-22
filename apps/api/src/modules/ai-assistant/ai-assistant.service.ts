@@ -234,6 +234,7 @@ export class AiAssistantService {
     const context = await this.ticketOperationalContext(ticketId, user.organizationId);
     const webReferences = await this.webReferenceResolver.resolve({
       ticketContext: context.ticketContext,
+      sourceText: context.webReferenceSourceText,
       allowedDomains: context.clientDomains
     });
     const webContext = this.webReferenceResolver.formatForPrompt(webReferences);
@@ -555,10 +556,17 @@ export class AiAssistantService {
       messages
     });
     const sourceLastMessageAt = messages.filter((message) => message.visibility === "PUBLIC").at(-1)?.createdAt ?? null;
+    const webReferenceSourceText = [
+      ticket.subject,
+      ticket.description ?? "",
+      originalCustomerMessage?.bodyText ?? "",
+      ...messages.filter((message) => message.visibility === "PUBLIC").map((message) => message.bodyText)
+    ].join("\n");
 
     return {
       ticket,
       ticketContext,
+      webReferenceSourceText,
       clientDomains: ticket.client?.domains.map((domain) => domain.domain) ?? [],
       sourceLastMessageAt,
       contextHash: createHash("sha256").update(ticketContext).digest("hex")

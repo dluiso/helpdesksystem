@@ -4,14 +4,15 @@ import net from "node:net";
 import sanitizeHtml from "sanitize-html";
 
 const MAX_REFERENCES = 5;
-const MAX_SITEMAP_URLS = 40;
+const MAX_SITEMAP_URLS = 500;
 const MAX_RESPONSE_BYTES = 1_000_000;
 const REQUEST_TIMEOUT_MS = 6_000;
 const WEBSITE_INTENT = /\b(web\s*site|webpage|web page|website|site|portal|home\s*page|homepage)\b/i;
 const CHANGE_INTENT = /\b(add|change|correct|edit|fix|publish|remove|replace|revise|update)\b/i;
 const STOP_WORDS = new Set([
-  "about", "after", "also", "and", "are", "been", "change", "client", "from", "have", "into", "page", "please",
-  "site", "that", "the", "their", "this", "ticket", "update", "website", "with", "would"
+  "about", "after", "also", "and", "are", "been", "change", "city", "client", "conversation", "customer", "email",
+  "from", "have", "into", "latest", "normal", "original", "page", "please", "priority", "public", "requester", "site",
+  "status", "technician", "that", "the", "their", "this", "ticket", "unknown", "update", "website", "with", "would"
 ]);
 
 export type WebReferenceStatus = "FOUND" | "BLOCKED" | "FAILED";
@@ -31,6 +32,7 @@ export interface WebReference {
 
 interface ResolveInput {
   ticketContext: string;
+  sourceText?: string;
   allowedDomains: string[];
 }
 
@@ -45,8 +47,9 @@ export class WebReferenceResolverService {
   async resolve(input: ResolveInput): Promise<WebReference[]> {
     const allowedDomains = normalizeDomains(input.allowedDomains);
     const checkedAt = new Date().toISOString();
-    const explicitUrls = extractWebUrls(input.ticketContext);
-    const relativePaths = extractRelativePaths(input.ticketContext);
+    const sourceText = input.sourceText ?? input.ticketContext;
+    const explicitUrls = extractWebUrls(sourceText);
+    const relativePaths = extractRelativePaths(sourceText);
     const hasWebsiteTask = WEBSITE_INTENT.test(input.ticketContext) && CHANGE_INTENT.test(input.ticketContext);
 
     if (explicitUrls.length === 0 && relativePaths.length === 0 && !hasWebsiteTask) return [];
@@ -104,10 +107,27 @@ export class WebReferenceResolverService {
     for (const domain of domains) {
       try {
         const sitemap = await this.fetchText(new URL(`https://${domain}/sitemap.xml`), domains);
-        const urls = extractSitemapUrls(sitemap.body)
+        const sitemapEntries = extractSitemapUrls(sitemap.body)
           .filter((url) => isAllowedUrl(url, domains))
           .slice(0, MAX_SITEMAP_URLS);
-        candidates.push(...urls);
+        const nestedSitemaps = sitemapEntries.filter((url) => /(?:sitemap|\.xml(?:$|\?))/i.test(`${url.pathname}${url.search}`));
+        candidates.push(...sitemapEntries.filter((url) => !nestedSitemaps.includes(url)));
+
+        const rankedSitemaps = nestedSitemaps
+          .map((url) => ({
+            url,
+            score: scoreText(`${url.pathname} ${url.search}`, keywords) + (/posts-page|pages/i.test(url.pathname) ? 5 : 0)
+          }))
+          .sort((left, right) => right.score - left.score)
+          .slice(0, 4);
+        for (const nested of rankedSitemaps) {
+          try {
+            const childSitemap = await this.fetchText(nested.url, domains);
+            candidates.push(...extractSitemapUrls(childSitemap.body).filter((url) => isAllowedUrl(url, domains)).slice(0, MAX_SITEMAP_URLS));
+          } catch {
+            // Continue with the remaining sitemap entries.
+          }
+        }
       } catch {
         // A missing or inaccessible sitemap should not prevent the ticket analysis.
       }
@@ -278,11 +298,23 @@ function extractTitle(value: string) {
 
 function extractPageText(value: string, contentType: string) {
   if (contentType === "text/plain") return value.replace(/\s+/g, " ").trim().slice(0, 20_000);
-  return sanitizeHtml(value, {
-    allowedTags: [],
+  const contentRegion = value.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1]
+    ?? value.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1]
+    ?? value.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1]
+    ?? value;
+  const structuredText = sanitizeHtml(contentRegion, {
+    allowedTags: ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "br"],
     allowedAttributes: {},
-    nonTextTags: ["script", "style", "textarea", "option", "noscript"]
-  }).replace(/\s+/g, " ").trim().slice(0, 20_000);
+    nonTextTags: ["script", "style", "textarea", "option", "noscript", "nav", "header", "footer", "aside"]
+  });
+  const segmentedText = structuredText
+    .replace(/<br\s*\/?\s*>/gi, "\n")
+    .replace(/<\/(?:p|h[1-6]|li)>/gi, "\n");
+  return sanitizeHtml(segmentedText, { allowedTags: [], allowedAttributes: {} })
+    .replace(/[\t ]+/g, " ")
+    .replace(/\n\s*/g, "\n")
+    .trim()
+    .slice(0, 20_000);
 }
 
 function keywordsFrom(value: string) {
@@ -302,10 +334,11 @@ function scoreText(value: string, keywords: string[]) {
 
 function relevantExcerpt(value: string, keywords: string[]) {
   if (!value) return null;
-  const segments = value.split(/(?<=[.!?])\s+|\s{2,}/).filter((segment) => segment.length >= 30);
-  const best = segments
+  const segments = value.split(/\n+|(?<=[.!?])\s+/).filter((segment) => segment.length >= 30);
+  const ranked = segments
     .map((segment, index) => ({ segment, index, score: scoreText(segment, keywords) }))
-    .sort((left, right) => right.score - left.score || left.index - right.index)[0];
-  const excerpt = best?.score ? best.segment : value;
+    .sort((left, right) => right.score - left.score || left.index - right.index);
+  const relevant = ranked.filter((candidate) => candidate.score > 0).slice(0, 3);
+  const excerpt = relevant.length > 0 ? relevant.map((candidate) => candidate.segment).join(" ") : value;
   return excerpt.slice(0, 700).trim() || null;
 }

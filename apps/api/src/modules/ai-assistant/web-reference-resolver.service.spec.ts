@@ -57,6 +57,47 @@ describe("WebReferenceResolverService", () => {
     expect(prompt).not.toContain("blocked.test");
   });
 
+  it("detects a safe link from raw source text without adding signature text to the AI context", async () => {
+    const target = "https://93.184.216.34/water-department/";
+    const safeLink = `https://nam12.safelinks.protection.outlook.com/?url=${encodeURIComponent(target)}&data=mail-metadata`;
+    jest.spyOn(global, "fetch").mockResolvedValue(new Response(
+      "<html><head><title>Water Department</title></head><body><p>Water service application request details.</p></body></html>",
+      { status: 200, headers: { "content-type": "text/html" } }
+    ));
+    const service = new WebReferenceResolverService();
+
+    const result = await service.resolve({
+      ticketContext: "Please update the Water Department website.",
+      sourceText: `Please update the website.\nBest regards,\nWebsite: ${safeLink}`,
+      allowedDomains: ["93.184.216.34"]
+    });
+
+    expect(result[0]).toMatchObject({ url: target, status: "FOUND", title: "Water Department" });
+    expect(service.formatForPrompt(result)).not.toContain("Best regards");
+  });
+
+  it("follows one sitemap index level to locate relevant pages", async () => {
+    jest.spyOn(global, "fetch").mockImplementation(async (input) => {
+      const url = input.toString();
+      if (url.endsWith("/sitemap.xml")) {
+        return new Response("<sitemapindex><sitemap><loc>https://93.184.216.34/wp-sitemap-posts-page-1.xml</loc></sitemap></sitemapindex>", { status: 200, headers: { "content-type": "application/xml" } });
+      }
+      if (url.endsWith("wp-sitemap-posts-page-1.xml")) {
+        return new Response("<urlset><url><loc>https://93.184.216.34/departments/water-department/</loc></url></urlset>", { status: 200, headers: { "content-type": "application/xml" } });
+      }
+      return new Response("<html><head><title>Water Department</title></head><body><p>Water Department application and payment information.</p></body></html>", { status: 200, headers: { "content-type": "text/html" } });
+    });
+    const service = new WebReferenceResolverService();
+
+    const result = await service.resolve({
+      ticketContext: "Please update the Water Department website application information.",
+      allowedDomains: ["93.184.216.34"]
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ url: "https://93.184.216.34/departments/water-department/", status: "FOUND", source: "SITEMAP" });
+  });
+
   it("records blocked references without requesting them", async () => {
     const fetchSpy = jest.spyOn(global, "fetch");
     const service = new WebReferenceResolverService();
