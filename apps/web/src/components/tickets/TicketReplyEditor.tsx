@@ -73,6 +73,7 @@ interface TicketReplyEditorProps {
 
 export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onSaved }: TicketReplyEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
+  const extrasRef = useRef<HTMLDetailsElement>(null);
   const draftRestoredRef = useRef(false);
   const autocompleteRequestRef = useRef(0);
   const signatureHtmlRef = useRef("");
@@ -712,7 +713,10 @@ export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onS
         <button className="icon-button" type="button" title="Link" aria-label="Link" onClick={() => runCommand("createLink", "https://")}>
           <Link size={17} aria-hidden="true" />
         </button>
-        <button className="icon-button" type="button" title="Attach" aria-label="Attach">
+        <button className="icon-button" type="button" title="CC and attachments" aria-label="Open CC and attachments" onClick={() => {
+          if (extrasRef.current) extrasRef.current.open = true;
+          extrasRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }}>
           <Paperclip size={17} aria-hidden="true" />
         </button>
         <button
@@ -772,61 +776,69 @@ export function TicketReplyEditor({ ticketId, ccUsers = [], ccContacts = [], onS
           data-placeholder={mode === "public" ? "Write a customer-facing reply..." : "Write an internal troubleshooting note..."}
         />
       </div>
-      <div className="cc-picker">
-        <label className="field">
-          <span>CC</span>
-          <input
-            className="input"
-            value={ccInput}
-            onChange={(event) => setCcInput(event.target.value)}
-            onBlur={() => addCcToken(ccInput)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === "," || event.key === "Tab") {
-                event.preventDefault();
-                addCcToken(ccInput);
-              }
-            }}
-            placeholder={mode === "internal" ? "Add @internal user" : "Add email, requester, or @internal user"}
-            list="ticket-cc-users"
-          />
-          <datalist id="ticket-cc-users">
-            {ccUsers.map((user) => (
-              <option key={`user-${user.id}`} value={`@${user.firstName} ${user.lastName}`}>
-                {user.email}
-              </option>
-            ))}
-            {mode === "public"
-              ? ccContacts.map((contact) => (
-                  <option key={`contact-${contact.id}`} value={`${contact.firstName} ${contact.lastName} <${contact.email}>`}>
-                    Requester
+      <details className="ticket-composer-extras" ref={extrasRef}>
+        <summary>
+          <span><Paperclip size={14} aria-hidden="true" /> CC &amp; attachments</span>
+          <small>{ccEmails.length + ccUserIds.length} CC · {attachments.length} files</small>
+        </summary>
+        <div className="ticket-composer-extras-content">
+          <div className="cc-picker">
+            <label className="field">
+              <span>CC</span>
+              <input
+                className="input"
+                value={ccInput}
+                onChange={(event) => setCcInput(event.target.value)}
+                onBlur={() => addCcToken(ccInput)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === "," || event.key === "Tab") {
+                    event.preventDefault();
+                    addCcToken(ccInput);
+                  }
+                }}
+                placeholder={mode === "internal" ? "Add @internal user" : "Add email, requester, or @internal user"}
+                list="ticket-cc-users"
+              />
+              <datalist id="ticket-cc-users">
+                {ccUsers.map((user) => (
+                  <option key={`user-${user.id}`} value={`@${user.firstName} ${user.lastName}`}>
+                    {user.email}
                   </option>
-                ))
-              : null}
-          </datalist>
-        </label>
-        <div className="chip-row">
-          {ccEmails.map((email) => (
-            <button className="chip" type="button" key={email} onClick={() => removeCcEmail(email)}>
-              {email} x
-            </button>
-          ))}
-          {ccUserIds.map((userId) => {
-            const user = ccUsers.find((item) => item.id === userId);
-            return user ? (
-              <button className="chip" type="button" key={userId} onClick={() => removeCcUser(userId)}>
-                {user.firstName} {user.lastName} x
-              </button>
-            ) : null;
-          })}
+                ))}
+                {mode === "public"
+                  ? ccContacts.map((contact) => (
+                      <option key={`contact-${contact.id}`} value={`${contact.firstName} ${contact.lastName} <${contact.email}>`}>
+                        Requester
+                      </option>
+                    ))
+                  : null}
+              </datalist>
+            </label>
+            <div className="chip-row">
+              {ccEmails.map((email) => (
+                <button className="chip" type="button" key={email} onClick={() => removeCcEmail(email)}>
+                  {email} x
+                </button>
+              ))}
+              {ccUserIds.map((userId) => {
+                const user = ccUsers.find((item) => item.id === userId);
+                return user ? (
+                  <button className="chip" type="button" key={userId} onClick={() => removeCcUser(userId)}>
+                    {user.firstName} {user.lastName} x
+                  </button>
+                ) : null;
+              })}
+            </div>
+          </div>
+          <div className="grid columns-2 ticket-editor-attachments">
+            <AttachmentDropzone ticketId={ticketId} onUploaded={(attachment) => setAttachments((current) => [...current, attachment])} />
+            <div className="panel ticket-attachment-preview-panel">
+              <h3>Attachments</h3>
+              <AttachmentPreviewList attachments={attachments} onRemove={(attachmentId) => void removeAttachment(attachmentId)} />
+            </div>
+          </div>
         </div>
-      </div>
-      <div className="grid columns-2 ticket-editor-attachments">
-        <AttachmentDropzone ticketId={ticketId} onUploaded={(attachment) => setAttachments((current) => [...current, attachment])} />
-        <div className="panel ticket-attachment-preview-panel">
-          <h3>Attachments</h3>
-          <AttachmentPreviewList attachments={attachments} onRemove={(attachmentId) => void removeAttachment(attachmentId)} />
-        </div>
-      </div>
+      </details>
       <div className="editor-toolbar editor-submit-toolbar">
         <SignatureInserter onInsert={insertHtml} />
         {error ? <span className="error">{error}</span> : null}

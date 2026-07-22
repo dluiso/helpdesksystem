@@ -14842,22 +14842,23 @@ button.operations-summary-card {
 
 .ticket-detail-layout {
   grid-template-columns: minmax(0, 1fr) 390px;
+  align-items: start;
   gap: 12px;
   min-height: 0;
 }
 
-.ticket-main-workspace { display: flex; min-width: 0; min-height: 0; flex-direction: column; gap: 10px; }
+.ticket-main-workspace { display: flex; min-width: 0; min-height: 0; flex-direction: column; gap: 10px; overflow: visible; }
 .ticket-conversation-panel,
 .ticket-composer-panel,
 .ticket-rail-panel { padding: 0; overflow: hidden; border-radius: var(--radius-md); }
-.ticket-conversation-panel { display: flex; min-height: 340px; flex: 1 1 auto; flex-direction: column; }
-.ticket-conversation-scroll { min-height: 0; padding: 10px; overflow: auto; }
+.ticket-conversation-panel { display: flex; min-height: 340px; flex-direction: column; }
+.ticket-conversation-scroll { min-height: 0; padding: 10px; overflow: visible; }
 .ticket-timeline { gap: 8px; }
 .ticket-timeline .message { padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px; line-height: 1.45; }
 .ticket-timeline .message::before { inset: 10px auto 10px 0; }
 .ticket-timeline .message-header { margin-bottom: 7px; font-size: 11px; }
-.ticket-composer-panel { max-height: min(47dvh, 520px); flex: 0 0 auto; overflow: auto; }
-.ticket-composer-panel.collapsed { max-height: 40px; }
+.ticket-composer-panel { position: sticky; z-index: 8; top: 8px; flex: 0 0 auto; overflow: visible; box-shadow: var(--shadow-sm); }
+.ticket-composer-panel.collapsed { max-height: 40px; overflow: hidden; }
 .ticket-composer-panel .ticket-reply-editor { gap: 7px; padding: 8px 10px 10px; }
 .ticket-composer-panel .editor-surface { min-height: 105px; max-height: 220px; padding: 10px; font-size: 12px; }
 .ticket-composer-panel .dropzone,
@@ -14974,7 +14975,34 @@ button.operations-summary-card {
 .ticket-composer-panel .input { min-height: 32px; padding: 6px 8px; }
 .ticket-composer-panel .ticket-attachment-preview-panel h3 { margin: 0; font-size: 12px; }
 
-.ticket-rail-panel { display: flex; min-height: 520px; flex-direction: column; }
+.ticket-composer-extras {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+}
+
+.ticket-composer-extras > summary {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 9px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.ticket-composer-extras > summary::-webkit-details-marker { display: none; }
+.ticket-composer-extras > summary span { display: inline-flex; align-items: center; gap: 6px; }
+.ticket-composer-extras > summary small { color: var(--text-muted); font-size: 10px; font-weight: 700; }
+.ticket-composer-extras[open] > summary { border-bottom: 1px solid var(--line); }
+.ticket-composer-extras-content { display: grid; gap: 8px; padding: 8px; }
+
+.ticket-side-panel { position: sticky; top: 8px; align-self: start; max-height: calc(100dvh - 16px); }
+.ticket-rail-panel { display: flex; min-height: 520px; max-height: calc(100dvh - 16px); flex-direction: column; }
 .ticket-tools-heading h3 { flex: 1; }
 .ticket-tools-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; padding: 7px 8px; }
 .ticket-tools-grid .button { min-width: 0; min-height: 32px; justify-content: center; gap: 4px; padding: 5px 4px; font-size: 10px; white-space: nowrap; }
@@ -15105,16 +15133,16 @@ button.operations-summary-card {
 .inline-attachments-summary > summary span { color: var(--text-muted); font-size: 9px; font-weight: 650; }
 
 @media (min-width: 1101px) {
-  .ticket-detail-layout { height: calc(100dvh - 190px); }
-  .ticket-side-panel,
-  .ticket-rail-panel { height: 100%; }
+  .ticket-detail-layout { height: auto; }
 }
 
 @media (max-width: 1100px) {
   .ticket-detail-layout { grid-template-columns: minmax(0, 1fr); height: auto; }
-  .ticket-conversation-panel { max-height: 68dvh; }
-  .ticket-composer-panel { max-height: none; }
-  .ticket-side-panel { position: static; }
+  .ticket-conversation-panel { max-height: none; }
+  .ticket-composer-panel { position: static; max-height: none; }
+  .ticket-side-panel { position: static; max-height: none; }
+  .ticket-rail-panel { max-height: none; }
+  .ticket-rail-content { overflow: visible; }
 }
 
 @media (max-width: 720px) {

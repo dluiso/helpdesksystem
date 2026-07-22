@@ -326,7 +326,9 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   function scrollConversation(position: "TOP" | "BOTTOM") {
     const element = conversationRef.current;
     if (!element) return;
-    element.scrollTo({ top: position === "TOP" ? 0 : element.scrollHeight, behavior: "smooth" });
+    const messages = element.querySelectorAll<HTMLElement>(".message");
+    const target = position === "TOP" ? messages.item(0) : messages.item(messages.length - 1);
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   async function createExternalSpecialist() {
@@ -597,6 +599,12 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       ) : null}
       <section className="ticket-detail-layout">
         <div className="ticket-main-workspace">
+          {!isMergedTicket ? (
+            <div className={`panel ticket-composer-panel${composerCollapsed ? " collapsed" : ""}`} tabIndex={-1}>
+              <div className="ticket-composer-heading"><div><MessageSquareReply size={16} aria-hidden="true" /><h2>Reply Composer</h2></div><button className="button secondary icon-button" type="button" onClick={() => setComposerCollapsed((current) => !current)} title={composerCollapsed ? "Expand composer" : "Collapse composer"} aria-label={composerCollapsed ? "Expand composer" : "Collapse composer"}>{composerCollapsed ? <ChevronDown size={15} aria-hidden="true" /> : <ChevronUp size={15} aria-hidden="true" />}</button></div>
+              {!composerCollapsed ? <TicketReplyEditor ticketId={ticketRef} ccUsers={users} ccContacts={ccContacts} onSaved={load} /> : null}
+            </div>
+          ) : null}
           <div className="panel ticket-conversation-panel">
             <div className="ticket-conversation-heading">
               <div><h2>Conversation</h2><span>{displayedMessages.length} of {ticket.messages.length}</span></div>
@@ -657,12 +665,6 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
               </div>
             </div>
           </div>
-          {!isMergedTicket ? (
-            <div className={`panel ticket-composer-panel${composerCollapsed ? " collapsed" : ""}`} tabIndex={-1}>
-              <div className="ticket-composer-heading"><div><MessageSquareReply size={16} aria-hidden="true" /><h2>Reply Composer</h2></div><button className="button secondary icon-button" type="button" onClick={() => setComposerCollapsed((current) => !current)} title={composerCollapsed ? "Expand composer" : "Collapse composer"} aria-label={composerCollapsed ? "Expand composer" : "Collapse composer"}>{composerCollapsed ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}</button></div>
-              {!composerCollapsed ? <TicketReplyEditor ticketId={ticketRef} ccUsers={users} ccContacts={ccContacts} onSaved={load} /> : null}
-            </div>
-          ) : null}
         </div>
         <aside className="ticket-side-panel">
           <div className="panel ticket-rail-panel">
@@ -954,19 +956,34 @@ function CollapsibleMessageBody({ html }: { html: string }) {
 
     const selectors = "blockquote, .gmail_quote, .gmail_signature, [id^='divRplyFwdMsg']";
     const candidates = Array.from(body.querySelectorAll<HTMLElement>(selectors));
-    candidates
-      .filter((candidate) => !candidate.parentElement?.closest(selectors))
-      .forEach((candidate) => {
-        const details = document.createElement("details");
-        details.className = "message-collapsible";
-        const summary = document.createElement("summary");
-        summary.textContent = candidate.matches(".gmail_signature") ? "Show signature" : "Show quoted message";
-        candidate.before(details);
-        details.append(summary, candidate);
-      });
+    const topLevelCandidates = candidates.filter((candidate) => !candidate.parentElement?.closest(selectors));
+    topLevelCandidates.forEach((candidate) => wrapMessageSection(candidate, candidate.matches(".gmail_signature") ? "Show signature" : "Show quoted history"));
+
+    const hasQuotedSection = topLevelCandidates.some((candidate) => !candidate.matches(".gmail_signature"));
+    if (!hasQuotedSection) {
+      const outlookHeaderPattern = /\bFrom:\s+[\s\S]{0,600}?\bSent:\s+[\s\S]{0,600}?\bTo:\s+[\s\S]{0,600}?\bSubject:/i;
+      const outlookHeader = Array.from(body.querySelectorAll<HTMLElement>("div, p, table"))
+        .filter((candidate) => !candidate.closest("details") && outlookHeaderPattern.test(candidate.textContent ?? ""))
+        .sort((left, right) => (left.textContent?.length ?? 0) - (right.textContent?.length ?? 0))[0];
+
+      if (outlookHeader) wrapMessageSection(outlookHeader, "Show quoted history", true);
+    }
   }, [html]);
 
   return <div className="message-body" ref={bodyRef} dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+function wrapMessageSection(candidate: HTMLElement, labelText: string, includeFollowingSiblings = false) {
+  const details = document.createElement("details");
+  details.className = "message-collapsible";
+  const summary = document.createElement("summary");
+  summary.textContent = labelText;
+  candidate.before(details);
+  details.append(summary, candidate);
+
+  if (includeFollowingSiblings) {
+    while (details.nextSibling) details.append(details.nextSibling);
+  }
 }
 
 function cleanContentId(value: string | null) {
