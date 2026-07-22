@@ -556,12 +556,12 @@ export class AiAssistantService {
       messages
     });
     const sourceLastMessageAt = messages.filter((message) => message.visibility === "PUBLIC").at(-1)?.createdAt ?? null;
-    const webReferenceSourceText = [
-      ticket.subject,
-      ticket.description ?? "",
-      originalCustomerMessage?.bodyText ?? "",
-      ...messages.filter((message) => message.visibility === "PUBLIC").map((message) => message.bodyText)
-    ].join("\n");
+    const webReferenceSourceText = this.promptBuilder.buildWebReferenceSource({
+      subject: ticket.subject,
+      description: ticket.description,
+      originalCustomerMessage,
+      messages
+    });
 
     return {
       ticket,

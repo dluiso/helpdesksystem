@@ -105,6 +105,24 @@ export class TicketPromptBuilder {
     );
   }
 
+  buildWebReferenceSource(input: {
+    subject: string;
+    description?: string | null;
+    originalCustomerMessage?: { bodyText: string } | null;
+    messages: Array<{ bodyText: string; visibility: string; direction: string }>;
+  }) {
+    const customerSources = input.messages
+      .filter((message) => message.visibility === "PUBLIC" && message.direction === "INBOUND")
+      .map((message) => message.bodyText);
+
+    return [...new Set([
+      input.subject,
+      input.description ?? "",
+      input.originalCustomerMessage?.bodyText ?? "",
+      ...customerSources
+    ].filter(Boolean))].join("\n");
+  }
+
   cleanEmailContent(value: string) {
     const lines = this.removeSecrets(value).replace(/\r\n?/g, "\n").split("\n");
     const content: string[] = [];

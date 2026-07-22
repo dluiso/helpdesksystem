@@ -81,4 +81,22 @@ describe("TicketPromptBuilder", () => {
     expect(context).not.toContain("Juwanda Petty\n\n[");
     expect(context).not.toContain("CONFIDENTIALITY NOTICE");
   });
+
+  it("uses only inbound customer content for web reference discovery", () => {
+    const builder = new TicketPromptBuilder();
+    const source = builder.buildWebReferenceSource({
+      subject: "Website update",
+      description: null,
+      originalCustomerMessage: { bodyText: "Please update our website.\nBest regards,\nhttps://www.client.example/page" },
+      messages: [
+        { visibility: "PUBLIC", direction: "INBOUND", bodyText: "The requested page is https://www.client.example/page" },
+        { visibility: "PUBLIC", direction: "OUTBOUND", bodyText: "Track this ticket at https://support.aviditytechnologies.com/" },
+        { visibility: "INTERNAL", direction: "OUTBOUND", bodyText: "Reference https://internal.aviditytechnologies.com/" }
+      ]
+    });
+
+    expect(source).toContain("https://www.client.example/page");
+    expect(source).not.toContain("support.aviditytechnologies.com");
+    expect(source).not.toContain("internal.aviditytechnologies.com");
+  });
 });
