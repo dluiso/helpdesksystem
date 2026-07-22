@@ -1437,6 +1437,7 @@ model TicketAiAnalysis {
   risks                 Json
   contradictions        Json       @default("[]")
   evidence              Json       @default("[]")
+  webReferences         Json       @default("[]")
   suggestedResponse     String?
   responseReady         Boolean    @default(false)
   confidence            Float?

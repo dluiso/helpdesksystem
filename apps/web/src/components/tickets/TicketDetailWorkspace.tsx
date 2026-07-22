@@ -134,6 +134,17 @@ interface TicketAiAnalysis {
   risks: string[];
   contradictions?: string[];
   evidence?: string[];
+  webReferences?: Array<{
+    url: string;
+    title: string | null;
+    excerpt: string | null;
+    matchedTerms: string[];
+    source: "EXPLICIT_URL" | "RELATIVE_PATH" | "SITEMAP";
+    status: "FOUND" | "BLOCKED" | "FAILED";
+    checkedAt: string;
+    confidence: number;
+    reason: string | null;
+  }>;
   suggestedResponse: string | null;
   responseReady?: boolean;
   confidence: number | null;
@@ -916,6 +927,20 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
               <TicketGoalList icon={<CircleHelp size={14} aria-hidden="true" />} title="Missing information" items={aiBrief.missingInformation} emptyLabel="No missing information identified." />
               <TicketGoalList icon={<ShieldAlert size={14} aria-hidden="true" />} title="Contradictions" items={aiBrief.contradictions ?? []} emptyLabel="No material contradictions identified." />
               <TicketGoalList icon={<ShieldAlert size={14} aria-hidden="true" />} title="Risks" items={aiBrief.risks} emptyLabel="No specific risks identified." />
+              {(aiBrief.webReferences?.length ?? 0) > 0 ? <section className="ticket-goal-section ticket-web-references">
+                <span><ExternalLink size={14} aria-hidden="true" /> Web references</span>
+                <div className="ticket-web-reference-list">
+                  {aiBrief.webReferences!.map((reference, referenceIndex) => <article className={`ticket-web-reference ${reference.status.toLowerCase()}`} key={`${reference.source}-${reference.url}`}>
+                    <div className="ticket-web-reference-heading">
+                      {reference.status === "FOUND" ? <a href={reference.url} target="_blank" rel="noopener noreferrer">{reference.title ?? reference.url}<ExternalLink size={11} aria-hidden="true" /></a> : <strong>{reference.title ?? reference.url}</strong>}
+                      <span>{reference.status === "FOUND" ? `${Math.round(reference.confidence * 100)}% match` : label(reference.status)}</span>
+                    </div>
+                    {reference.excerpt ? <p>{reference.excerpt}</p> : null}
+                    {reference.reason ? <p className="ticket-web-reference-reason">{reference.reason}</p> : null}
+                    <small>WEB-{referenceIndex + 1} · {label(reference.source)} · Checked {new Date(reference.checkedAt).toLocaleString()}</small>
+                  </article>)}
+                </div>
+              </section> : null}
               <TicketGoalList icon={<Info size={14} aria-hidden="true" />} title="Evidence" items={aiBrief.evidence ?? []} emptyLabel="No supporting evidence provided." />
               {aiBrief.suggestedResponse ? <section className="ticket-goal-section suggested-response">
                 <span>Suggested response</span>

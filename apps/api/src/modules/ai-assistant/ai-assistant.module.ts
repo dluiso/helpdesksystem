@@ -10,6 +10,7 @@ import { MockAiProvider } from "./providers/mock-ai.provider";
 import { OllamaProvider } from "./providers/ollama.provider";
 import { OpenAiCompatibleProvider } from "./providers/openai-compatible.provider";
 import { TicketPromptBuilder } from "./prompts/ticket-prompt-builder";
+import { WebReferenceResolverService } from "./web-reference-resolver.service";
 
 @Module({
   imports: [AuthModule, AuditLogsModule],
@@ -22,10 +23,10 @@ import { TicketPromptBuilder } from "./prompts/ticket-prompt-builder";
     GeminiProvider,
     OllamaProvider,
     CustomHttpProvider,
-    TicketPromptBuilder
+    TicketPromptBuilder,
+    WebReferenceResolverService
   ],
   exports: [AiAssistantService]
 })
 export class AiAssistantModule {}
-
 
