@@ -22,6 +22,15 @@ export class MockAiProvider implements AiProviderPort {
       };
     }
 
+    if (input.action === "ticket_brief_translation") {
+      const source = JSON.parse(input.ticketContext) as Record<string, string | string[]>;
+      const translated = Object.fromEntries(Object.entries(source).map(([key, item]) => [
+        key,
+        Array.isArray(item) ? item.map((value) => `Traducción: ${value}`) : `Traducción: ${item}`
+      ]));
+      return { model: "mock", text: JSON.stringify(translated) };
+    }
+
     if (input.action === "complete_draft") {
       return {
         model: "mock",

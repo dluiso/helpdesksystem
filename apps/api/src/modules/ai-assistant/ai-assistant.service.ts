@@ -18,6 +18,7 @@ import { OllamaProvider } from "./providers/ollama.provider";
 import { OpenAiCompatibleProvider } from "./providers/openai-compatible.provider";
 import { TicketPromptBuilder } from "./prompts/ticket-prompt-builder";
 import { parseTicketBrief } from "./prompts/ticket-brief-parser";
+import { parseTicketBriefTranslation, TranslatableTicketBrief } from "./prompts/ticket-brief-translation-parser";
 import { WebReferenceResolverService } from "./web-reference-resolver.service";
 
 @Injectable()
@@ -221,6 +222,7 @@ export class AiAssistantService {
     const context = await this.ticketOperationalContext(ticketId, user.organizationId);
     const analysis = await this.prisma.ticketAiAnalysis.findFirst({
       where: { ticketId: context.ticket.id, organizationId: user.organizationId },
+      include: { translations: { orderBy: { language: "asc" } } },
       orderBy: { createdAt: "desc" }
     });
 
@@ -296,6 +298,85 @@ export class AiAssistantService {
     });
 
     return { analysis, isStale: false };
+  }
+
+  async translateTicketBrief(ticketId: string, analysisId: string, language: string | undefined, user: AuthenticatedUser) {
+    const normalizedLanguage = language?.trim().toLowerCase();
+    if (normalizedLanguage !== "es") {
+      throw new BadRequestException("Spanish (es) is the only supported ticket goal translation.");
+    }
+    const ticket = await this.prisma.ticket.findFirst({
+      where: this.ticketReferenceWhere(ticketId, user.organizationId),
+      select: { id: true }
+    });
+    if (!ticket) throw new NotFoundException("Ticket was not found.");
+
+    const analysis = await this.prisma.ticketAiAnalysis.findFirst({
+      where: { id: analysisId, ticketId: ticket.id, organizationId: user.organizationId },
+      include: { translations: { where: { language: normalizedLanguage } } }
+    });
+    if (!analysis) throw new NotFoundException("Ticket goal analysis was not found.");
+    if (analysis.translations[0]) return analysis.translations[0];
+
+    const source: TranslatableTicketBrief = {
+      goal: analysis.goal,
+      summary: analysis.summary,
+      recommendedActions: this.jsonStringList(analysis.recommendedActions),
+      missingInformation: this.jsonStringList(analysis.missingInformation),
+      contradictions: this.jsonStringList(analysis.contradictions),
+      risks: this.jsonStringList(analysis.risks)
+    };
+    const sourceText = JSON.stringify(source);
+    const resolved = await this.resolveProviderForAction(user.organizationId, "ticket_brief");
+    const result = await resolved.provider.complete(
+      {
+        action: "ticket_brief_translation",
+        ticketContext: sourceText,
+        model: resolved.model,
+        systemPrompt: "Translate the supplied ticket goal analysis into clear, natural Spanish for an IT operations specialist. Preserve meaning and operational context rather than translating word for word. Do not add, remove, merge, split, resolve, or reinterpret any item. Preserve names, product names, URLs, email addresses, ticket identifiers, phone numbers, dates, monetary values, and all other numeric values exactly. Return one valid JSON object with exactly these fields: goal, summary, recommendedActions, missingInformation, contradictions, risks. The four list fields must contain exactly the same number of items and in the same order as the source. Do not return markdown or explanations.",
+        temperature: 0.1,
+        maxOutputTokens: resolved.maxOutputTokens ?? 1200
+      },
+      resolved.config
+    );
+    const translation = parseTicketBriefTranslation(result.text, source);
+    const saved = await this.prisma.ticketAiAnalysisTranslation.upsert({
+      where: { analysisId_language: { analysisId: analysis.id, language: normalizedLanguage } },
+      update: {
+        ...translation,
+        provider: resolved.config.provider,
+        model: result.model
+      },
+      create: {
+        analysisId: analysis.id,
+        language: normalizedLanguage,
+        ...translation,
+        provider: resolved.config.provider,
+        model: result.model
+      }
+    });
+
+    await this.prisma.aiRequestLog.create({
+      data: {
+        userId: user.id,
+        ticketId: ticket.id,
+        actionType: "ticket_brief_translation",
+        provider: resolved.config.provider,
+        model: result.model,
+        approximateInputSize: sourceText.length,
+        approximateOutputSize: result.text.length,
+        metadata: { analysisId: analysis.id, translationId: saved.id, language: normalizedLanguage }
+      }
+    });
+    await this.auditLogs.create({
+      userId: user.id,
+      entityType: "TicketAiAnalysis",
+      entityId: analysis.id,
+      action: "ai_assistant.ticket_brief.translated",
+      metadata: { translationId: saved.id, language: normalizedLanguage, provider: resolved.config.provider, model: result.model }
+    });
+
+    return saved;
   }
 
   async run(ticketId: string, action: AiTicketAction, user: AuthenticatedUser, draft?: string) {
@@ -680,5 +761,9 @@ export class AiAssistantService {
   private optionalTrim(value: string | null | undefined) {
     const trimmed = value?.trim();
     return trimmed ? trimmed : null;
+  }
+
+  private jsonStringList(value: Prisma.JsonValue) {
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
   }
 }

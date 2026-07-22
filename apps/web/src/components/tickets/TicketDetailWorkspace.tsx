@@ -151,6 +151,21 @@ interface TicketAiAnalysis {
   provider?: string;
   model: string;
   createdAt: string;
+  translations?: TicketAiAnalysisTranslation[];
+}
+
+interface TicketAiAnalysisTranslation {
+  id: string;
+  language: string;
+  goal: string;
+  summary: string;
+  recommendedActions: string[];
+  missingInformation: string[];
+  contradictions: string[];
+  risks: string[];
+  provider?: string;
+  model: string;
+  createdAt: string;
 }
 
 interface TicketAiBriefResponse {
@@ -212,6 +227,8 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const [aiBriefStale, setAiBriefStale] = useState(false);
   const [aiBriefLoading, setAiBriefLoading] = useState(false);
   const [aiBriefError, setAiBriefError] = useState<string | null>(null);
+  const [goalLanguage, setGoalLanguage] = useState<"EN" | "ES">("EN");
+  const [goalTranslationLoading, setGoalTranslationLoading] = useState(false);
   const [draftInsertRequest, setDraftInsertRequest] = useState<{ id: number; text: string } | null>(null);
   const [messageSearch, setMessageSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -228,6 +245,27 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const [toolBusy, setToolBusy] = useState<string | null>(null);
   const [assignmentNotice, setAssignmentNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const spanishGoal = useMemo(() => aiBrief?.translations?.find((translation) => translation.language === "es") ?? null, [aiBrief]);
+  const displayedAiBrief = goalLanguage === "ES" && spanishGoal
+    ? { ...aiBrief!, ...spanishGoal }
+    : aiBrief;
+  const goalLabels = goalLanguage === "ES"
+    ? {
+        customerGoal: "Objetivo del cliente",
+        situation: "Situación",
+        recommendedActions: "Acciones recomendadas",
+        missingInformation: "Información pendiente",
+        contradictions: "Contradicciones",
+        risks: "Riesgos"
+      }
+    : {
+        customerGoal: "Customer goal",
+        situation: "Situation",
+        recommendedActions: "Recommended actions",
+        missingInformation: "Missing information",
+        contradictions: "Contradictions",
+        risks: "Risks"
+      };
 
   const requester = useMemo(() => {
     if (!ticket) {
@@ -298,6 +336,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
 
     setAiBriefLoading(true);
     setAiBriefError(null);
+    setGoalLanguage("EN");
     try {
       const result = await apiFetch<TicketAiBriefResponse>(`/tickets/${ticketRef}/ai/brief`);
       setAiBrief(result.analysis);
@@ -314,6 +353,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
     setAiBriefLoading(true);
     setAiBriefError(null);
     setSideTab("GOAL");
+    setGoalLanguage("EN");
     try {
       const result = await apiFetch<TicketAiBriefResponse>(`/tickets/${ticket.ticketNumber}/ai/brief`, { method: "POST" });
       setAiBrief(result.analysis);
@@ -322,6 +362,36 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       setAiBriefError(cause instanceof Error ? cause.message : "Unable to analyze this ticket.");
     } finally {
       setAiBriefLoading(false);
+    }
+  }
+
+  async function changeGoalLanguage(language: "EN" | "ES") {
+    if (language === "EN") {
+      setGoalLanguage("EN");
+      return;
+    }
+    if (!ticket || !aiBrief || goalTranslationLoading) return;
+    if (spanishGoal) {
+      setGoalLanguage("ES");
+      return;
+    }
+
+    setGoalTranslationLoading(true);
+    setAiBriefError(null);
+    try {
+      const translation = await apiFetch<TicketAiAnalysisTranslation>(`/tickets/${ticket.ticketNumber}/ai/brief/${aiBrief.id}/translations`, {
+        method: "POST",
+        body: JSON.stringify({ language: "es" })
+      });
+      setAiBrief((current) => current ? {
+        ...current,
+        translations: [...(current.translations ?? []).filter((item) => item.language !== translation.language), translation]
+      } : current);
+      setGoalLanguage("ES");
+    } catch (cause) {
+      setAiBriefError(cause instanceof Error ? cause.message : "Unable to translate this ticket goal.");
+    } finally {
+      setGoalTranslationLoading(false);
     }
   }
 
@@ -755,8 +825,8 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
         {canUseAi ? (
           <button className="ticket-header-goal" type="button" onClick={() => setSideTab("GOAL")}>
             <span><Target size={14} aria-hidden="true" /> Goal {aiBriefStale ? <em>Update available</em> : null}</span>
-            <strong>{aiBrief?.goal ?? (aiBriefLoading ? "Analyzing ticket context..." : "Generate a concise objective and next steps")}</strong>
-            {aiBrief ? <small>{aiBrief.recommendedActions[0] ?? aiBrief.summary}</small> : null}
+            <strong>{displayedAiBrief?.goal ?? (aiBriefLoading ? "Analyzing ticket context..." : "Generate a concise objective and next steps")}</strong>
+            {displayedAiBrief ? <small>{displayedAiBrief.recommendedActions[0] ?? displayedAiBrief.summary}</small> : null}
           </button>
         ) : null}
         <div className="form-actions ticket-detail-actions">
@@ -907,9 +977,15 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
           {sideTab === "GOAL" && canUseAi ? <div className="ticket-rail-section ticket-goal-panel">
             <div className="ticket-goal-heading">
               <h3><Sparkles size={14} aria-hidden="true" /> AI Goal</h3>
-              <button className="button secondary compact-button" type="button" onClick={() => void generateAiBrief()} disabled={aiBriefLoading}>
-                <RefreshCcw size={13} aria-hidden="true" /><span>{aiBrief ? "Refresh" : "Analyze"}</span>
-              </button>
+              <div className="ticket-goal-heading-actions">
+                {aiBrief ? <div className="ticket-goal-language" role="group" aria-label="Goal language">
+                  <button className={goalLanguage === "EN" ? "active" : ""} type="button" onClick={() => void changeGoalLanguage("EN")} disabled={goalTranslationLoading} title="View in English" aria-label="View Goal in English">🇺🇸 <span>EN</span></button>
+                  <button className={goalLanguage === "ES" ? "active" : ""} type="button" onClick={() => void changeGoalLanguage("ES")} disabled={goalTranslationLoading} title="Ver en español" aria-label="Ver Goal en español">🇪🇸 <span>{goalTranslationLoading ? "..." : "ES"}</span></button>
+                </div> : null}
+                <button className="button secondary compact-button" type="button" onClick={() => void generateAiBrief()} disabled={aiBriefLoading || goalTranslationLoading}>
+                  <RefreshCcw size={13} aria-hidden="true" /><span>{aiBrief ? "Refresh" : "Analyze"}</span>
+                </button>
+              </div>
             </div>
             {aiBriefStale ? <div className="ticket-goal-stale">The conversation changed after this analysis. Refresh before relying on it.</div> : null}
             {aiBriefError ? <div className="error-banner">{aiBriefError}</div> : null}
@@ -920,13 +996,14 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
               <span>Analyze the public conversation to identify the requested outcome and next steps.</span>
               <button className="button compact-button" type="button" onClick={() => void generateAiBrief()}><Sparkles size={14} aria-hidden="true" /> Analyze Ticket</button>
             </div> : null}
-            {aiBrief ? <>
-              <section className="ticket-goal-section primary"><span>Customer goal</span><strong>{aiBrief.goal}</strong></section>
-              <section className="ticket-goal-section"><span>Situation</span><p>{aiBrief.summary}</p></section>
-              <TicketGoalList icon={<ListChecks size={14} aria-hidden="true" />} title="Recommended actions" items={aiBrief.recommendedActions} />
-              <TicketGoalList icon={<CircleHelp size={14} aria-hidden="true" />} title="Missing information" items={aiBrief.missingInformation} emptyLabel="No missing information identified." />
-              <TicketGoalList icon={<ShieldAlert size={14} aria-hidden="true" />} title="Contradictions" items={aiBrief.contradictions ?? []} emptyLabel="No material contradictions identified." />
-              <TicketGoalList icon={<ShieldAlert size={14} aria-hidden="true" />} title="Risks" items={aiBrief.risks} emptyLabel="No specific risks identified." />
+            {aiBrief && displayedAiBrief ? <>
+              {goalLanguage === "ES" ? <p className="ticket-goal-translation-note">Traducción contextual generada por IA. El análisis original permanece en inglés.</p> : null}
+              <section className="ticket-goal-section primary"><span>{goalLabels.customerGoal}</span><strong>{displayedAiBrief.goal}</strong></section>
+              <section className="ticket-goal-section"><span>{goalLabels.situation}</span><p>{displayedAiBrief.summary}</p></section>
+              <TicketGoalList icon={<ListChecks size={14} aria-hidden="true" />} title={goalLabels.recommendedActions} items={displayedAiBrief.recommendedActions} />
+              <TicketGoalList icon={<CircleHelp size={14} aria-hidden="true" />} title={goalLabels.missingInformation} items={displayedAiBrief.missingInformation} emptyLabel={goalLanguage === "ES" ? "No se identificó información pendiente." : "No missing information identified."} />
+              <TicketGoalList icon={<ShieldAlert size={14} aria-hidden="true" />} title={goalLabels.contradictions} items={displayedAiBrief.contradictions ?? []} emptyLabel={goalLanguage === "ES" ? "No se identificaron contradicciones importantes." : "No material contradictions identified."} />
+              <TicketGoalList icon={<ShieldAlert size={14} aria-hidden="true" />} title={goalLabels.risks} items={displayedAiBrief.risks} emptyLabel={goalLanguage === "ES" ? "No se identificaron riesgos específicos." : "No specific risks identified."} />
               {(aiBrief.webReferences?.length ?? 0) > 0 ? <section className="ticket-goal-section ticket-web-references">
                 <span><ExternalLink size={14} aria-hidden="true" /> Web references</span>
                 <div className="ticket-web-reference-list">

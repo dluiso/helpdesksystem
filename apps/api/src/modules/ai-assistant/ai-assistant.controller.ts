@@ -74,6 +74,17 @@ export class AiAssistantController {
   generateBrief(@Param("ticketId") ticketId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.aiAssistantService.generateTicketBrief(ticketId, user);
   }
+
+  @Post("brief/:analysisId/translations")
+  @RequirePermissions("ai_assistant.use", "tickets.view")
+  translateBrief(
+    @Param("ticketId") ticketId: string,
+    @Param("analysisId") analysisId: string,
+    @Body("language") language: string | undefined,
+    @CurrentUser() user: AuthenticatedUser
+  ) {
+    return this.aiAssistantService.translateTicketBrief(ticketId, analysisId, language, user);
+  }
 }
 
 @Controller("event-services/:requestId/ai")

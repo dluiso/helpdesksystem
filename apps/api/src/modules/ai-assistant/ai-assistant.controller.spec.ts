@@ -7,6 +7,7 @@ describe("AiAssistantController permissions", () => {
   it("requires ticket visibility for ticket analysis", () => {
     expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, controller.getBrief)).toEqual(["ai_assistant.use", "tickets.view"]);
     expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, controller.generateBrief)).toEqual(["ai_assistant.use", "tickets.view"]);
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, controller.translateBrief)).toEqual(["ai_assistant.use", "tickets.view"]);
     expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, controller.summarize)).toEqual(["ai_assistant.use", "tickets.view"]);
   });
 

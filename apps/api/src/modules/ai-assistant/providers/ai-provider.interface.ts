@@ -7,7 +7,8 @@ export type AiTicketAction =
   | "translate"
   | "change_tone"
   | "paraphrase"
-  | "ticket_brief";
+  | "ticket_brief"
+  | "ticket_brief_translation";
 
 export interface AiProviderInput {
   action: AiTicketAction;
