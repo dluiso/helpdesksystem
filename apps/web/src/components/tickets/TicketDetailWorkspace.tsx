@@ -180,7 +180,7 @@ function mergeUsers(primary: User[], fallback: Array<User | null | undefined>) {
 export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const router = useRouter();
   const conversationRef = useRef<HTMLDivElement>(null);
-  const composerAnchorRef = useRef<HTMLDivElement>(null);
+  const composerSlotRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -614,15 +614,34 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
     let direction = 0;
     let frameId: number | null = null;
 
+    const syncFloatingGeometry = () => {
+      const composer = composerRef.current;
+      const slot = composerSlotRef.current;
+      if (!composer || !slot) return;
+
+      const slotRect = slot.getBoundingClientRect();
+      slot.style.setProperty("--ticket-composer-left", `${slotRect.left}px`);
+      slot.style.setProperty("--ticket-composer-width", `${slotRect.width}px`);
+      slot.style.setProperty("--ticket-composer-height", `${composer.offsetHeight}px`);
+    };
+
     const updateComposerPosition = () => {
       frameId = null;
       const composer = composerRef.current;
-      const anchor = composerAnchorRef.current;
+      const slot = composerSlotRef.current;
       const currentScrollY = window.scrollY;
       const delta = currentScrollY - lastScrollY;
       lastScrollY = currentScrollY;
 
-      if (!desktopQuery.matches || !composer || !anchor || anchor.getBoundingClientRect().top >= 8) {
+      if (!desktopQuery.matches || !composer || !slot) {
+        accumulatedDistance = 0;
+        direction = 0;
+        setComposerScrollState("NORMAL");
+        return;
+      }
+
+      syncFloatingGeometry();
+      if (slot.getBoundingClientRect().top >= 8) {
         accumulatedDistance = 0;
         direction = 0;
         setComposerScrollState("NORMAL");
@@ -654,14 +673,22 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
     };
     const handleViewportChange = () => {
       lastScrollY = window.scrollY;
+      syncFloatingGeometry();
       updateComposerPosition();
     };
 
+    const resizeObserver = new ResizeObserver(syncFloatingGeometry);
+    if (composerRef.current) resizeObserver.observe(composerRef.current);
+    syncFloatingGeometry();
+
     window.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("resize", handleViewportChange);
     desktopQuery.addEventListener("change", handleViewportChange);
     return () => {
       window.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("resize", handleViewportChange);
       desktopQuery.removeEventListener("change", handleViewportChange);
+      resizeObserver.disconnect();
       if (frameId !== null) window.cancelAnimationFrame(frameId);
     };
   }, []);
@@ -743,11 +770,12 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       <section className="ticket-detail-layout">
         <div className="ticket-main-workspace">
           {!isMergedTicket ? (
-            <><div className="ticket-composer-anchor" ref={composerAnchorRef} aria-hidden="true" />
-            <div className={`panel ticket-composer-panel${composerCollapsed ? " collapsed" : ""} ${composerScrollState === "HIDDEN" ? "scroll-hidden" : composerScrollState === "PINNED" ? "scroll-pinned" : "scroll-normal"}`} ref={composerRef} tabIndex={-1}>
-              <div className="ticket-composer-heading"><div><MessageSquareReply size={16} aria-hidden="true" /><h2>Reply Composer</h2></div><button className="button secondary icon-button" type="button" onClick={() => setComposerCollapsed((current) => !current)} title={composerCollapsed ? "Expand composer" : "Collapse composer"} aria-label={composerCollapsed ? "Expand composer" : "Collapse composer"}>{composerCollapsed ? <ChevronDown size={15} aria-hidden="true" /> : <ChevronUp size={15} aria-hidden="true" />}</button></div>
-              {!composerCollapsed ? <TicketReplyEditor ticketId={ticketRef} ccUsers={users} ccContacts={ccContacts} insertRequest={draftInsertRequest} onSaved={load} /> : null}
-            </div></>
+            <div className="ticket-composer-slot" ref={composerSlotRef}>
+              <div className={`panel ticket-composer-panel${composerCollapsed ? " collapsed" : ""} ${composerScrollState === "HIDDEN" ? "scroll-hidden" : composerScrollState === "PINNED" ? "scroll-pinned" : "scroll-normal"}`} ref={composerRef} tabIndex={-1}>
+                <div className="ticket-composer-heading"><div><MessageSquareReply size={16} aria-hidden="true" /><h2>Reply Composer</h2></div><button className="button secondary icon-button" type="button" onClick={() => setComposerCollapsed((current) => !current)} title={composerCollapsed ? "Expand composer" : "Collapse composer"} aria-label={composerCollapsed ? "Expand composer" : "Collapse composer"}>{composerCollapsed ? <ChevronDown size={15} aria-hidden="true" /> : <ChevronUp size={15} aria-hidden="true" />}</button></div>
+                {!composerCollapsed ? <TicketReplyEditor ticketId={ticketRef} ccUsers={users} ccContacts={ccContacts} insertRequest={draftInsertRequest} onSaved={load} /> : null}
+              </div>
+            </div>
           ) : null}
           <div className="panel ticket-conversation-panel">
             <div className="ticket-conversation-heading">

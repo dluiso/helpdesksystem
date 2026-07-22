@@ -14893,8 +14893,10 @@ button.operations-summary-card {
 .ticket-timeline .message { padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px; line-height: 1.45; }
 .ticket-timeline .message::before { inset: 10px auto 10px 0; }
 .ticket-timeline .message-header { margin-bottom: 7px; font-size: 11px; }
-.ticket-composer-anchor { width: 0; height: 0; pointer-events: none; }
-.ticket-composer-panel { position: sticky; z-index: 8; top: 8px; flex: 0 0 auto; overflow: visible; box-shadow: var(--shadow-sm); transform: translateY(0); opacity: 1; transition: transform 180ms ease, opacity 140ms ease, box-shadow 180ms ease; will-change: transform; }
+.ticket-composer-slot { min-width: 0; min-height: var(--ticket-composer-height, 0); }
+.ticket-composer-panel { position: relative; z-index: 8; width: 100%; overflow: visible; box-shadow: var(--shadow-sm); transform: translateY(0); opacity: 1; transition: transform 180ms ease, opacity 140ms ease, box-shadow 180ms ease; will-change: transform; }
+.ticket-composer-panel.scroll-hidden,
+.ticket-composer-panel.scroll-pinned { position: fixed; top: 8px; left: var(--ticket-composer-left); width: var(--ticket-composer-width); }
 .ticket-composer-panel.scroll-hidden { pointer-events: none; box-shadow: none; transform: translateY(calc(-100% - 16px)); opacity: 0; }
 .ticket-composer-panel.scroll-pinned { transform: translateY(0); opacity: 1; }
 .ticket-composer-panel.collapsed { max-height: 40px; overflow: hidden; }
@@ -15200,7 +15202,10 @@ button.operations-summary-card {
   .ticket-header-goal { order: 3; width: 100%; max-width: none; flex-basis: 100%; border-top: 1px solid var(--line); border-left: 0; }
   .ticket-detail-layout { grid-template-columns: minmax(0, 1fr); height: auto; }
   .ticket-conversation-panel { max-height: none; }
-  .ticket-composer-panel { position: static; max-height: none; transform: none; opacity: 1; }
+  .ticket-composer-slot { min-height: 0; }
+  .ticket-composer-panel,
+  .ticket-composer-panel.scroll-hidden,
+  .ticket-composer-panel.scroll-pinned { position: static; max-height: none; width: 100%; transform: none; opacity: 1; }
   .ticket-side-panel { position: static; max-height: none; }
   .ticket-rail-panel { max-height: none; }
   .ticket-rail-content { overflow: visible; }
