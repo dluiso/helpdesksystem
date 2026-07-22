@@ -13,7 +13,10 @@ export class MockAiProvider implements AiProviderPort {
           recommendedActions: ["Review the ticket context", "Confirm any missing details", "Complete and verify the requested work"],
           missingInformation: [],
           risks: [],
+          contradictions: [],
+          evidence: [],
           suggestedResponse: "We are reviewing your request and will confirm the next steps shortly.",
+          responseReady: false,
           confidence: 0.5
         })
       };

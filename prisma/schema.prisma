@@ -1435,7 +1435,10 @@ model TicketAiAnalysis {
   recommendedActions    Json
   missingInformation    Json
   risks                 Json
+  contradictions        Json       @default("[]")
+  evidence              Json       @default("[]")
   suggestedResponse     String?
+  responseReady         Boolean    @default(false)
   confidence            Float?
   contextHash           String
   sourceLastMessageAt   DateTime?

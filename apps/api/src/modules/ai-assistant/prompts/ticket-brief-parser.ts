@@ -6,7 +6,10 @@ export interface TicketBriefPayload {
   recommendedActions: string[];
   missingInformation: string[];
   risks: string[];
+  contradictions: string[];
+  evidence: string[];
   suggestedResponse: string | null;
+  responseReady: boolean;
   confidence: number | null;
 }
 
@@ -33,9 +36,13 @@ export function parseTicketBrief(value: string): TicketBriefPayload {
       .filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
       .slice(0, 5)
       .map((item) => item.trim().slice(0, 500));
-  const confidence = typeof record.confidence === "number" && Number.isFinite(record.confidence)
+  const contradictions = textList("contradictions");
+  const evidence = textList("evidence");
+  const suggestedResponse = typeof record.suggestedResponse === "string" ? record.suggestedResponse.trim().slice(0, 5000) || null : null;
+  const parsedConfidence = typeof record.confidence === "number" && Number.isFinite(record.confidence)
     ? Math.min(1, Math.max(0, record.confidence))
     : null;
+  const confidence = parsedConfidence === null || contradictions.length === 0 ? parsedConfidence : Math.min(parsedConfidence, 0.65);
 
   return {
     goal: requiredText("goal", 500),
@@ -43,7 +50,10 @@ export function parseTicketBrief(value: string): TicketBriefPayload {
     recommendedActions: textList("recommendedActions"),
     missingInformation: textList("missingInformation"),
     risks: textList("risks"),
-    suggestedResponse: typeof record.suggestedResponse === "string" ? record.suggestedResponse.trim().slice(0, 5000) || null : null,
+    contradictions,
+    evidence,
+    suggestedResponse,
+    responseReady: record.responseReady === true && contradictions.length === 0 && evidence.length > 0 && Boolean(suggestedResponse),
     confidence
   };
 }

@@ -44,4 +44,41 @@ describe("TicketPromptBuilder", () => {
     expect(context).not.toContain("Internal token");
     expect(context).not.toContain("do-not-share");
   });
+
+  it("prioritizes the latest customer update and removes quoted history and signatures", () => {
+    const builder = new TicketPromptBuilder();
+    const context = builder.buildOperationalContext({
+      ticketNumber: "AIT-100285",
+      subject: "Update phone carts",
+      status: "WAITING_ON_CUSTOMER",
+      priority: "NORMAL",
+      messages: [
+        {
+          visibility: "PUBLIC",
+          direction: "INBOUND",
+          bodyText: "Please update Leslie Holmes.\n\nThank you,\nJuwanda Petty",
+          createdAt: new Date("2026-07-14T12:00:00Z")
+        },
+        {
+          visibility: "PUBLIC",
+          direction: "OUTBOUND",
+          bodyText: "Please provide phone numbers and extensions.\n\nBest regards,\nTechnician",
+          createdAt: new Date("2026-07-20T09:43:00Z")
+        },
+        {
+          visibility: "PUBLIC",
+          direction: "INBOUND",
+          bodyText: "Keep the existing numbers. Update Ashley, Juwanda, Jazlyn, and Zicshan.\n\nFrom: Avidity Support <support@example.com>\nSent: Monday, July 20, 2026\nPlease provide phone numbers and extensions.\nE-MAIL CONFIDENTIALITY NOTICE: ignored",
+          createdAt: new Date("2026-07-20T09:51:00Z")
+        }
+      ]
+    });
+
+    expect(context).toContain("LATEST CUSTOMER UPDATE (highest priority");
+    expect(context).toContain("Keep the existing numbers. Update Ashley, Juwanda, Jazlyn, and Zicshan.");
+    expect(context).toContain("ORIGINAL CUSTOMER REQUEST:\nPlease update Leslie Holmes.");
+    expect(context.match(/Please provide phone numbers and extensions\./g)).toHaveLength(1);
+    expect(context).not.toContain("Juwanda Petty\n\n[");
+    expect(context).not.toContain("CONFIDENTIALITY NOTICE");
+  });
 });

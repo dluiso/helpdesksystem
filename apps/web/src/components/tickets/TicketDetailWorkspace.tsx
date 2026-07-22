@@ -132,8 +132,12 @@ interface TicketAiAnalysis {
   recommendedActions: string[];
   missingInformation: string[];
   risks: string[];
+  contradictions?: string[];
+  evidence?: string[];
   suggestedResponse: string | null;
+  responseReady?: boolean;
   confidence: number | null;
+  provider?: string;
   model: string;
   createdAt: string;
 }
@@ -818,14 +822,17 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
               <section className="ticket-goal-section"><span>Situation</span><p>{aiBrief.summary}</p></section>
               <TicketGoalList icon={<ListChecks size={14} aria-hidden="true" />} title="Recommended actions" items={aiBrief.recommendedActions} />
               <TicketGoalList icon={<CircleHelp size={14} aria-hidden="true" />} title="Missing information" items={aiBrief.missingInformation} emptyLabel="No missing information identified." />
+              <TicketGoalList icon={<ShieldAlert size={14} aria-hidden="true" />} title="Contradictions" items={aiBrief.contradictions ?? []} emptyLabel="No material contradictions identified." />
               <TicketGoalList icon={<ShieldAlert size={14} aria-hidden="true" />} title="Risks" items={aiBrief.risks} emptyLabel="No specific risks identified." />
+              <TicketGoalList icon={<Info size={14} aria-hidden="true" />} title="Evidence" items={aiBrief.evidence ?? []} emptyLabel="No supporting evidence provided." />
               {aiBrief.suggestedResponse ? <section className="ticket-goal-section suggested-response">
                 <span>Suggested response</span>
                 <p>{aiBrief.suggestedResponse}</p>
-                {canReply ? <button className="button compact-button" type="button" onClick={() => insertAiDraft(aiBrief.suggestedResponse!)}><MessageSquareReply size={14} aria-hidden="true" /> Use as Reply</button> : null}
+                {!aiBrief.responseReady ? <div className="ticket-goal-stale">Review the analysis before using this response. The AI found unresolved or insufficiently grounded information.</div> : null}
+                {canReply ? <button className="button compact-button" type="button" onClick={() => insertAiDraft(aiBrief.suggestedResponse!)} disabled={!aiBrief.responseReady} title={!aiBrief.responseReady ? "Resolve contradictions or refresh the analysis before using this response." : undefined}><MessageSquareReply size={14} aria-hidden="true" /> Use as Reply</button> : null}
               </section> : null}
-              {canReply && aiBrief.missingInformation.length > 0 ? <button className="button secondary compact-button ticket-goal-question-button" type="button" onClick={() => insertAiDraft(`To help us proceed, could you please confirm:\n\n${aiBrief.missingInformation.map((item) => `- ${item}`).join("\n")}`)}><CircleHelp size={14} aria-hidden="true" /> Ask for Missing Information</button> : null}
-              <p className="ticket-goal-meta">AI-generated guidance · {aiBrief.confidence === null ? "Confidence not provided" : `${Math.round(aiBrief.confidence * 100)}% confidence`} · {new Date(aiBrief.createdAt).toLocaleString()}</p>
+              {canReply && aiBrief.missingInformation.length > 0 ? <button className="button secondary compact-button ticket-goal-question-button" type="button" onClick={() => insertAiDraft(`To help us proceed, could you please confirm:\n\n${aiBrief.missingInformation.map((item) => `- ${item}`).join("\n")}`)} disabled={!aiBrief.responseReady}><CircleHelp size={14} aria-hidden="true" /> Ask for Missing Information</button> : null}
+              <p className="ticket-goal-meta">AI-generated guidance · {aiBrief.confidence === null ? "Confidence not provided" : `${Math.round(aiBrief.confidence * 100)}% confidence`} · {[aiBrief.provider, aiBrief.model].filter(Boolean).join(" / ")} · {new Date(aiBrief.createdAt).toLocaleString()}</p>
               <p className="ticket-goal-disclaimer">Verify recommendations before replying or changing systems.</p>
             </> : null}
           </div> : null}
