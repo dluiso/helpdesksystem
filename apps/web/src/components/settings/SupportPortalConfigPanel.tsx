@@ -232,6 +232,8 @@ export function SupportPortalConfigPanel() {
   const [sectionEdits, setSectionEdits] = useState<Record<string, SectionDraft>>({});
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+  const [showSectionCreate, setShowSectionCreate] = useState(false);
+  const [showFieldCreate, setShowFieldCreate] = useState(false);
   const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -295,6 +297,7 @@ export function SupportPortalConfigPanel() {
         body: JSON.stringify(sectionPayload(sectionDraft))
       });
       setSectionDraft({ ...blankSectionDraft, sortOrder: Math.max(10, Math.max(0, ...sortedSections.map((section) => section.sortOrder)) + 10) });
+      setShowSectionCreate(false);
       setNotice("Support portal section added.");
       await loadConfig();
     } catch (caught) {
@@ -375,6 +378,7 @@ export function SupportPortalConfigPanel() {
         body: JSON.stringify(fieldPayload({ ...fieldDraft, fieldKey: fieldDraft.fieldKey || makeFieldKey(fieldDraft.label), sectionId: fieldDraft.sectionId || fallbackSectionId }))
       });
       setFieldDraft({ ...blankFieldDraft, sectionId: fallbackSectionId, sortOrder: Math.max(10, Math.max(0, ...sortedFields.map((field) => field.sortOrder)) + 10) });
+      setShowFieldCreate(false);
       setNotice("Support portal field added.");
       await loadConfig();
     } catch (caught) {
@@ -670,7 +674,15 @@ export function SupportPortalConfigPanel() {
             <button className="button" type="button" disabled={busy === "settings"} onClick={saveSettings}><Save size={15} /> Save Portal Settings</button>
           </div>
 
-          <div className="support-field-create">
+          <div className="settings-table-toolbar support-builder-toolbar">
+            <div><strong>Form structure</strong><span className="muted">{sortedSections.length} sections · {sortedFields.length} fields</span></div>
+            <div className="form-actions">
+              <button className="button secondary compact-button" type="button" onClick={() => { setShowSectionCreate((open) => !open); setShowFieldCreate(false); }}><Plus size={15} /> Add Section</button>
+              <button className="button compact-button" type="button" onClick={() => { setShowFieldCreate((open) => !open); setShowSectionCreate(false); }}><Plus size={15} /> Add Field</button>
+            </div>
+          </div>
+
+          {showSectionCreate ? <div className="support-field-create settings-create-panel">
             <h3>Add Section</h3>
             <div className="support-section-edit-grid">
               <input value={sectionDraft.title} placeholder="Section title" onChange={(event) => setSectionDraft((current) => ({ ...current, title: event.target.value }))} />
@@ -680,14 +692,14 @@ export function SupportPortalConfigPanel() {
               <input type="number" min="0" value={sectionDraft.sortOrder} onChange={(event) => setSectionDraft((current) => ({ ...current, sortOrder: Number(event.target.value) }))} />
               <label><input type="checkbox" checked={sectionDraft.isActive} onChange={(event) => setSectionDraft((current) => ({ ...current, isActive: event.target.checked }))} /> Active</label>
             </div>
-            <button className="button" type="button" disabled={busy === "create-section"} onClick={createSection}><Plus size={15} /> Add Section</button>
-          </div>
+            <div className="form-actions"><button className="button secondary" type="button" onClick={() => setShowSectionCreate(false)}>Cancel</button><button className="button" type="button" disabled={busy === "create-section"} onClick={createSection}><Plus size={15} /> Add Section</button></div>
+          </div> : null}
 
-          <div className="support-field-create">
+          {showFieldCreate ? <div className="support-field-create settings-create-panel">
             <h3>Add Field</h3>
             {renderFieldDraftControls(fieldDraft, setFieldDraft)}
-            <button className="button" type="button" disabled={busy === "create-field"} onClick={createField}><Plus size={15} /> Add Field</button>
-          </div>
+            <div className="form-actions"><button className="button secondary" type="button" onClick={() => setShowFieldCreate(false)}>Cancel</button><button className="button" type="button" disabled={busy === "create-field"} onClick={createField}><Plus size={15} /> Add Field</button></div>
+          </div> : null}
 
           <div className="support-section-list">
             {sortedSections.map((section, index) => renderSectionEditor(section, index))}

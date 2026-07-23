@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Pencil, Plus, RefreshCcw, RotateCw, TestTube2, Trash2, Upload, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, Pencil, Plus, RefreshCcw, RotateCw, Search, TestTube2, Trash2, Upload, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { EventServicesConfigPanel } from "@/components/settings/EventServicesConfigPanel";
 import { KnowledgeConfigPanel } from "@/components/settings/KnowledgeConfigPanel";
@@ -528,6 +528,58 @@ type ActiveSection =
   | "ai"
   | "systemHealth";
 
+const SETTINGS_GROUPS: Array<{ label: string; sections: Array<{ key: ActiveSection; label: string }> }> = [
+  {
+    label: "Organization",
+    sections: [{ key: "general", label: "General & Branding" }]
+  },
+  {
+    label: "People & Access",
+    sections: [
+      { key: "users", label: "Users, Groups & Roles" },
+      { key: "teams", label: "Ticket Teams" }
+    ]
+  },
+  {
+    label: "Service Desk",
+    sections: [
+      { key: "mailboxes", label: "Mailboxes" },
+      { key: "autoReplies", label: "Auto Replies" },
+      { key: "routing", label: "Ticket Routing" },
+      { key: "domains", label: "Domain Mapping" },
+      { key: "notifications", label: "Notifications" },
+      { key: "spam", label: "Spam Management" }
+    ]
+  },
+  {
+    label: "Portals & Content",
+    sections: [
+      { key: "supportPortal", label: "Support Portal" },
+      { key: "events", label: "Event Services" },
+      { key: "knowledge", label: "Knowledge Base" }
+    ]
+  },
+  {
+    label: "Integrations & Automation",
+    sections: [
+      { key: "rmm", label: "RMM Integration" },
+      { key: "ai", label: "AI Providers & Actions" },
+      { key: "operations", label: "Operations" }
+    ]
+  },
+  {
+    label: "Security & System",
+    sections: [
+      { key: "security", label: "Security Center" },
+      { key: "maintenance", label: "Maintenance" },
+      { key: "logs", label: "Audit Logs" },
+      { key: "systemHealth", label: "System Health" }
+    ]
+  }
+];
+
+const SETTINGS_SECTION_KEYS = new Set<ActiveSection>(SETTINGS_GROUPS.flatMap((group) => group.sections.map((section) => section.key)));
+
 const AI_ACTIONS = [
   { type: "paraphrase", label: "Paraphrase" },
   { type: "improve_reply", label: "Improve reply" },
@@ -908,12 +960,18 @@ function NotificationSwitch({ checked, onChange, label }: { checked: boolean; on
 function NotificationUserCard({
   row,
   busy,
+  isOpen,
+  isDirty,
   onChange,
+  onToggle,
   onSave
 }: {
   row: UserNotificationPreferenceRow;
   busy: string | null;
+  isOpen: boolean;
+  isDirty: boolean;
   onChange: (userId: string, key: keyof NotificationPreference, value: boolean) => void;
+  onToggle: () => void;
   onSave: (row: UserNotificationPreferenceRow) => void;
 }) {
   const emailEventsBlocked = !row.notificationPreference.emailEnabled && hasEnabledEmailEvents(row.notificationPreference);
@@ -923,25 +981,25 @@ function NotificationUserCard({
   return (
     <article className="notification-user-card">
       <div className="notification-user-header">
-        <div>
-          <h3>
-            {row.firstName} {row.lastName}
-          </h3>
-          <p className="muted">{row.email}</p>
-        </div>
+        <button className="notification-user-toggle" type="button" onClick={onToggle} aria-expanded={isOpen}>
+          {isOpen ? <ChevronDown size={17} aria-hidden="true" /> : <ChevronRight size={17} aria-hidden="true" />}
+          <span>
+            <strong>{row.firstName} {row.lastName}</strong>
+            <small>{row.email}</small>
+          </span>
+        </button>
         <div className="notification-user-actions">
           <span className={`status-pill ${assignmentReady ? "success" : row.notificationPreference.emailTicketAssignedToMe ? "warning-pill" : "muted-pill"}`}>{assignmentLabel}</span>
-          <button className="button secondary" type="button" onClick={() => onSave(row)} disabled={busy === `notification-${row.id}`}>
-            Save
-          </button>
+          {isDirty ? <span className="status-pill warning-pill">Unsaved</span> : null}
+          {isOpen ? <button className="button secondary compact-button" type="button" onClick={() => onSave(row)} disabled={busy === `notification-${row.id}`}>Save</button> : null}
         </div>
       </div>
-      {emailEventsBlocked ? (
+      {isOpen && emailEventsBlocked ? (
         <div className="notification-warning-banner" role="status">
           Email-specific events are enabled for this user, but the Email channel is off.
         </div>
       ) : null}
-      <div className="notification-channel-strip">
+      {isOpen ? <div className="notification-channel-strip">
         <div className="notification-channel-item">
           <span>In-app</span>
           <NotificationSwitch checked={row.notificationPreference.inAppEnabled} onChange={(value) => onChange(row.id, "inAppEnabled", value)} label={`${row.email} in-app channel`} />
@@ -954,11 +1012,11 @@ function NotificationUserCard({
           <span>Daily digest</span>
           <NotificationSwitch checked={row.notificationPreference.dailyDigestEnabled} onChange={(value) => onChange(row.id, "dailyDigestEnabled", value)} label={`${row.email} daily digest`} />
         </div>
-      </div>
-      <div className="notification-user-grid">
+      </div> : null}
+      {isOpen ? <div className="notification-user-grid">
         <NotificationPreferenceGroup title="Ticket Notifications" row={row} fields={TICKET_NOTIFICATION_FIELDS} onChange={onChange} />
         <NotificationPreferenceGroup title="Event Service Notifications" row={row} fields={EVENT_NOTIFICATION_FIELDS} onChange={onChange} />
-      </div>
+      </div> : null}
     </article>
   );
 }
@@ -1046,6 +1104,7 @@ export function SettingsWorkspace() {
   const [spamTypeFilter, setSpamTypeFilter] = useState("");
   const [spamActiveFilter, setSpamActiveFilter] = useState("");
   const [spamDraft, setSpamDraft] = useState({ type: "EMAIL" as "EMAIL" | "DOMAIN", value: "", notes: "" });
+  const [showSpamCreate, setShowSpamCreate] = useState(false);
   const [maintenanceDraft, setMaintenanceDraft] = useState("7");
   const [maintenanceTab, setMaintenanceTab] = useState<"recycle" | "quarantine">("recycle");
   const [quarantineFilters, setQuarantineFilters] = useState({
@@ -1080,8 +1139,10 @@ export function SettingsWorkspace() {
   >({});
   const [ruleDraft, setRuleDraft] = useState({ ...EMPTY_RULE_DRAFT });
   const [editingRoutingRuleId, setEditingRoutingRuleId] = useState<string | null>(null);
+  const [showRoutingRuleForm, setShowRoutingRuleForm] = useState(false);
   const [teamDraft, setTeamDraft] = useState({ name: "", description: "", memberIds: [] as string[] });
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
+  const [showTeamCreate, setShowTeamCreate] = useState(false);
   const [teamEditDraft, setTeamEditDraft] = useState({ name: "", description: "", memberIds: [] as string[], isActive: true });
   const [aiProviderDraft, setAiProviderDraft] = useState({
     name: "",
@@ -1117,16 +1178,64 @@ export function SettingsWorkspace() {
   });
   const [aiTestResults, setAiTestResults] = useState<Record<string, { status: "success" | "error" | "testing"; message: string }>>({});
   const [selectedClientByDomain, setSelectedClientByDomain] = useState<Record<string, string>>({});
+  const [domainSearch, setDomainSearch] = useState("");
+  const [domainSort, setDomainSort] = useState<"domain" | "messages" | "lastSeen">("lastSeen");
+  const [domainPage, setDomainPage] = useState(1);
+  const [domainPageSize, setDomainPageSize] = useState(20);
+  const [selectedDomainIds, setSelectedDomainIds] = useState<Set<string>>(new Set());
+  const [bulkDomainClientId, setBulkDomainClientId] = useState("");
+  const [notificationSearch, setNotificationSearch] = useState("");
+  const [notificationReadiness, setNotificationReadiness] = useState<"all" | "ready" | "blocked" | "off">("all");
+  const [expandedNotificationUsers, setExpandedNotificationUsers] = useState<Set<string>>(new Set());
+  const [dirtyNotificationUsers, setDirtyNotificationUsers] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<ActiveSection>("general");
+  const [settingsSearch, setSettingsSearch] = useState("");
   const [generalTab, setGeneralTab] = useState<GeneralTab>("identity");
   const [securityTab, setSecurityTab] = useState<SecurityTab>("access");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [aiConfigError, setAiConfigError] = useState<string | null>(null);
 
+  const filteredSettingsGroups = useMemo(() => {
+    const search = settingsSearch.trim().toLowerCase();
+    if (!search) return SETTINGS_GROUPS;
+    return SETTINGS_GROUPS.map((group) => ({
+      ...group,
+      sections: group.sections.filter((section) => `${group.label} ${section.label}`.toLowerCase().includes(search))
+    })).filter((group) => group.sections.length > 0);
+  }, [settingsSearch]);
+
+  function selectSettingsSection(section: ActiveSection, replace = false) {
+    if (section !== activeSection && hasUnsavedSettings) {
+      if (!window.confirm("You have unsaved Settings changes. Leave this section and discard them?")) return;
+      setDirtyNotificationUsers(new Set());
+      void loadSettingsData();
+    }
+    setActiveSection(section);
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("section", section);
+    url.searchParams.delete("tab");
+    const method = replace ? "replaceState" : "pushState";
+    window.history[method]({}, "", `${url.pathname}${url.search}${url.hash}`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function selectSettingsTab(tab: GeneralTab | SecurityTab) {
+    if (activeSection === "general") setGeneralTab(tab as GeneralTab);
+    if (activeSection === "security") setSecurityTab(tab as SecurityTab);
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", tab);
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
   const hasClients = useMemo(() => clients.length > 0, [clients.length]);
+  const generalSettingsDirty = Boolean(generalSettings && JSON.stringify(generalDraft) !== JSON.stringify(generalSettings));
+  const securitySettingsDirty = Boolean(securitySettings && JSON.stringify(securityDraft) !== JSON.stringify(securitySettings));
+  const operationsSettingsDirty = Boolean(operationsSettings && JSON.stringify(operationsDraft) !== JSON.stringify(operationsSettings));
+  const hasUnsavedSettings = generalSettingsDirty || securitySettingsDirty || operationsSettingsDirty || dirtyNotificationUsers.size > 0;
   const activeMailboxCount = mailboxes.filter((mailbox) => mailbox.isActive).length;
   const activeTeamCount = ticketTeams.filter((team) => team.isActive).length;
   const enabledAiProviderCount = aiProviders.filter((provider) => provider.isEnabled).length;
@@ -1158,6 +1267,18 @@ export function SettingsWorkspace() {
       return matchesSearch && matchesType && matchesActive;
     });
   }, [spamActiveFilter, spamEntries, spamSearch, spamTypeFilter]);
+  const filteredDomains = useMemo(() => {
+    const search = domainSearch.trim().toLowerCase();
+    return unmappedDomains
+      .filter((domain) => !search || `${domain.domain} ${domain.lastSenderEmail ?? ""} ${domain.firstSenderEmail ?? ""}`.toLowerCase().includes(search))
+      .sort((left, right) => {
+        if (domainSort === "domain") return left.domain.localeCompare(right.domain);
+        if (domainSort === "messages") return right.messageCount - left.messageCount;
+        return new Date(right.lastSeenAt).getTime() - new Date(left.lastSeenAt).getTime();
+      });
+  }, [domainSearch, domainSort, unmappedDomains]);
+  const domainPageCount = Math.max(1, Math.ceil(filteredDomains.length / domainPageSize));
+  const visibleDomains = filteredDomains.slice((domainPage - 1) * domainPageSize, domainPage * domainPageSize);
 
   function aiProviderDefaults(provider: string) {
     switch (provider) {
@@ -1716,6 +1837,7 @@ export function SettingsWorkspace() {
       });
       setRuleDraft({ ...EMPTY_RULE_DRAFT });
       setEditingRoutingRuleId(null);
+      setShowRoutingRuleForm(false);
       setNotice(editingRoutingRuleId ? "Routing rule updated." : "Routing rule created.");
       await loadSettingsData();
     } catch {
@@ -1726,6 +1848,7 @@ export function SettingsWorkspace() {
   }
 
   function editRoutingRule(rule: RoutingRule) {
+    setShowRoutingRuleForm(true);
     setEditingRoutingRuleId(rule.id);
     setRuleDraft({
       name: rule.name,
@@ -1745,6 +1868,7 @@ export function SettingsWorkspace() {
   function cancelRoutingRuleEdit() {
     setEditingRoutingRuleId(null);
     setRuleDraft({ ...EMPTY_RULE_DRAFT });
+    setShowRoutingRuleForm(false);
   }
 
   async function deleteRoutingRule(rule: RoutingRule) {
@@ -1807,6 +1931,7 @@ export function SettingsWorkspace() {
         })
       });
       setTeamDraft({ name: "", description: "", memberIds: [] });
+      setShowTeamCreate(false);
       setNotice("Ticket team created.");
       await loadSettingsData();
     } catch {
@@ -1930,6 +2055,7 @@ export function SettingsWorkspace() {
         })
       });
       setSpamDraft({ type: "EMAIL", value: "", notes: "" });
+      setShowSpamCreate(false);
       setNotice("Spam block entry created.");
       await loadSettingsData();
     } catch {
@@ -2252,6 +2378,7 @@ export function SettingsWorkspace() {
   }
 
   function updateNotificationPreferenceDraft(userId: string, key: keyof NotificationPreference, value: boolean) {
+    setDirtyNotificationUsers((current) => new Set(current).add(userId));
     setNotificationPreferenceRows((current) =>
       current.map((row) =>
         row.id === userId
@@ -2317,6 +2444,11 @@ export function SettingsWorkspace() {
           dailyDigestEnabled: preference.dailyDigestEnabled
         })
       });
+      setDirtyNotificationUsers((current) => {
+        const next = new Set(current);
+        next.delete(row.id);
+        return next;
+      });
       setNotice("Notification preferences saved.");
       await loadSettingsData();
     } catch (err) {
@@ -2345,6 +2477,33 @@ export function SettingsWorkspace() {
       await loadSettingsData();
     } catch {
       setError("Unable to associate domain.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function associateSelectedDomains() {
+    const selectedDomains = unmappedDomains.filter((domain) => selectedDomainIds.has(domain.id));
+    if (!bulkDomainClientId || selectedDomains.length === 0) {
+      setError("Select at least one domain and a destination client.");
+      return;
+    }
+    if (!window.confirm(`Associate ${selectedDomains.length} domain${selectedDomains.length === 1 ? "" : "s"} to the selected client? Matching tickets and requesters will be updated.`)) return;
+
+    setBusy("domain-bulk");
+    setNotice(null);
+    setError(null);
+    try {
+      await Promise.all(selectedDomains.map((domain) => apiFetch(`/client-domains/unmapped/${domain.id}/associate`, {
+        method: "POST",
+        body: JSON.stringify({ clientId: bulkDomainClientId })
+      })));
+      setSelectedDomainIds(new Set());
+      setBulkDomainClientId("");
+      setNotice(`${selectedDomains.length} domain${selectedDomains.length === 1 ? " was" : "s were"} associated successfully.`);
+      await loadSettingsData();
+    } catch {
+      setError("One or more domains could not be associated. Refresh the list before retrying.");
     } finally {
       setBusy(null);
     }
@@ -2588,16 +2747,32 @@ export function SettingsWorkspace() {
   useEffect(() => {
     const oneNoteStatus = new URLSearchParams(window.location.search).get("onenote");
     const requestedSection = new URLSearchParams(window.location.search).get("section");
-    if (requestedSection === "systemHealth") {
-      setActiveSection("systemHealth");
-    }
-    if (requestedSection === "rmm") {
-      setActiveSection("rmm");
-    }
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    if (requestedSection && SETTINGS_SECTION_KEYS.has(requestedSection as ActiveSection)) setActiveSection(requestedSection as ActiveSection);
+    if (requestedSection === "general" && GENERAL_TABS.some((tab) => tab.key === requestedTab)) setGeneralTab(requestedTab as GeneralTab);
+    if (requestedSection === "security" && SECURITY_TABS.some((tab) => tab.key === requestedTab)) setSecurityTab(requestedTab as SecurityTab);
     if (!oneNoteStatus) return;
     setActiveSection("knowledge");
     setNotice(oneNoteStatus === "connected" ? "Microsoft OneNote connected." : "Microsoft OneNote connection was not completed.");
   }, []);
+
+  useEffect(() => {
+    function restoreSectionFromUrl() {
+      const section = new URLSearchParams(window.location.search).get("section");
+      if (section && SETTINGS_SECTION_KEYS.has(section as ActiveSection)) setActiveSection(section as ActiveSection);
+    }
+    window.addEventListener("popstate", restoreSectionFromUrl);
+    return () => window.removeEventListener("popstate", restoreSectionFromUrl);
+  }, []);
+
+  useEffect(() => {
+    function warnBeforeUnload(event: BeforeUnloadEvent) {
+      if (!hasUnsavedSettings) return;
+      event.preventDefault();
+    }
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [hasUnsavedSettings]);
 
   useEffect(() => {
     if (activeSection !== "systemHealth") return;
@@ -2614,6 +2789,14 @@ export function SettingsWorkspace() {
   }, [systemHealthRange]);
 
   useEffect(() => {
+    setDomainPage(1);
+  }, [domainPageSize, domainSearch, domainSort]);
+
+  useEffect(() => {
+    if (domainPage > domainPageCount) setDomainPage(domainPageCount);
+  }, [domainPage, domainPageCount]);
+
+  useEffect(() => {
     if (systemHealthHistoryPage > systemHealthHistoryPageCount) {
       setSystemHealthHistoryPage(systemHealthHistoryPageCount);
     }
@@ -2623,14 +2806,23 @@ export function SettingsWorkspace() {
   const assignmentReadyRows = activeNotificationRows.filter((row) => assignmentEmailReady(row.notificationPreference));
   const assignmentBlockedRows = activeNotificationRows.filter((row) => row.notificationPreference.emailTicketAssignedToMe && !row.notificationPreference.emailEnabled);
   const assignmentOffRows = activeNotificationRows.filter((row) => !row.notificationPreference.emailTicketAssignedToMe);
+  const filteredNotificationRows = notificationPreferenceRows.filter((row) => {
+    const search = notificationSearch.trim().toLowerCase();
+    const matchesSearch = !search || `${row.firstName} ${row.lastName} ${row.email}`.toLowerCase().includes(search);
+    const ready = assignmentEmailReady(row.notificationPreference);
+    const blocked = row.notificationPreference.emailTicketAssignedToMe && !row.notificationPreference.emailEnabled;
+    const matchesReadiness = notificationReadiness === "all" || (notificationReadiness === "ready" && ready) || (notificationReadiness === "blocked" && blocked) || (notificationReadiness === "off" && !row.notificationPreference.emailTicketAssignedToMe);
+    return matchesSearch && matchesReadiness;
+  });
+  const activeSettingsLabel = SETTINGS_GROUPS.flatMap((group) => group.sections).find((section) => section.key === activeSection)?.label ?? "Settings";
 
   return (
     <div className="settings-page">
-      <div className="compact-page-header settings-page-header">
+      <div className="settings-command-header">
         <div>
           <span className="page-eyebrow">Administration</span>
           <h1>Settings</h1>
-          <p className="muted">Configure identity, users, mail flow, portals, integrations, security, and operational health.</p>
+          <span className="muted">{activeSettingsLabel}</span>
         </div>
         <button className="button secondary settings-refresh-button" type="button" onClick={loadSettingsData} disabled={loading}>
           <RefreshCcw size={16} aria-hidden="true" />
@@ -2641,93 +2833,34 @@ export function SettingsWorkspace() {
       {error ? <div className="error-banner">{error}</div> : null}
       {notice ? <div className="success-banner">{notice}</div> : null}
 
-      <section className="settings-summary-grid" aria-label="Settings summary">
-        <div className="settings-summary-card">
-          <span>Users</span>
-          <strong>{users.length}</strong>
-          <small>Directory accounts</small>
-        </div>
-        <div className="settings-summary-card">
-          <span>Mailboxes</span>
-          <strong>{activeMailboxCount}/{mailboxes.length}</strong>
-          <small>Active inbound sources</small>
-        </div>
-        <div className="settings-summary-card">
-          <span>Teams</span>
-          <strong>{activeTeamCount}/{ticketTeams.length}</strong>
-          <small>Active ticket teams</small>
-        </div>
-        <div className="settings-summary-card">
-          <span>AI Providers</span>
-          <strong>{enabledAiProviderCount}</strong>
-          <small>Enabled configurations</small>
-        </div>
-        <div className="settings-summary-card">
-          <span>System Health</span>
-          <strong>{healthStatusLabel}</strong>
-          <small>{systemHealth?.checkedAt ? `Checked ${new Date(systemHealth.checkedAt).toLocaleDateString()}` : "Awaiting check"}</small>
-        </div>
+      <section className="settings-status-strip" aria-label="Settings summary">
+        <button type="button" onClick={() => selectSettingsSection("users")}><span>Users</span><strong>{users.length}</strong></button>
+        <button type="button" onClick={() => selectSettingsSection("mailboxes")}><span>Mailboxes</span><strong>{activeMailboxCount}/{mailboxes.length}</strong></button>
+        <button type="button" onClick={() => selectSettingsSection("teams")}><span>Teams</span><strong>{activeTeamCount}/{ticketTeams.length}</strong></button>
+        <button type="button" onClick={() => selectSettingsSection("ai")}><span>AI Providers</span><strong>{enabledAiProviderCount}</strong></button>
+        <button type="button" onClick={() => selectSettingsSection("systemHealth")}><span>Health</span><strong className={systemHealth?.status === "ok" ? "status-ok" : ""}>{healthStatusLabel}</strong></button>
       </section>
 
       <section className="settings-layout">
         <nav className="settings-nav" aria-label="Settings sections">
-          <button className={activeSection === "general" ? "active" : ""} type="button" onClick={() => setActiveSection("general")}>
-            General
-          </button>
-          <button className={activeSection === "users" ? "active" : ""} type="button" onClick={() => setActiveSection("users")}>
-            Users
-          </button>
-          <button className={activeSection === "mailboxes" ? "active" : ""} type="button" onClick={() => setActiveSection("mailboxes")}>
-            Mailboxes
-          </button>
-          <button className={activeSection === "autoReplies" ? "active" : ""} type="button" onClick={() => setActiveSection("autoReplies")}>
-            Auto Replies
-          </button>
-          <button className={activeSection === "teams" ? "active" : ""} type="button" onClick={() => setActiveSection("teams")}>
-            Ticket Teams
-          </button>
-          <button className={activeSection === "routing" ? "active" : ""} type="button" onClick={() => setActiveSection("routing")}>
-            Ticket Routing
-          </button>
-          <button className={activeSection === "domains" ? "active" : ""} type="button" onClick={() => setActiveSection("domains")}>
-            Domain Mapping
-          </button>
-          <button className={activeSection === "supportPortal" ? "active" : ""} type="button" onClick={() => setActiveSection("supportPortal")}>
-            Support Portal
-          </button>
-          <button className={activeSection === "rmm" ? "active" : ""} type="button" onClick={() => setActiveSection("rmm")}>
-            RMM Integration
-          </button>
-          <button className={activeSection === "notifications" ? "active" : ""} type="button" onClick={() => setActiveSection("notifications")}>
-            Notifications
-          </button>
-          <button className={activeSection === "events" ? "active" : ""} type="button" onClick={() => setActiveSection("events")}>
-            Events Config
-          </button>
-          <button className={activeSection === "knowledge" ? "active" : ""} type="button" onClick={() => setActiveSection("knowledge")}>
-            Knowledge Config
-          </button>
-          <button className={activeSection === "spam" ? "active" : ""} type="button" onClick={() => setActiveSection("spam")}>
-            Spam Management
-          </button>
-          <button className={activeSection === "maintenance" ? "active" : ""} type="button" onClick={() => setActiveSection("maintenance")}>
-            Maintenance
-          </button>
-          <button className={activeSection === "operations" ? "active" : ""} type="button" onClick={() => setActiveSection("operations")}>
-            Operations
-          </button>
-          <button className={activeSection === "logs" ? "active" : ""} type="button" onClick={() => setActiveSection("logs")}>
-            Event Logs
-          </button>
-          <button className={activeSection === "security" ? "active" : ""} type="button" onClick={() => setActiveSection("security")}>
-            Security
-          </button>
-          <button className={activeSection === "ai" ? "active" : ""} type="button" onClick={() => setActiveSection("ai")}>
-            AI & Security
-          </button>
-          <button className={activeSection === "systemHealth" ? "active" : ""} type="button" onClick={() => setActiveSection("systemHealth")}>
-            System Health
-          </button>
+          <label className="settings-nav-search">
+            <Search size={15} aria-hidden="true" />
+            <input value={settingsSearch} onChange={(event) => setSettingsSearch(event.target.value)} placeholder="Find a setting" aria-label="Find a setting" />
+            {settingsSearch ? <button type="button" aria-label="Clear settings search" onClick={() => setSettingsSearch("")}><X size={14} /></button> : null}
+          </label>
+          <div className="settings-nav-groups">
+            {filteredSettingsGroups.map((group) => (
+              <div className="settings-nav-group" key={group.label}>
+                <span>{group.label}</span>
+                {group.sections.map((section) => (
+                  <button className={activeSection === section.key ? "active" : ""} type="button" key={section.key} onClick={() => selectSettingsSection(section.key)}>
+                    {section.label}
+                  </button>
+                ))}
+              </div>
+            ))}
+            {filteredSettingsGroups.length === 0 ? <p className="muted settings-nav-empty">No settings found.</p> : null}
+          </div>
         </nav>
 
         <div className="settings-content">
@@ -2745,7 +2878,7 @@ export function SettingsWorkspace() {
                     className={generalTab === tab.key ? "active" : ""}
                     key={tab.key}
                     type="button"
-                    onClick={() => setGeneralTab(tab.key)}
+                    onClick={() => selectSettingsTab(tab.key)}
                     role="tab"
                     aria-selected={generalTab === tab.key}
                   >
@@ -3302,10 +3435,11 @@ export function SettingsWorkspace() {
               ) : null}
               </div>
               <div className="settings-actions settings-section settings-save-bar">
-                <button className="button" type="button" onClick={saveGeneralSettings} disabled={busy === "general-settings"}>
+                <span className={generalSettingsDirty ? "settings-dirty-status" : "muted"}>{generalSettingsDirty ? "Unsaved changes" : "All changes saved"}</span>
+                {generalSettingsDirty ? <button className="button secondary compact-button" type="button" onClick={() => generalSettings && setGeneralDraft(generalSettings)}>Discard</button> : null}
+                <button className="button" type="button" onClick={saveGeneralSettings} disabled={busy === "general-settings" || !generalSettingsDirty}>
                   Save General Settings
                 </button>
-                {generalSettings ? <span className="muted">Current application title: {generalSettings.applicationName}</span> : null}
               </div>
             </section>
           ) : null}
@@ -3748,9 +3882,9 @@ export function SettingsWorkspace() {
             <h2>Ticket Teams</h2>
             <p className="muted">Operational teams used for ticket routing, assignment, and team notifications. These are separate from access groups and roles.</p>
           </div>
-          <span className="status-pill">{ticketTeams.filter((team) => team.isActive).length} active</span>
+          <div className="form-actions"><span className="status-pill">{ticketTeams.filter((team) => team.isActive).length} active</span><button className="button compact-button" type="button" onClick={() => setShowTeamCreate((open) => !open)}><Plus size={15} /> Add Team</button></div>
         </div>
-        <div className="access-form">
+        {showTeamCreate ? <div className="access-form settings-create-panel">
           <div className="client-form-grid">
             <input className="input" placeholder="Team name" value={teamDraft.name} onChange={(event) => setTeamDraft((current) => ({ ...current, name: event.target.value }))} />
             <input
@@ -3771,10 +3905,8 @@ export function SettingsWorkspace() {
               ))}
             </div>
           </div>
-          <button className="button" type="button" onClick={createTicketTeam} disabled={busy === "ticket-team"}>
-            Create Team
-          </button>
-        </div>
+          <div className="form-actions"><button className="button secondary" type="button" onClick={() => setShowTeamCreate(false)}>Cancel</button><button className="button" type="button" onClick={createTicketTeam} disabled={busy === "ticket-team"}>Create Team</button></div>
+        </div> : null}
         <div className="table-scroll settings-section">
           <table className="tickets-table">
             <thead>
@@ -3861,11 +3993,9 @@ export function SettingsWorkspace() {
             <h2>Ticket Routing Rules</h2>
             <p className="muted">Match inbound tickets by sender, subject, or body, then assign and notify staff.</p>
           </div>
-          <button className="button secondary" type="button" onClick={applyRoutingRulesToExistingTickets} disabled={busy === "routing-apply-existing"}>
-            Apply to Existing Tickets
-          </button>
+          <div className="form-actions"><button className="button secondary compact-button" type="button" onClick={applyRoutingRulesToExistingTickets} disabled={busy === "routing-apply-existing"}>Apply to Existing</button><button className="button compact-button" type="button" onClick={() => { setShowRoutingRuleForm((open) => !open); if (showRoutingRuleForm) cancelRoutingRuleEdit(); }}><Plus size={15} /> Add Rule</button></div>
         </div>
-        <div className="client-form-grid">
+        {showRoutingRuleForm ? <div className="client-form-grid settings-create-panel">
           <input className="input" placeholder="Rule name" value={ruleDraft.name} onChange={(event) => setRuleDraft((current) => ({ ...current, name: event.target.value }))} />
           <input
             className="input"
@@ -3924,12 +4054,8 @@ export function SettingsWorkspace() {
           <button className="button" type="button" onClick={submitRoutingRule} disabled={busy === "routing-rule"}>
             {editingRoutingRuleId ? "Update Rule" : "Create Rule"}
           </button>
-          {editingRoutingRuleId ? (
-            <button className="button secondary" type="button" onClick={cancelRoutingRuleEdit} disabled={busy === "routing-rule"}>
-              Cancel
-            </button>
-          ) : null}
-        </div>
+          <button className="button secondary" type="button" onClick={cancelRoutingRuleEdit} disabled={busy === "routing-rule"}>Cancel</button>
+        </div> : null}
         <div className="stack-list settings-section">
           {routingRules.length === 0 ? <p className="muted">No routing rules yet.</p> : null}
           {routingRules.map((rule) => (
@@ -3973,37 +4099,57 @@ export function SettingsWorkspace() {
           </div>
           <span className="status-pill">{unmappedDomains.length} open</span>
         </div>
-        <div className="stack-list">
-          {loading ? <p className="muted">Loading domains...</p> : null}
-          {!loading && unmappedDomains.length === 0 ? <p className="muted">No unmapped domains waiting for review.</p> : null}
-          {unmappedDomains.map((unmapped) => (
-            <div className="stack-row domain-review-row" key={unmapped.id}>
-              <div>
-                <strong>{unmapped.domain}</strong>
-                <span className="muted">
-                  {unmapped.messageCount} message{unmapped.messageCount === 1 ? "" : "s"} - Last sender: {unmapped.lastSenderEmail ?? "Unknown"}
-                </span>
-              </div>
-              <div className="form-actions">
-                <select
-                  className="input compact-select"
-                  value={selectedClientByDomain[unmapped.id] ?? ""}
-                  onChange={(event) => setSelectedClientByDomain((current) => ({ ...current, [unmapped.id]: event.target.value }))}
-                  disabled={!hasClients}
-                >
-                  <option value="">Select client</option>
-                  {clients.map((client) => (
-                    <option key={client.id} value={client.id}>
-                      {client.name}
-                    </option>
-                  ))}
-                </select>
-                <button className="button" type="button" onClick={() => associateDomain(unmapped)} disabled={busy === unmapped.id || !hasClients}>
-                  Associate
-                </button>
-              </div>
-            </div>
-          ))}
+        <div className="settings-table-toolbar settings-section">
+          <label className="settings-search-field">
+            <Search size={15} aria-hidden="true" />
+            <input value={domainSearch} onChange={(event) => setDomainSearch(event.target.value)} placeholder="Search domain or sender" aria-label="Search unmapped domains" />
+          </label>
+          <select className="input compact-select" value={domainSort} onChange={(event) => setDomainSort(event.target.value as typeof domainSort)} aria-label="Sort unmapped domains">
+            <option value="lastSeen">Recently seen</option>
+            <option value="messages">Most messages</option>
+            <option value="domain">Domain A-Z</option>
+          </select>
+          <select className="input compact-select" value={domainPageSize} onChange={(event) => setDomainPageSize(Number(event.target.value))} aria-label="Domains per page">
+            <option value={20}>20 rows</option><option value={50}>50 rows</option><option value={100}>100 rows</option><option value={10000}>All rows</option>
+          </select>
+        </div>
+        {selectedDomainIds.size > 0 ? <div className="settings-bulk-bar settings-section">
+          <strong>{selectedDomainIds.size} selected</strong>
+          <select className="input compact-select" value={bulkDomainClientId} onChange={(event) => setBulkDomainClientId(event.target.value)} aria-label="Bulk destination client">
+            <option value="">Select destination client</option>
+            {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+          </select>
+          <button className="button compact-button" type="button" onClick={() => void associateSelectedDomains()} disabled={!bulkDomainClientId || busy === "domain-bulk"}>Associate selected</button>
+          <button className="button secondary compact-button" type="button" onClick={() => setSelectedDomainIds(new Set())}>Clear</button>
+        </div> : null}
+        <div className="table-wrap settings-data-table settings-section">
+          <table>
+            <thead><tr>
+              <th><input type="checkbox" aria-label="Select visible domains" checked={visibleDomains.length > 0 && visibleDomains.every((domain) => selectedDomainIds.has(domain.id))} onChange={(event) => setSelectedDomainIds((current) => {
+                const next = new Set(current); visibleDomains.forEach((domain) => event.target.checked ? next.add(domain.id) : next.delete(domain.id)); return next;
+              })} /></th>
+              <th>Domain</th><th>Messages</th><th>Last sender</th><th>Last seen</th><th>Destination client</th><th>Action</th>
+            </tr></thead>
+            <tbody>
+              {visibleDomains.map((unmapped) => <tr key={unmapped.id}>
+                <td><input type="checkbox" aria-label={`Select ${unmapped.domain}`} checked={selectedDomainIds.has(unmapped.id)} onChange={(event) => setSelectedDomainIds((current) => { const next = new Set(current); if (event.target.checked) next.add(unmapped.id); else next.delete(unmapped.id); return next; })} /></td>
+                <td><strong>{unmapped.domain}</strong></td>
+                <td>{unmapped.messageCount}</td>
+                <td className="truncate-cell" title={unmapped.lastSenderEmail ?? "Unknown"}>{unmapped.lastSenderEmail ?? "Unknown"}</td>
+                <td>{new Date(unmapped.lastSeenAt).toLocaleDateString()}</td>
+                <td><select className="input compact-select" value={selectedClientByDomain[unmapped.id] ?? ""} onChange={(event) => setSelectedClientByDomain((current) => ({ ...current, [unmapped.id]: event.target.value }))} disabled={!hasClients} aria-label={`Client for ${unmapped.domain}`}>
+                  <option value="">Select client</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+                </select></td>
+                <td><button className="button secondary compact-button" type="button" onClick={() => associateDomain(unmapped)} disabled={busy === unmapped.id || !selectedClientByDomain[unmapped.id]}>Associate</button></td>
+              </tr>)}
+            </tbody>
+          </table>
+          {loading ? <p className="muted table-empty-message">Loading domains...</p> : null}
+          {!loading && visibleDomains.length === 0 ? <p className="muted table-empty-message">No unmapped domains match the current filters.</p> : null}
+        </div>
+        <div className="settings-pagination">
+          <span className="muted">{filteredDomains.length === 0 ? "0" : `${(domainPage - 1) * domainPageSize + 1}-${Math.min(domainPage * domainPageSize, filteredDomains.length)}`} of {filteredDomains.length}</span>
+          <div className="form-actions"><button className="button secondary compact-button" type="button" onClick={() => setDomainPage((page) => Math.max(1, page - 1))} disabled={domainPage <= 1}>Previous</button><span>Page {domainPage} of {domainPageCount}</span><button className="button secondary compact-button" type="button" onClick={() => setDomainPage((page) => Math.min(domainPageCount, page + 1))} disabled={domainPage >= domainPageCount}>Next</button></div>
         </div>
       </section>
           ) : null}
@@ -4043,14 +4189,37 @@ export function SettingsWorkspace() {
                   Review Email channel for: {assignmentBlockedRows.map((row) => `${row.firstName} ${row.lastName}`.trim() || row.email).join(", ")}.
                 </div>
               ) : null}
+              <div className="settings-table-toolbar notification-toolbar settings-section">
+                <label className="settings-search-field">
+                  <Search size={15} aria-hidden="true" />
+                  <input value={notificationSearch} onChange={(event) => setNotificationSearch(event.target.value)} placeholder="Search users" aria-label="Search notification users" />
+                </label>
+                <select className="input compact-select" value={notificationReadiness} onChange={(event) => setNotificationReadiness(event.target.value as typeof notificationReadiness)} aria-label="Filter notification readiness">
+                  <option value="all">All readiness states</option>
+                  <option value="ready">Assignment email ready</option>
+                  <option value="blocked">Email channel off</option>
+                  <option value="off">Assignment email off</option>
+                </select>
+                <div className="form-actions">
+                  <button className="button secondary compact-button" type="button" onClick={() => setExpandedNotificationUsers(new Set(filteredNotificationRows.map((row) => row.id)))}>Expand visible</button>
+                  <button className="button secondary compact-button" type="button" onClick={() => setExpandedNotificationUsers(new Set())}>Collapse all</button>
+                </div>
+              </div>
               <div className="notification-user-list settings-section">
-                {notificationPreferenceRows.length === 0 ? <p className="muted">No users available for notification settings.</p> : null}
-                {notificationPreferenceRows.map((row) => (
+                {filteredNotificationRows.length === 0 ? <p className="muted">No users match the current filters.</p> : null}
+                {filteredNotificationRows.map((row) => (
                   <NotificationUserCard
                     key={row.id}
                     row={row}
                     busy={busy}
+                    isOpen={expandedNotificationUsers.has(row.id)}
+                    isDirty={dirtyNotificationUsers.has(row.id)}
                     onChange={updateNotificationPreferenceDraft}
+                    onToggle={() => setExpandedNotificationUsers((current) => {
+                      const next = new Set(current);
+                      if (next.has(row.id)) next.delete(row.id); else next.add(row.id);
+                      return next;
+                    })}
                     onSave={(nextRow) => void saveNotificationPreference(nextRow)}
                   />
                 ))}
@@ -4069,21 +4238,18 @@ export function SettingsWorkspace() {
                     <h2>Spam Management</h2>
                     <p className="muted">Block sender emails or domains before inbound mail creates tickets.</p>
                   </div>
-                  <span className="count-pill">{spamEntries.length} entries</span>
+                  <div className="form-actions"><span className="count-pill">{spamEntries.length} entries</span><button className="button compact-button" type="button" onClick={() => setShowSpamCreate((open) => !open)}><Plus size={15} /> Add Block</button></div>
                 </div>
 
-                <div className="client-form-grid settings-section">
+                {showSpamCreate ? <div className="client-form-grid settings-section settings-create-panel">
                   <select className="input compact-select" value={spamDraft.type} onChange={(event) => setSpamDraft((current) => ({ ...current, type: event.target.value as "EMAIL" | "DOMAIN" }))}>
                     <option value="EMAIL">Email address</option>
                     <option value="DOMAIN">Domain</option>
                   </select>
                   <input className="input" placeholder={spamDraft.type === "EMAIL" ? "person@example.com" : "example.com"} value={spamDraft.value} onChange={(event) => setSpamDraft((current) => ({ ...current, value: event.target.value }))} />
                   <input className="input" placeholder="Reason or notes" value={spamDraft.notes} onChange={(event) => setSpamDraft((current) => ({ ...current, notes: event.target.value }))} />
-                  <button className="button" type="button" onClick={createSpamEntry} disabled={busy === "spam-create"}>
-                    <Plus size={16} aria-hidden="true" />
-                    <span>Add Block</span>
-                  </button>
-                </div>
+                  <div className="form-actions"><button className="button secondary" type="button" onClick={() => setShowSpamCreate(false)}>Cancel</button><button className="button" type="button" onClick={createSpamEntry} disabled={busy === "spam-create"}><Plus size={16} aria-hidden="true" /><span>Add Block</span></button></div>
+                </div> : null}
 
                 <div className="client-form-grid settings-section">
                   <input className="input" placeholder="Search blocked senders" value={spamSearch} onChange={(event) => setSpamSearch(event.target.value)} />
@@ -4420,11 +4586,11 @@ export function SettingsWorkspace() {
                   <span className="field-help">Upcoming event requests inside this window are marked for attention in Operations Center.</span>
                 </label>
                 <label className="full-span">
-                  Decision escalation recipients
-                  <select className="input" multiple value={operationsDraft.decisionEscalationUserIds} onChange={(event) => setOperationsDraft((current) => ({ ...current, decisionEscalationUserIds: Array.from(event.target.selectedOptions, (option) => option.value) }))} size={Math.min(6, Math.max(3, users.filter((user) => user.isActive !== false).length))}>
-                    {users.filter((user) => user.isActive !== false).map((user) => <option value={user.id} key={user.id}>{user.firstName} {user.lastName} · {user.email}</option>)}
-                  </select>
-                  <span className="field-help">These active users receive escalations for overdue, unassigned, and at-risk project decisions. Hold Command or Control to select multiple users.</span>
+                  <span>Decision escalation recipients</span>
+                  <span className="field-help">Active users who receive overdue, unassigned, and at-risk decision escalations.</span>
+                  <span className="settings-check-picker">
+                    {users.filter((user) => user.isActive !== false).map((user) => <label className="checkbox-row" key={user.id}><input type="checkbox" checked={operationsDraft.decisionEscalationUserIds.includes(user.id)} onChange={(event) => setOperationsDraft((current) => ({ ...current, decisionEscalationUserIds: event.target.checked ? [...current.decisionEscalationUserIds, user.id] : current.decisionEscalationUserIds.filter((id) => id !== user.id) }))} />{user.firstName} {user.lastName}</label>)}
+                  </span>
                 </label>
                 <label className="checkbox-row full-span">
                   <input type="checkbox" checked={operationsDraft.decisionDailyDigestEnabled} onChange={(event) => setOperationsDraft((current) => ({ ...current, decisionDailyDigestEnabled: event.target.checked }))} />
@@ -4436,8 +4602,10 @@ export function SettingsWorkspace() {
                   <span className="field-help">Uses the organization default timezone.</span>
                 </label> : null}
               </div>
-              <div className="settings-actions">
-                <button className="button" type="button" onClick={saveOperationsSettings} disabled={busy === "operations-settings"}>Save Operations Settings</button>
+              <div className="settings-actions settings-save-bar">
+                <span className={operationsSettingsDirty ? "settings-dirty-status" : "muted"}>{operationsSettingsDirty ? "Unsaved changes" : "All changes saved"}</span>
+                {operationsSettingsDirty ? <button className="button secondary compact-button" type="button" onClick={() => operationsSettings && setOperationsDraft(operationsSettings)}>Discard</button> : null}
+                <button className="button" type="button" onClick={saveOperationsSettings} disabled={busy === "operations-settings" || !operationsSettingsDirty}>Save Operations Settings</button>
               </div>
             </section>
           ) : null}
@@ -4680,7 +4848,7 @@ export function SettingsWorkspace() {
 
                 <div className="settings-tabs security-settings-tabs settings-section" role="tablist" aria-label="Security settings areas">
                   {SECURITY_TABS.map((tab) => (
-                    <button className={securityTab === tab.key ? "active" : ""} key={tab.key} type="button" onClick={() => setSecurityTab(tab.key)} role="tab" aria-selected={securityTab === tab.key}>
+                    <button className={securityTab === tab.key ? "active" : ""} key={tab.key} type="button" onClick={() => selectSettingsTab(tab.key)} role="tab" aria-selected={securityTab === tab.key}>
                       {tab.label}
                     </button>
                   ))}
@@ -4788,7 +4956,9 @@ export function SettingsWorkspace() {
                       </div>
                     </div>
                     <div className="settings-actions security-module-actions">
-                      <button className="button" type="button" onClick={saveSecuritySettings} disabled={busy === "security-settings"}>
+                      <span className={securitySettingsDirty ? "settings-dirty-status" : "muted"}>{securitySettingsDirty ? "Unsaved changes" : "All changes saved"}</span>
+                      {securitySettingsDirty ? <button className="button secondary compact-button" type="button" onClick={() => securitySettings && setSecurityDraft(securitySettings)}>Discard</button> : null}
+                      <button className="button" type="button" onClick={saveSecuritySettings} disabled={busy === "security-settings" || !securitySettingsDirty}>
                         Save Access Settings
                       </button>
                     </div>
@@ -4853,7 +5023,9 @@ export function SettingsWorkspace() {
                     </div>
                     <p className="muted settings-section">Example production environment value: TURNSTILE_SECRET_KEY=your-cloudflare-secret. Save env:TURNSTILE_SECRET_KEY in this form.</p>
                     <div className="settings-actions">
-                      <button className="button" type="button" onClick={saveSecuritySettings} disabled={busy === "security-settings"}>
+                      <span className={securitySettingsDirty ? "settings-dirty-status" : "muted"}>{securitySettingsDirty ? "Unsaved changes" : "All changes saved"}</span>
+                      {securitySettingsDirty ? <button className="button secondary compact-button" type="button" onClick={() => securitySettings && setSecurityDraft(securitySettings)}>Discard</button> : null}
+                      <button className="button" type="button" onClick={saveSecuritySettings} disabled={busy === "security-settings" || !securitySettingsDirty}>
                         Save Bot Protection Settings
                       </button>
                     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Eye, Save, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { ArrowDown, ArrowUp, Eye, Plus, Save, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useBranding } from "@/components/providers/BrandingProvider";
 import { apiFetch } from "@/lib/api";
@@ -166,9 +166,11 @@ export function EventServicesConfigPanel() {
   const [serviceDraft, setServiceDraft] = useState<ServiceDraft>(blankServiceDraft);
   const [serviceEdits, setServiceEdits] = useState<Record<string, ServiceDraft>>({});
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
+  const [showServiceCreate, setShowServiceCreate] = useState(false);
   const [fieldDraft, setFieldDraft] = useState<FieldDraft>(blankFieldDraft);
   const [fieldEdits, setFieldEdits] = useState<Record<string, FieldDraft>>({});
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+  const [showFieldCreate, setShowFieldCreate] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -250,6 +252,7 @@ export function EventServicesConfigPanel() {
     try {
       await apiFetch("/event-services/services", { method: "POST", body: JSON.stringify(servicePayload(serviceDraft)) });
       setServiceDraft({ ...blankServiceDraft, sortOrder: nextServiceOrder + 10 });
+      setShowServiceCreate(false);
       setNotice("Event service added.");
       await loadConfig();
     } catch (caught) {
@@ -290,6 +293,7 @@ export function EventServicesConfigPanel() {
     try {
       await apiFetch("/event-services/form/fields", { method: "POST", body: JSON.stringify(fieldPayload(fieldDraft)) });
       setFieldDraft({ ...blankFieldDraft, sortOrder: nextFieldOrder + 10 });
+      setShowFieldCreate(false);
       setNotice("Event form field added.");
       await loadConfig();
     } catch (caught) {
@@ -484,15 +488,14 @@ export function EventServicesConfigPanel() {
             <button className="button" type="button" onClick={savePortalSettings} disabled={busy === "portal"}><Save size={15} /> Save Portal Settings</button>
           </div>
           <div className="nested-panel event-config-list-panel">
-            <h3>Services</h3>
-            <p className="muted">Manage the service choices shown on the public form and optional default specialist assignment.</p>
-            <div className="event-config-create-grid">
+            <div className="section-heading compact-heading"><div><h3>Services</h3><p className="muted">Public choices and default specialist assignment.</p></div><button className="button secondary compact-button" type="button" onClick={() => setShowServiceCreate((open) => !open)}><Plus size={15} /> Add Service</button></div>
+            {showServiceCreate ? <div className="event-config-create-grid settings-create-panel">
               <input className="input" placeholder="Service name" value={serviceDraft.name} onChange={(event) => setServiceDraft((current) => ({ ...current, name: event.target.value }))} />
               <input className="input" placeholder="Description" value={serviceDraft.description} onChange={(event) => setServiceDraft((current) => ({ ...current, description: event.target.value }))} />
               <input className="input" placeholder="Icon label" value={serviceDraft.icon} onChange={(event) => setServiceDraft((current) => ({ ...current, icon: event.target.value }))} />
               <input className="input" type="number" min={0} value={serviceDraft.sortOrder} onChange={(event) => setServiceDraft((current) => ({ ...current, sortOrder: Number(event.target.value) }))} />
-              <button className="button secondary" type="button" onClick={createService} disabled={busy === "service"}>Add Service</button>
-            </div>
+              <div className="button-row"><button className="button secondary" type="button" onClick={() => setShowServiceCreate(false)}>Cancel</button><button className="button" type="button" onClick={createService} disabled={busy === "service"}>Add Service</button></div>
+            </div> : null}
             <div className="event-config-list">
               {services.map((service) => {
                 const draft = serviceEdits[service.id] ?? serviceToDraft(service);
@@ -545,9 +548,8 @@ export function EventServicesConfigPanel() {
             </div>
           </div>
           <div className="nested-panel event-config-list-panel">
-            <h3>Form Fields</h3>
-            <p className="muted">Add fields, options, help text, and ordering. Deactivated fields stay saved but are hidden publicly.</p>
-            <div className="event-config-create-grid field-create">
+            <div className="section-heading compact-heading"><div><h3>Form Fields</h3><p className="muted">Fields, options, help text, and ordering.</p></div><button className="button secondary compact-button" type="button" onClick={() => setShowFieldCreate((open) => !open)}><Plus size={15} /> Add Field</button></div>
+            {showFieldCreate ? <div className="event-config-create-grid field-create settings-create-panel">
               <input className="input" placeholder="Label" value={fieldDraft.label} onChange={(event) => setFieldDraft((current) => ({ ...current, label: event.target.value, fieldKey: current.fieldKey || makeFieldKey(event.target.value) }))} />
               <input className="input" placeholder="fieldKey" value={fieldDraft.fieldKey} onChange={(event) => setFieldDraft((current) => ({ ...current, fieldKey: event.target.value }))} />
               <select className="input" value={fieldDraft.type} onChange={(event) => setFieldDraft((current) => ({ ...current, type: event.target.value }))}>
@@ -558,8 +560,8 @@ export function EventServicesConfigPanel() {
               <input className="input" placeholder="Help text" value={fieldDraft.helpText} onChange={(event) => setFieldDraft((current) => ({ ...current, helpText: event.target.value }))} />
               {optionFieldTypes.has(fieldDraft.type) ? <textarea className="input" placeholder="Options, one per line" value={fieldDraft.optionsText} onChange={(event) => setFieldDraft((current) => ({ ...current, optionsText: event.target.value }))} /> : null}
               <label className="checkbox-row"><input type="checkbox" checked={fieldDraft.isRequired} onChange={(event) => setFieldDraft((current) => ({ ...current, isRequired: event.target.checked }))} /> Required</label>
-              <button className="button secondary" type="button" onClick={createField} disabled={busy === "field"}>Add Field</button>
-            </div>
+              <div className="button-row"><button className="button secondary" type="button" onClick={() => setShowFieldCreate(false)}>Cancel</button><button className="button" type="button" onClick={createField} disabled={busy === "field"}>Add Field</button></div>
+            </div> : null}
             <div className="event-config-list">
               {form?.fields.map((field) => {
                 const draft = fieldEdits[field.id] ?? fieldToDraft(field);
