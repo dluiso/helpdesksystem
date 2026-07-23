@@ -45,7 +45,8 @@ async function bootstrap() {
   );
 
   const port = Number(config.get<string>("PORT") ?? 4000);
-  await app.listen(port, "0.0.0.0");
+  const bindHost = config.get<string>("API_BIND_HOST") ?? "0.0.0.0";
+  await app.listen(port, bindHost);
 }
 
 void bootstrap();
