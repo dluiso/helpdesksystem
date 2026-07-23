@@ -15540,9 +15540,51 @@ button.operations-summary-card {
 
 /* Keep the Settings workspace overrides after legacy responsive rules. */
 .settings-page .settings-layout { grid-template-columns: 252px minmax(0, 1fr); gap: 12px; }
-.settings-page .settings-nav { top: 76px; max-height: calc(100vh - 90px); gap: 0; border-radius: 7px; overflow: hidden; }
-.settings-page .settings-nav > .settings-nav-groups { display: grid; min-width: 0; }
-.settings-page .settings-nav .settings-nav-group { display: grid; min-width: 0; }
+.settings-page .settings-nav {
+  top: 76px;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: calc(100vh - 90px);
+  height: calc(100dvh - 90px);
+  max-height: calc(100vh - 90px);
+  max-height: calc(100dvh - 90px);
+  gap: 0;
+  border-radius: 7px;
+  overflow: hidden;
+}
+.settings-page .settings-nav > .settings-nav-groups {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px 3px 8px 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+.settings-page .settings-nav > .settings-nav-groups::-webkit-scrollbar { width: 8px; }
+.settings-page .settings-nav > .settings-nav-groups::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text-muted) 42%, transparent);
+  background-clip: padding-box;
+}
+.settings-page .settings-nav .settings-nav-group { display: grid; min-width: 0; gap: 2px; }
+.settings-page .settings-nav .settings-nav-group > span {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  margin: 3px 0 1px;
+  padding: 4px 8px;
+  border-left: 2px solid color-mix(in srgb, var(--brand-primary) 62%, transparent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--brand-primary) 8%, var(--surface-raised));
+  color: color-mix(in srgb, var(--brand-primary) 70%, var(--text));
+  font-size: 9px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+.settings-page .settings-nav .settings-nav-group:first-child > span { margin-top: 0; }
 .settings-page .settings-nav .settings-nav-group > button { min-height: 31px; padding: 5px 9px; font-size: 12px; }
 .settings-page .panel { padding: 14px; border-radius: 7px; }
 .settings-page .stack-row { min-height: 44px; padding: 9px 10px; }
@@ -15554,7 +15596,7 @@ button.operations-summary-card {
 
 @media (max-width: 900px) {
   .settings-page .settings-layout { grid-template-columns: 1fr; }
-  .settings-page .settings-nav { position: static; display: grid; min-width: 0; max-height: none; }
+  .settings-page .settings-nav { position: static; display: grid; grid-template-rows: auto auto; min-width: 0; height: auto; max-height: none; }
   .settings-page .settings-nav > .settings-nav-groups { display: flex; min-width: 0; padding-bottom: 3px; overflow-x: auto; overflow-y: hidden; }
   .settings-page .settings-nav .settings-nav-group { display: flex; min-width: max-content; }
   .settings-page .settings-nav .settings-nav-group > span { display: none; }

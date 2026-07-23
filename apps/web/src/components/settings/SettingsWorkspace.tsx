@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown, ChevronRight, Download, Pencil, Plus, RefreshCcw, RotateCw, Search, TestTube2, Trash2, Upload, X } from "lucide-react";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { EventServicesConfigPanel } from "@/components/settings/EventServicesConfigPanel";
 import { KnowledgeConfigPanel } from "@/components/settings/KnowledgeConfigPanel";
 import { RmmConfigPanel } from "@/components/settings/RmmConfigPanel";
@@ -1192,6 +1192,7 @@ export function SettingsWorkspace() {
   const [busy, setBusy] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<ActiveSection>("general");
   const [settingsSearch, setSettingsSearch] = useState("");
+  const settingsNavGroupsRef = useRef<HTMLDivElement>(null);
   const [generalTab, setGeneralTab] = useState<GeneralTab>("identity");
   const [securityTab, setSecurityTab] = useState<SecurityTab>("access");
   const [notice, setNotice] = useState<string | null>(null);
@@ -2775,6 +2776,20 @@ export function SettingsWorkspace() {
   }, [hasUnsavedSettings]);
 
   useEffect(() => {
+    const container = settingsNavGroupsRef.current;
+    const activeButton = container?.querySelector<HTMLButtonElement>("button.active");
+    if (!container || !activeButton) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const buttonRect = activeButton.getBoundingClientRect();
+    if (buttonRect.top < containerRect.top) {
+      container.scrollBy({ top: buttonRect.top - containerRect.top - 8, behavior: "smooth" });
+    } else if (buttonRect.bottom > containerRect.bottom) {
+      container.scrollBy({ top: buttonRect.bottom - containerRect.bottom + 8, behavior: "smooth" });
+    }
+  }, [activeSection]);
+
+  useEffect(() => {
     if (activeSection !== "systemHealth") return;
     loadSystemHealth(systemHealthRange).catch(() => setError("Unable to load system health information."));
   }, [activeSection, systemHealthRange]);
@@ -2848,12 +2863,18 @@ export function SettingsWorkspace() {
             <input value={settingsSearch} onChange={(event) => setSettingsSearch(event.target.value)} placeholder="Find a setting" aria-label="Find a setting" />
             {settingsSearch ? <button type="button" aria-label="Clear settings search" onClick={() => setSettingsSearch("")}><X size={14} /></button> : null}
           </label>
-          <div className="settings-nav-groups">
+          <div className="settings-nav-groups" ref={settingsNavGroupsRef}>
             {filteredSettingsGroups.map((group) => (
               <div className="settings-nav-group" key={group.label}>
                 <span>{group.label}</span>
                 {group.sections.map((section) => (
-                  <button className={activeSection === section.key ? "active" : ""} type="button" key={section.key} onClick={() => selectSettingsSection(section.key)}>
+                  <button
+                    className={activeSection === section.key ? "active" : ""}
+                    type="button"
+                    key={section.key}
+                    onClick={() => selectSettingsSection(section.key)}
+                    aria-current={activeSection === section.key ? "page" : undefined}
+                  >
                     {section.label}
                   </button>
                 ))}
