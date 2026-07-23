@@ -1228,6 +1228,8 @@ model TicketMessage {
   mergedFromTicketNumber String?
   mergedFromTicketSubject String?
   hasAttachments        Boolean           @default(false)
+  attachmentsProcessedAt DateTime?
+  attachmentImportFailures Json            @default("[]")
   createdAt             DateTime          @default(now())
   ticket                Ticket            @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   authorUser            User?             @relation("UserAuthoredMessages", fields: [authorUserId], references: [id], onDelete: SetNull)

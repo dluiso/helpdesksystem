@@ -64,6 +64,16 @@ interface TicketMessage {
   authorUser: User | null;
   authorContact: { firstName: string; lastName: string; email: string } | null;
   attachments: TicketAttachment[];
+  attachmentImportFailures: AttachmentImportFailure[];
+}
+
+interface AttachmentImportFailure {
+  attachmentId: string;
+  originalFilename: string;
+  mimeType: string;
+  sizeBytes: number;
+  reason: string;
+  rejectedAt: string;
 }
 
 interface MergedTicketReference {
@@ -785,6 +795,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const inlineAttachments = ticket.attachments.filter((attachment) => isInlineEmailAsset(attachment));
   const uniqueInlineAttachments = dedupeInlineAttachments(inlineAttachments);
   const downloadableAttachmentCount = ticket.attachments.filter((attachment) => attachment.scanStatus !== "BLOCKED" && attachment.scanStatus !== "SUSPICIOUS").length;
+  const attachmentImportFailures = ticket.messages.flatMap((message) => message.attachmentImportFailures ?? []);
   const ticketRef = ticket.ticketNumber;
   const downloadAllUrl = `${apiBaseUrl}/tickets/${ticketRef}/attachments/download-all`;
   const clientLabel = ticket.client?.name ?? (ticket.senderDomain ? `Unmapped: ${ticket.senderDomain}` : "Unassigned");
@@ -1099,6 +1110,17 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
               </a>
             ) : null}
             <MessageAttachments ticketId={ticketRef} attachments={realAttachments} variant="sidebar" />
+            {attachmentImportFailures.length > 0 ? (
+              <div className="ticket-rejected-attachments" role="status">
+                <strong><ShieldAlert size={14} aria-hidden="true" /> Rejected email files</strong>
+                {attachmentImportFailures.map((failure) => (
+                  <div key={`${failure.attachmentId}-${failure.rejectedAt}`}>
+                    <span title={failure.originalFilename}>{failure.originalFilename}</span>
+                    <small>{failure.reason}</small>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             {inlineAttachments.length > 0 ? (
               <details className="inline-attachments-summary"><summary>Inline email images <span>{uniqueInlineAttachments.length} unique · {inlineAttachments.length} total</span></summary><MessageAttachments ticketId={ticketRef} attachments={uniqueInlineAttachments} variant="sidebar" /></details>
             ) : null}

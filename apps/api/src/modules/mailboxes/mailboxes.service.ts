@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Mailbox, MessageDirection, MessageVisibility } from "@prisma/client";
+import { Mailbox, MessageDirection, MessageVisibility, Prisma } from "@prisma/client";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { PrismaService } from "../prisma/prisma.service";
 import { SpamManagementService } from "../spam-management/spam-management.service";
@@ -38,6 +38,15 @@ interface EmailOperationalSchedule {
   endTime: string;
   skipUsFederalHolidays: boolean;
   customClosedDates: string[];
+}
+
+interface AttachmentImportFailure {
+  attachmentId: string;
+  originalFilename: string;
+  mimeType: string;
+  sizeBytes: number;
+  reason: string;
+  rejectedAt: string;
 }
 
 const DEFAULT_EMAIL_OPERATIONAL_SCHEDULE: EmailOperationalSchedule = {
@@ -421,12 +430,24 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
             ...(message.internetMessageId ? [{ emailInternetMessageId: message.internetMessageId }] : [])
           ]
         },
-        select: { id: true, ticketId: true }
+        select: {
+          id: true,
+          ticketId: true,
+          attachmentsProcessedAt: true,
+          attachmentImportFailures: true
+        }
       });
 
       if (exists) {
-        if (this.shouldFetchInboundAttachments(providerName, message)) {
-          const stored = await this.storeInboundAttachments(provider, mailbox, message.providerMessageId, exists.ticketId, exists.id);
+        if (this.shouldFetchInboundAttachments(providerName, { ...message, attachmentsProcessedAt: exists.attachmentsProcessedAt })) {
+          const stored = await this.storeInboundAttachments(
+            provider,
+            mailbox,
+            message.providerMessageId,
+            exists.ticketId,
+            exists.id,
+            exists.attachmentImportFailures
+          );
           attachmentBackfilled += stored.stored;
           attachmentBackfillFailures += stored.failed;
           attachmentBackfillErrors.push(...stored.errors);
@@ -676,7 +697,8 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
     mailbox: Mailbox,
     providerMessageId: string,
     ticketId: string,
-    ticketMessageId: string
+    ticketMessageId: string,
+    existingFailures: unknown = []
   ) {
     let attachments;
     try {
@@ -697,9 +719,12 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
     let stored = 0;
     let failed = 0;
     const errors: string[] = [];
+    let hasTransientFailure = false;
+    const importFailures = this.normalizeAttachmentImportFailures(existingFailures);
+    const rejectedAttachmentIds = new Set(importFailures.map((failure) => failure.attachmentId));
 
     for (const attachment of attachments) {
-      if (!attachment.contentBytes) {
+      if (!attachment.contentBytes || rejectedAttachmentIds.has(attachment.id)) {
         continue;
       }
 
@@ -722,23 +747,47 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
         const message = `Unable to store attachment ${attachment.originalFilename} from message ${providerMessageId}: ${this.errorMessage(error)}`;
         errors.push(message);
         this.logger.warn(message);
+        if (error instanceof BadRequestException) {
+          importFailures.push({
+            attachmentId: attachment.id,
+            originalFilename: attachment.originalFilename,
+            mimeType: attachment.mimeType,
+            sizeBytes: attachment.sizeBytes,
+            reason: this.errorMessage(error),
+            rejectedAt: new Date().toISOString()
+          });
+          rejectedAttachmentIds.add(attachment.id);
+        } else {
+          hasTransientFailure = true;
+        }
       }
     }
 
-    if (stored > 0) {
-      await this.prisma.ticketMessage.update({
-        where: { id: ticketMessageId },
-        data: { hasAttachments: true }
-      });
-    }
+    await this.prisma.ticketMessage.update({
+      where: { id: ticketMessageId },
+      data: {
+        hasAttachments: attachments.length > 0 ? true : undefined,
+        attachmentImportFailures: importFailures as unknown as Prisma.InputJsonValue,
+        attachmentsProcessedAt: hasTransientFailure ? undefined : new Date()
+      }
+    });
 
     return { stored, failed, errors };
   }
 
   private shouldFetchInboundAttachments(
     providerName: "mock" | "microsoft365",
-    message: { hasAttachments?: boolean; bodyHtml?: string | null; bodyText?: string | null }
+    message: {
+      hasAttachments?: boolean;
+      bodyHtml?: string | null;
+      bodyText?: string | null;
+      attachmentsProcessedAt?: Date | string | null;
+    }
   ) {
+    if (message.attachmentsProcessedAt) {
+      return false;
+    }
+
     if (message.hasAttachments) {
       return true;
     }
@@ -758,6 +807,7 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
     const baseWhere = {
       direction: MessageDirection.INBOUND,
       emailMessageId: { not: null },
+      attachmentsProcessedAt: null,
       ticket: {
         organizationId: mailbox.organizationId,
         mailboxId: mailbox.id,
@@ -778,7 +828,8 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
       select: {
         id: true,
         ticketId: true,
-        emailMessageId: true
+        emailMessageId: true,
+        attachmentImportFailures: true
       },
       orderBy: { createdAt: "desc" },
       take: options.broad ? 200 : 100
@@ -789,7 +840,14 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
 
     for (const message of candidates) {
       if (message.emailMessageId) {
-        const stored = await this.storeInboundAttachments(provider, mailbox, message.emailMessageId, message.ticketId, message.id);
+        const stored = await this.storeInboundAttachments(
+          provider,
+          mailbox,
+          message.emailMessageId,
+          message.ticketId,
+          message.id,
+          message.attachmentImportFailures
+        );
         storedCount += stored.stored;
         failures += stored.failed;
         errors.push(...stored.errors);
@@ -797,6 +855,27 @@ export class MailboxesService implements OnModuleInit, OnModuleDestroy {
     }
 
     return { stored: storedCount, failed: failures, errors };
+  }
+
+  private normalizeAttachmentImportFailures(value: unknown): AttachmentImportFailure[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value.filter((item): item is AttachmentImportFailure => {
+      if (!item || typeof item !== "object") {
+        return false;
+      }
+      const failure = item as Partial<AttachmentImportFailure>;
+      return (
+        typeof failure.attachmentId === "string" &&
+        typeof failure.originalFilename === "string" &&
+        typeof failure.mimeType === "string" &&
+        typeof failure.sizeBytes === "number" &&
+        typeof failure.reason === "string" &&
+        typeof failure.rejectedAt === "string"
+      );
+    });
   }
 
   private errorMessage(error: unknown) {

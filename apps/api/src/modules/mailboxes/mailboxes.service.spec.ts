@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { MailboxesService } from "./mailboxes.service";
 
 const user = {
@@ -435,8 +436,104 @@ describe("MailboxesService", () => {
     );
     expect(prisma.ticketMessage.update).toHaveBeenCalledWith({
       where: { id: "message-1" },
-      data: { hasAttachments: true }
+      data: {
+        hasAttachments: true,
+        attachmentImportFailures: [],
+        attachmentsProcessedAt: expect.any(Date)
+      }
     });
+  });
+
+  it("records policy-rejected attachments and marks the provider message as processed", async () => {
+    const prisma = {
+      ticketMessage: {
+        update: jest.fn()
+      }
+    };
+    const ticketAttachmentsService = {
+      createInboundEmailAttachment: jest.fn().mockRejectedValue(new BadRequestException("Attachment exceeds the 25 MB limit."))
+    };
+    const provider = {
+      getMessageAttachments: jest.fn().mockResolvedValue([
+        {
+          id: "graph-attachment-too-large",
+          originalFilename: "large-poster.png",
+          mimeType: "image/png",
+          sizeBytes: 30 * 1024 * 1024,
+          contentBytes: Buffer.from("oversized"),
+          isInline: false,
+          contentId: null
+        }
+      ])
+    };
+    const service = new MailboxesService(
+      prisma as never,
+      { get: jest.fn() } as never,
+      {} as never,
+      ticketAttachmentsService as never,
+      {} as never,
+      {} as never,
+      {} as never
+    );
+
+    await expect(
+      (
+        service as unknown as {
+          storeInboundAttachments: (
+            provider: unknown,
+            mailbox: unknown,
+            providerMessageId: string,
+            ticketId: string,
+            ticketMessageId: string
+          ) => Promise<{ stored: number; failed: number; errors: string[] }>;
+        }
+      ).storeInboundAttachments(
+        provider,
+        {
+          id: "mailbox-1",
+          emailAddress: "support@example.org",
+          connectionMode: "GRAPH_DIRECT",
+          tenantId: "tenant-1",
+          microsoftClientId: "client-1",
+          encryptedClientSecretReference: "env:MICROSOFT_CLIENT_SECRET"
+        },
+        "graph-message-1",
+        "ticket-1",
+        "message-1"
+      )
+    ).resolves.toEqual({
+      stored: 0,
+      failed: 1,
+      errors: [expect.stringContaining("Attachment exceeds the 25 MB limit.")]
+    });
+
+    expect(prisma.ticketMessage.update).toHaveBeenCalledWith({
+      where: { id: "message-1" },
+      data: {
+        hasAttachments: true,
+        attachmentImportFailures: [
+          expect.objectContaining({
+            attachmentId: "graph-attachment-too-large",
+            originalFilename: "large-poster.png",
+            mimeType: "image/png",
+            sizeBytes: 30 * 1024 * 1024,
+            reason: "Attachment exceeds the 25 MB limit.",
+            rejectedAt: expect.any(String)
+          })
+        ],
+        attachmentsProcessedAt: expect.any(Date)
+      }
+    });
+    expect(
+      (
+        service as unknown as {
+          shouldFetchInboundAttachments: (
+            providerName: "microsoft365",
+            message: { attachmentsProcessedAt: Date }
+          ) => boolean;
+        }
+      ).shouldFetchInboundAttachments("microsoft365", { attachmentsProcessedAt: new Date() })
+    ).toBe(false);
   });
 
   it("runs broad attachment recovery for existing Microsoft 365 messages after manual sync returns", async () => {
