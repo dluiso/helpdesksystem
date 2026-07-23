@@ -962,8 +962,16 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
             {sideTab === "DETAILS" ? <div className="ticket-rail-section">
             <h3>Ticket Details</h3>
             <dl className="detail-list">
-              <div><dt>Status</dt><dd><span className={`status-pill ${statusClass(ticket.status)}`} style={ticketStatusStyle(ticket, ticketStatuses)}>{ticketStatusName(ticket, ticketStatuses)}</span></dd></div>
-              <div><dt>Priority</dt><dd>{label(ticket.priority)}</dd></div>
+              <div><dt>Status</dt><dd>
+                {canChangeStatus && !isMergedTicket && statusOptions.length ? <select className="ticket-detail-state-select" style={ticketStatusStyle(ticket, ticketStatuses)} value={currentStatusDefinition?.id ?? ""} onChange={(event) => void updateTicketState({ statusDefinitionId: event.target.value })} disabled={toolBusy === "STATE"} aria-label="Ticket details status">
+                  {statusOptions.map((status) => <option value={status.id} key={status.id}>{status.name}</option>)}
+                </select> : <span className={`status-pill ${statusClass(ticket.status)}`} style={ticketStatusStyle(ticket, ticketStatuses)}>{ticketStatusName(ticket, ticketStatuses)}</span>}
+              </dd></div>
+              <div><dt>Priority</dt><dd>
+                {canUpdate && !isMergedTicket ? <select className={`ticket-detail-state-select ${priorityClass(ticket.priority)}`} value={ticket.priority} onChange={(event) => void updateTicketState({ priority: event.target.value })} disabled={toolBusy === "STATE"} aria-label="Ticket details priority">
+                  {["LOW", "NORMAL", "HIGH", "URGENT", "CRITICAL"].map((priority) => <option value={priority} key={priority}>{label(priority)}</option>)}
+                </select> : label(ticket.priority)}
+              </dd></div>
               <div><dt>Target date</dt><dd>{ticket.targetDate ? new Date(ticket.targetDate).toLocaleDateString() : "Not planned"}</dd></div>
               <div><dt>Source</dt><dd>{label(ticket.source)}</dd></div>
               <div><dt>Sender</dt><dd className="ticket-detail-email" title={ticket.senderEmail ?? undefined}>{ticket.senderEmail ?? "Not set"}</dd></div>

@@ -15210,6 +15210,26 @@ button.operations-summary-card {
 .ticket-header-priority.ticket-priority-urgent { background-color: var(--pill-reopened-bg); color: var(--pill-reopened-text); }
 .ticket-header-priority.ticket-priority-critical { background-color: var(--pill-critical-bg); color: var(--pill-critical-text); }
 
+.ticket-detail-state-select {
+  width: 100%;
+  min-width: 0;
+  min-height: 28px;
+  padding: 4px 24px 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  color: var(--text);
+  background-color: var(--surface-subtle);
+  background-clip: padding-box;
+  font-size: 11px;
+  font-weight: 800;
+}
+.ticket-detail-state-select.ticket-priority-low { background-color: var(--control-muted); color: var(--text-muted); }
+.ticket-detail-state-select.ticket-priority-normal { background-color: var(--pill-open-bg); color: var(--pill-open-text); }
+.ticket-detail-state-select.ticket-priority-high { background-color: var(--pill-waiting-technician-bg); color: var(--pill-waiting-technician-text); }
+.ticket-detail-state-select.ticket-priority-urgent { background-color: var(--pill-reopened-bg); color: var(--pill-reopened-text); }
+.ticket-detail-state-select.ticket-priority-critical { background-color: var(--pill-critical-bg); color: var(--pill-critical-text); }
+.ticket-detail-state-select:disabled { cursor: wait; opacity: .68; }
+
 .ticket-detail-actions .icon-button,
 .ticket-composer-heading .icon-button,
 .ticket-tools-heading .icon-button,
