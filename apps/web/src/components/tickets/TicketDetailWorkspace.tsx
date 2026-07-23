@@ -6,6 +6,7 @@ import { ArrowDown, ArrowLeft, ArrowUp, BookOpen, ChevronDown, ChevronUp, Circle
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
+import { TicketStatusDefinition, ticketStatusDefinition, ticketStatusName, ticketStatusStyle } from "@/lib/ticket-statuses";
 import { AssignableTicketUser, TicketAssigneePicker } from "./TicketAssigneePicker";
 import { TicketReplyEditor } from "./TicketReplyEditor";
 
@@ -86,6 +87,8 @@ interface MergedTicketReference {
 
 interface MergeCandidate extends MergedTicketReference {
   status: string;
+  statusDefinitionId: string | null;
+  statusDefinition: TicketStatusDefinition | null;
   priority: string;
   createdAt: string;
   clientId: string | null;
@@ -223,6 +226,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [ccContacts, setCcContacts] = useState<Contact[]>([]);
   const [ticketTeams, setTicketTeams] = useState<TicketTeam[]>([]);
+  const [ticketStatuses, setTicketStatuses] = useState<TicketStatusDefinition[]>([]);
   const [externalSpecialists, setExternalSpecialists] = useState<ExternalSpecialist[]>([]);
   const [assignedUserIds, setAssignedUserIds] = useState<string[]>([]);
   const [assignedTeamId, setAssignedTeamId] = useState("");
@@ -303,10 +307,11 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
       if (ticketData.ticketNumber && ticketId !== ticketData.ticketNumber) {
         router.replace(`/tickets/${ticketData.ticketNumber}`);
       }
-      const [userData, teamData, externalData, authData] = await Promise.all([
+      const [userData, teamData, externalData, statusData, authData] = await Promise.all([
         apiFetch<AssignableTicketUser[]>("/tickets/assignment-options").catch(() => []),
         apiFetch<TicketTeam[]>("/ticket-teams").catch(() => []),
         apiFetch<ExternalSpecialist[]>("/external-specialists").catch(() => []),
+        apiFetch<TicketStatusDefinition[]>("/ticket-workflow/statuses").catch(() => []),
         apiFetch<{ user: CurrentUser }>("/auth/me")
       ]);
       setUsers(mergeUsers(userData, [
@@ -315,6 +320,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
         ...(ticketData.watchers ?? []).map((watcher) => watcher.user)
       ]));
       setTicketTeams(teamData);
+      setTicketStatuses(statusData);
       setExternalSpecialists(externalData);
       setCurrentUser(authData.user);
       void loadAiBrief(ticketData.ticketNumber, authData.user);
@@ -474,14 +480,14 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
     }
   }
 
-  async function updateTicketState(update: { status?: string; priority?: string }) {
+  async function updateTicketState(update: { status?: string; statusDefinitionId?: string; priority?: string }) {
     setToolBusy("STATE");
     setAssignmentNotice(null);
     setError(null);
     try {
       const updated = await apiFetch<Ticket>(`/tickets/${ticketId}/state`, { method: "PATCH", body: JSON.stringify(update) });
       setTicket(updated);
-      setAssignmentNotice(update.status ? "Status updated." : "Priority updated.");
+      setAssignmentNotice(update.status || update.statusDefinitionId ? "Status updated." : "Priority updated.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to update ticket.");
     } finally {
@@ -805,8 +811,14 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
   const canUseAi = permissionSet.has("ai_assistant.use") && permissionSet.has("tickets.view");
   const canReply = permissionSet.has("tickets.reply");
   const canChangeStatus = canUpdate || permissionSet.has("tickets.close") || permissionSet.has("tickets.reopen");
-  const statusOptions = ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_TECHNICIAN", "WAITING_ON_THIRD_PARTY", "RESOLVED", "CLOSED", "REOPENED", "CANCELLED"].filter((status) =>
-    status === ticket.status || (status === "CLOSED" ? permissionSet.has("tickets.close") : status === "REOPENED" ? permissionSet.has("tickets.reopen") : canUpdate)
+  const currentStatusDefinition = ticketStatusDefinition(ticket, ticketStatuses);
+  const selectableStatusCatalog = currentStatusDefinition && !ticketStatuses.some((status) => status.id === currentStatusDefinition.id)
+    ? [...ticketStatuses, currentStatusDefinition]
+    : ticketStatuses;
+  const statusOptions = selectableStatusCatalog.filter((status) =>
+    (status.isActive || status.id === currentStatusDefinition?.id)
+    && status.systemStatus !== "MERGED"
+    && (status.id === currentStatusDefinition?.id || (status.systemStatus === "CLOSED" ? permissionSet.has("tickets.close") : status.systemStatus === "REOPENED" ? permissionSet.has("tickets.reopen") : canUpdate))
   );
 
   return (
@@ -819,9 +831,9 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
           </Link>
           <div className="ticket-detail-title-row">
             <h1>#{ticket.ticketNumber}</h1>
-            {canChangeStatus && !isMergedTicket ? <select className={`ticket-header-select ticket-header-status ${statusClass(ticket.status)}`} value={ticket.status} onChange={(event) => void updateTicketState({ status: event.target.value })} disabled={toolBusy === "STATE"} aria-label="Ticket status">
-              {statusOptions.map((status) => <option value={status} key={status}>{label(status)}</option>)}
-            </select> : <span className={`status-pill ${statusClass(ticket.status)}`}>{label(ticket.status)}</span>}
+            {canChangeStatus && !isMergedTicket && statusOptions.length ? <select className="ticket-header-select ticket-header-status" style={ticketStatusStyle(ticket, ticketStatuses)} value={currentStatusDefinition?.id ?? ""} onChange={(event) => void updateTicketState({ statusDefinitionId: event.target.value })} disabled={toolBusy === "STATE"} aria-label="Ticket status">
+              {statusOptions.map((status) => <option value={status.id} key={status.id}>{status.name}</option>)}
+            </select> : <span className={`status-pill ${statusClass(ticket.status)}`} style={ticketStatusStyle(ticket, ticketStatuses)}>{ticketStatusName(ticket, ticketStatuses)}</span>}
           </div>
           <p className="ticket-detail-subject">{ticket.subject}</p>
           <div className="ticket-detail-meta-row">
@@ -950,7 +962,7 @@ export function TicketDetailWorkspace({ ticketId }: { ticketId: string }) {
             {sideTab === "DETAILS" ? <div className="ticket-rail-section">
             <h3>Ticket Details</h3>
             <dl className="detail-list">
-              <div><dt>Status</dt><dd><span className={`status-pill ${statusClass(ticket.status)}`}>{label(ticket.status)}</span></dd></div>
+              <div><dt>Status</dt><dd><span className={`status-pill ${statusClass(ticket.status)}`} style={ticketStatusStyle(ticket, ticketStatuses)}>{ticketStatusName(ticket, ticketStatuses)}</span></dd></div>
               <div><dt>Priority</dt><dd>{label(ticket.priority)}</dd></div>
               <div><dt>Target date</dt><dd>{ticket.targetDate ? new Date(ticket.targetDate).toLocaleDateString() : "Not planned"}</dd></div>
               <div><dt>Source</dt><dd>{label(ticket.source)}</dd></div>

@@ -15608,3 +15608,101 @@ button.operations-summary-card {
   .settings-page .notification-user-header { align-items: center; flex-direction: row; }
   .settings-page .notification-user-actions { justify-content: flex-end; }
 }
+
+.ticket-workflow-settings { display: grid; gap: 12px; }
+.ticket-workflow-settings .settings-subtabs { margin: 0; }
+.ticket-workflow-settings .settings-subtabs button { display: inline-flex; align-items: center; gap: 6px; }
+.ticket-workflow-section { display: grid; gap: 10px; min-width: 0; }
+.ticket-workflow-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 46px;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--line);
+}
+.ticket-workflow-toolbar > div { display: grid; gap: 2px; }
+.ticket-workflow-toolbar strong { font-size: 13px; }
+.ticket-workflow-toolbar span { color: var(--text-muted); font-size: 12px; }
+.ticket-workflow-form {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+}
+.ticket-workflow-form-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ticket-workflow-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ticket-workflow-form-grid > label { display: grid; align-content: start; gap: 5px; min-width: 0; }
+.ticket-workflow-form-grid > label > span,
+.ticket-workflow-source-statuses legend { color: var(--text); font-size: 12px; font-weight: 750; }
+.ticket-workflow-wide { grid-column: 1 / -1; }
+.ticket-workflow-form textarea { min-height: 72px; resize: vertical; }
+.ticket-status-color-control { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 7px; }
+.ticket-status-color-control input[type="color"] {
+  width: 46px;
+  height: 38px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-raised);
+}
+.ticket-status-name,
+.ticket-workflow-target { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ticket-status-name > div,
+.ticket-status-table td:nth-child(2),
+.ticket-status-table td:nth-child(3),
+.ticket-workflow-rule-table td:first-child { display: grid; gap: 2px; }
+.ticket-status-name small,
+.ticket-status-table td small,
+.ticket-workflow-rule-table td small { color: var(--text-muted); font-size: 10px; }
+.ticket-workflow-settings .table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.ticket-status-table { min-width: 680px; }
+.ticket-workflow-rule-table { min-width: 780px; }
+.ticket-workflow-settings .table-scroll table:not(.ticket-status-table):not(.ticket-workflow-rule-table) { min-width: 720px; }
+.ticket-status-table th:first-child,
+.ticket-status-table td:first-child { min-width: 160px; }
+.ticket-workflow-rule-table th:first-child,
+.ticket-workflow-rule-table td:first-child { min-width: 190px; }
+.ticket-workflow-rule-table th:nth-child(2),
+.ticket-workflow-rule-table td:nth-child(2) { min-width: 120px; }
+.ticket-status-swatch {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 28%, transparent);
+}
+.ticket-workflow-inactive { opacity: .66; }
+.ticket-workflow-source-statuses {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.ticket-workflow-source-statuses > span { color: var(--text-muted); font-size: 11px; }
+.ticket-workflow-source-statuses > div { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px 10px; }
+.ticket-workflow-source-statuses .checkbox-row { min-width: 0; font-size: 11px; }
+.ticket-workflow-rule-flags { display: flex; flex-wrap: wrap; gap: 16px; }
+button.ticket-workflow-toggle { border: 0; cursor: pointer; }
+
+@media (max-width: 1100px) {
+  .ticket-workflow-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ticket-workflow-source-statuses > div { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .ticket-workflow-toolbar { align-items: flex-start; flex-direction: column; }
+  .ticket-workflow-form-grid { grid-template-columns: 1fr; }
+  .ticket-workflow-wide { grid-column: auto; }
+  .ticket-workflow-source-statuses > div { grid-template-columns: 1fr; }
+}

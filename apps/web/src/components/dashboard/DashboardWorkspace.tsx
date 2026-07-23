@@ -30,6 +30,8 @@ interface DashboardTicket {
   ticketNumber: string;
   subject: string;
   status: string;
+  statusDefinitionId?: string | null;
+  statusDefinition?: { id: string; name: string; color: string } | null;
   priority: string;
   clientName: string;
   assignedTo: string;
@@ -49,7 +51,7 @@ interface DashboardStats {
     awaitingTechnician: number;
     noRecentUpdate: number;
   };
-  byStatus: Array<{ status: string; count: number; filter: { statuses: string[] } }>;
+  byStatus: Array<{ status: string; statusDefinitionId: string | null; label: string; color: string | null; count: number; filter: { statuses?: string[]; statusDefinitionIds?: string[] } }>;
   byPriority: Array<{ priority: string; count: number; filter: { priority: string } }>;
   bySource: Array<{ source: string; count: number; filter: { source: string } }>;
   byClient: Array<{ clientId: string | null; name: string; count: number; filter: { clientId?: string } }>;
@@ -691,7 +693,7 @@ function InsightTable({ title, subtitle, tickets }: { title: string; subtitle: s
                 <small>{ticket.clientName}</small>
                 <small>Updated {formatDate(ticket.updatedAt)}</small>
               </span>
-              <span className={`status-pill ticket-status-${ticket.status.toLowerCase().replaceAll("_", "-")}`}>{label(ticket.status)}</span>
+              <span className="status-pill" style={ticket.statusDefinition ? { color: ticket.statusDefinition.color, borderColor: `${ticket.statusDefinition.color}55`, backgroundColor: `${ticket.statusDefinition.color}18` } : undefined}>{ticket.statusDefinition?.name ?? label(ticket.status)}</span>
             </Link>
           ))
         ) : (
@@ -977,7 +979,7 @@ export function DashboardWorkspace() {
     return null;
   }
 
-  const statusItems = stats.byStatus.map((item) => ({ label: label(item.status), count: item.count, href: ticketHref({ statuses: item.filter.statuses }) }));
+  const statusItems = stats.byStatus.map((item) => ({ label: item.label, count: item.count, href: ticketHref(item.filter) }));
   const priorityItems = stats.byPriority.map((item) => ({ label: label(item.priority), count: item.count, href: ticketHref({ priority: item.filter.priority }) }));
   const sourceItems = stats.bySource.map((item) => ({ label: label(item.source), count: item.count, href: ticketHref({ source: item.filter.source }) }));
   const clientItems = stats.byClient.map((item) => ({ label: item.name, count: item.count, href: item.clientId ? ticketHref({ clientId: item.clientId }) : undefined }));

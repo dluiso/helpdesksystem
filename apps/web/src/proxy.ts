@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const publicPaths = ["/login", "/reset-password", "/public/event-services", "/public/support"];
+const publicPaths = ["/api", "/login", "/reset-password", "/public/event-services", "/public/support"];
 const sessionCookieName = process.env.SESSION_COOKIE_NAME ?? "avidity_session";
 
 export function proxy(request: NextRequest) {

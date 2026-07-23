@@ -360,7 +360,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
         estimatedTotal
       },
       activity: this.buildActivity(tickets, range, query.groupBy ?? "day"),
-      byStatus: this.groupBy(tickets, (ticket) => ticket.status),
+      byStatus: this.groupBy(tickets, (ticket) => ticket.statusDefinition?.name ?? this.label(ticket.status)),
       byPriority: this.groupBy(tickets, (ticket) => ticket.priority),
       bySource: this.groupBy(tickets, (ticket) => ticket.source),
       byClient: this.groupBy(tickets, (ticket) => ticket.client?.name ?? "Unmapped / no client").slice(0, 12),
@@ -620,7 +620,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       ticket.subject,
       ticket.clientName,
       ticket.requester,
-      ticket.status,
+      ticket.statusDefinition?.name ?? this.label(ticket.status),
       ticket.priority,
       ticket.source,
       ticket.assignedTo,
@@ -934,6 +934,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       ticketNumber: true,
       subject: true,
       status: true,
+      statusDefinition: { select: { id: true, name: true, color: true } },
       priority: true,
       source: true,
       senderEmail: true,
@@ -1235,7 +1236,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(7).text(ticket.subject, 110, y + 4, { width: 165, ellipsis: true });
       doc.fillColor("#64748b").font("Helvetica").fontSize(6).text(ticket.requester, 110, y + 14, { width: 165, ellipsis: true });
       doc.fillColor("#0f172a").font("Helvetica").fontSize(7).text(ticket.clientName, 282, y + 4, { width: 100, ellipsis: true });
-      doc.fillColor("#0f172a").font("Helvetica").fontSize(7).text(this.label(ticket.status), 390, y + 4, { width: 72, ellipsis: true });
+      doc.fillColor("#0f172a").font("Helvetica").fontSize(7).text(ticket.statusDefinition?.name ?? this.label(ticket.status), 390, y + 4, { width: 72, ellipsis: true });
       doc.fillColor("#0f172a").font("Helvetica").fontSize(7).text(ticket.assignedTo, 468, y + 4, { width: 94, ellipsis: true });
       doc.fillColor("#64748b").font("Helvetica").fontSize(6).text(this.formatShortDate(ticket.createdAt), 468, y + 14, { width: 94 });
       doc.y = y + rowHeight + 2;
@@ -1475,6 +1476,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       clientName: ticket.client?.name ?? "Unmapped / no client",
       requester,
       status: ticket.status,
+      statusDefinition: ticket.statusDefinition,
       priority: ticket.priority,
       source: ticket.source,
       assignedTo: ticket.assignedUser ? `${ticket.assignedUser.firstName} ${ticket.assignedUser.lastName}` : "Unassigned",

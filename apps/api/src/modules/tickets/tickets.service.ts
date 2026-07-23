@@ -1,5 +1,5 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { MessageDirection, MessageVisibility, Prisma, TicketPriority, TicketSource, TicketStatus } from "@prisma/client";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { MessageDirection, MessageVisibility, Prisma, TicketPriority, TicketSource, TicketStatus, TicketWorkflowTrigger } from "@prisma/client";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
 import { ContactsService } from "../contacts/contacts.service";
@@ -9,6 +9,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AutoRepliesService } from "../auto-replies/auto-replies.service";
 import { TicketRoutingService } from "../ticket-routing/ticket-routing.service";
+import { TicketWorkflowService } from "../ticket-workflow/ticket-workflow.service";
 import { HtmlSanitizerService } from "../../common/html/html-sanitizer.service";
 import { BulkUpdateTicketsDto } from "./dto/bulk-update-tickets.dto";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
@@ -49,7 +50,8 @@ export class TicketsService {
     private readonly mailDelivery: MailDeliveryService,
     private readonly notifications: NotificationsService,
     private readonly autoReplies: AutoRepliesService,
-    private readonly externalSpecialists: ExternalSpecialistsService = { ensure: async () => { throw new NotFoundException("External specialist was not found."); } } as unknown as ExternalSpecialistsService
+    private readonly externalSpecialists: ExternalSpecialistsService = { ensure: async () => { throw new NotFoundException("External specialist was not found."); } } as unknown as ExternalSpecialistsService,
+    @Optional() private readonly ticketWorkflow?: TicketWorkflowService
   ) {}
 
   async assignmentOptions(user: AuthenticatedUser) {
@@ -89,6 +91,7 @@ export class TicketsService {
         include: {
           client: true,
           contact: true,
+          statusDefinition: true,
           assignedUser: {
             select: {
               id: true,
@@ -201,6 +204,7 @@ export class TicketsService {
       awaitingTechnician,
       noRecentUpdate,
       byStatus,
+      statusDefinitions,
       byPriority,
       byClient,
       bySource,
@@ -228,10 +232,14 @@ export class TicketsService {
       this.prisma.ticket.count({ where: { ...baseWhere, status: TicketStatus.WAITING_ON_TECHNICIAN } }),
       this.prisma.ticket.count({ where: { ...activeWhere, updatedAt: { lt: staleCutoff } } }),
       this.prisma.ticket.groupBy({
-        by: ["status"],
+        by: ["status", "statusDefinitionId"],
         where: baseWhere,
         _count: { _all: true },
         orderBy: { _count: { status: "desc" } }
+      }),
+      this.prisma.ticketStatusDefinition.findMany({
+        where: { organizationId: user.organizationId },
+        select: { id: true, name: true, color: true }
       }),
       this.prisma.ticket.groupBy({
         by: ["priority"],
@@ -339,7 +347,17 @@ export class TicketsService {
         slaBreached: null,
         slaAtRisk: null
       },
-      byStatus: byStatus.map((item) => ({ status: item.status, count: item._count._all, filter: { statuses: [item.status] } })),
+      byStatus: byStatus.map((item) => {
+        const definition = statusDefinitions.find((status) => status.id === item.statusDefinitionId);
+        return {
+          status: item.status,
+          statusDefinitionId: item.statusDefinitionId,
+          label: definition?.name ?? this.humanizeTicketStatus(item.status),
+          color: definition?.color ?? null,
+          count: item._count._all,
+          filter: item.statusDefinitionId ? { statusDefinitionIds: [item.statusDefinitionId] } : { statuses: [item.status] }
+        };
+      }),
       byPriority: byPriority.map((item) => ({ priority: item.priority, count: item._count._all, filter: { priority: item.priority } })),
       bySource: bySource.map((item) => ({ source: item.source, count: item._count._all, filter: { source: item.source } })),
       byClient: byClient.map((item) => ({
@@ -373,6 +391,8 @@ export class TicketsService {
       ticketNumber: true,
       subject: true,
       status: true,
+      statusDefinitionId: true,
+      statusDefinition: { select: { id: true, name: true, color: true } },
       priority: true,
       createdAt: true,
       updatedAt: true,
@@ -647,6 +667,8 @@ export class TicketsService {
     ticketNumber: string;
     subject: string;
     status: TicketStatus;
+    statusDefinitionId: string | null;
+    statusDefinition: { id: string; name: string; color: string } | null;
     priority: TicketPriority;
     createdAt: Date;
     updatedAt: Date;
@@ -657,6 +679,8 @@ export class TicketsService {
       ticketNumber: ticket.ticketNumber,
       subject: ticket.subject,
       status: ticket.status,
+      statusDefinitionId: ticket.statusDefinitionId,
+      statusDefinition: ticket.statusDefinition,
       priority: ticket.priority,
       clientName: ticket.client?.name ?? "Unmapped / no client",
       assignedTo: ticket.assignedUser ? `${ticket.assignedUser.firstName} ${ticket.assignedUser.lastName}` : "Unassigned",
@@ -664,6 +688,10 @@ export class TicketsService {
       updatedAt: ticket.updatedAt.toISOString(),
       href: `/tickets/${ticket.ticketNumber}`
     };
+  }
+
+  private humanizeTicketStatus(status: TicketStatus) {
+    return status.toLowerCase().split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
   }
 
   async getById(ticketId: string, user: AuthenticatedUser) {
@@ -674,6 +702,7 @@ export class TicketsService {
       include: {
         client: true,
         contact: true,
+        statusDefinition: true,
         assignedUser: {
           select: {
             id: true,
@@ -761,6 +790,7 @@ export class TicketsService {
         include: {
           client: true,
           contact: true,
+          statusDefinition: true,
           assignedUser: {
             select: {
               id: true,
@@ -838,6 +868,7 @@ export class TicketsService {
   }
 
   async create(input: CreateTicketDto, user: AuthenticatedUser) {
+    const defaultStatus = await this.ticketWorkflow?.getDefaultStatus(user.organizationId);
     const ticket = await this.prisma.$transaction(async (tx) => {
       const ticketNumber = await this.nextTicketNumber(tx);
 
@@ -851,7 +882,8 @@ export class TicketsService {
           description: input.description ?? null,
           priority: input.priority ?? TicketPriority.NORMAL,
           source: input.source ?? TicketSource.MANUAL,
-          status: "NEW"
+          status: defaultStatus?.systemStatus ?? TicketStatus.NEW,
+          ...(defaultStatus ? { statusDefinitionId: defaultStatus.id } : {})
         }
       });
     });
@@ -1026,6 +1058,12 @@ export class TicketsService {
         return { ticket, message };
       });
 
+      await this.ticketWorkflow?.applyRules({
+        ticketId: result.ticket.id,
+        organizationId: input.organizationId,
+        trigger: TicketWorkflowTrigger.CUSTOMER_REPLIED,
+        priorClosedAt: targetTicket.closedAt
+      });
       await this.recordUnknownSenderDomain(input.organizationId, senderDomain, senderEmail, requester);
       await this.auditLogs.create({
         userId: null,
@@ -1046,6 +1084,7 @@ export class TicketsService {
       return result;
     }
 
+    const defaultStatus = await this.ticketWorkflow?.getDefaultStatus(input.organizationId);
     const result = await this.prisma.$transaction(async (tx) => {
       const ticketNumber = await this.nextTicketNumber(tx);
       const ticket = await tx.ticket.create({
@@ -1061,7 +1100,8 @@ export class TicketsService {
           description: bodyText,
           priority: TicketPriority.NORMAL,
           source: TicketSource.EMAIL,
-          status: "NEW",
+          status: defaultStatus?.systemStatus ?? TicketStatus.NEW,
+          ...(defaultStatus ? { statusDefinitionId: defaultStatus.id } : {}),
           lastCustomerResponseAt: new Date()
         }
       });
@@ -1138,7 +1178,16 @@ export class TicketsService {
   }
 
   async updateAssignment(ticketId: string, input: UpdateTicketAssignmentDto, user: AuthenticatedUser) {
-    if (input.status === TicketStatus.MERGED) {
+    const targetStatus = input.statusDefinitionId || input.status
+      ? await this.ticketWorkflow?.resolveTarget(user.organizationId, {
+          statusDefinitionId: input.statusDefinitionId,
+          systemStatus: input.status
+        })
+      : null;
+    if (input.statusDefinitionId && !targetStatus) {
+      throw new BadRequestException("Configurable ticket statuses are not available.");
+    }
+    if ((targetStatus?.systemStatus ?? input.status) === TicketStatus.MERGED) {
       throw new BadRequestException("Use the merge workflow to mark tickets as merged.");
     }
 
@@ -1154,10 +1203,27 @@ export class TicketsService {
         assignedGroupId: input.assignedTeamId ? null : input.assignedGroupId,
         assignedTeamId: input.assignedTeamId,
         priority: input.priority,
-        status: input.status
+        status: targetStatus ? undefined : input.status
       }
     });
+    if (targetStatus && this.ticketWorkflow) {
+      await this.ticketWorkflow.transitionTicket({
+        ticketId: internalTicketId,
+        organizationId: user.organizationId,
+        statusDefinitionId: targetStatus.id,
+        userId: user.id,
+        reason: "Assignment update"
+      });
+    }
     const addedAssignedUserIds = await this.syncTicketAssignees(internalTicketId, assignedUserIds, user.id);
+    if (assignedUserIds.length > 0) {
+      await this.ticketWorkflow?.applyRules({
+        ticketId: internalTicketId,
+        organizationId: user.organizationId,
+        trigger: TicketWorkflowTrigger.TICKET_ASSIGNED,
+        userId: user.id
+      });
+    }
 
     await Promise.all(
       addedAssignedUserIds.map((assignedUserId) =>
@@ -1209,16 +1275,26 @@ export class TicketsService {
   }
 
   async updateState(ticketId: string, input: UpdateTicketStateDto, user: AuthenticatedUser) {
-    if (input.status === TicketStatus.MERGED) {
+    const targetStatus = input.statusDefinitionId || input.status
+      ? await this.ticketWorkflow?.resolveTarget(user.organizationId, {
+          statusDefinitionId: input.statusDefinitionId,
+          systemStatus: input.status
+        })
+      : null;
+    if (input.statusDefinitionId && !targetStatus) {
+      throw new BadRequestException("Configurable ticket statuses are not available.");
+    }
+    const targetSystemStatus = targetStatus?.systemStatus ?? input.status;
+    if (targetSystemStatus === TicketStatus.MERGED) {
       throw new BadRequestException("Use the merge workflow to mark tickets as merged.");
     }
     if (input.priority !== undefined && !user.permissions.includes("tickets.update")) {
       throw new ForbiddenException("You do not have permission to update ticket priority.");
     }
-    if (input.status !== undefined) {
-      const requiredPermission = input.status === TicketStatus.CLOSED
+    if (targetSystemStatus !== undefined) {
+      const requiredPermission = targetSystemStatus === TicketStatus.CLOSED
         ? "tickets.close"
-        : input.status === TicketStatus.REOPENED
+        : targetSystemStatus === TicketStatus.REOPENED
           ? "tickets.reopen"
           : "tickets.update";
       if (!user.permissions.includes(requiredPermission)) {
@@ -1227,24 +1303,48 @@ export class TicketsService {
     }
 
     const existing = await this.ensureTicketExists(ticketId, user);
-    const activeStatus = input.status && this.activeStatusFilter().includes(input.status);
-    await this.prisma.ticket.update({
-      where: { id: existing.id },
-      data: {
-        status: input.status,
-        priority: input.priority,
-        ...(input.status === TicketStatus.CLOSED ? { closedAt: new Date() } : {}),
-        ...(input.status === TicketStatus.RESOLVED ? { resolvedAt: new Date() } : {}),
-        ...(activeStatus ? { closedAt: null, resolvedAt: null } : {}),
-        ...(input.status === TicketStatus.REOPENED ? { reopenedAt: new Date() } : {})
-      }
-    });
+    if (targetStatus && this.ticketWorkflow) {
+      await this.ticketWorkflow.transitionTicket({
+        ticketId: existing.id,
+        organizationId: user.organizationId,
+        statusDefinitionId: targetStatus.id,
+        userId: user.id,
+        reason: "Manual status update"
+      });
+    } else if (input.status !== undefined) {
+      const activeStatus = this.activeStatusFilter().includes(input.status);
+      await this.prisma.ticket.update({
+        where: { id: existing.id },
+        data: {
+          status: input.status,
+          ...(input.status === TicketStatus.CLOSED ? { closedAt: new Date() } : {}),
+          ...(input.status === TicketStatus.RESOLVED ? { resolvedAt: new Date() } : {}),
+          ...(activeStatus ? { closedAt: null, resolvedAt: null } : {}),
+          ...(input.status === TicketStatus.REOPENED ? { reopenedAt: new Date() } : {})
+        }
+      });
+    }
+    if (input.priority !== undefined) {
+      await this.prisma.ticket.update({ where: { id: existing.id }, data: { priority: input.priority } });
+    }
+    if (targetSystemStatus === TicketStatus.REOPENED) {
+      await this.ticketWorkflow?.applyRules({
+        ticketId: existing.id,
+        organizationId: user.organizationId,
+        trigger: TicketWorkflowTrigger.MANUAL_REOPEN,
+        userId: user.id
+      });
+    }
     await this.auditLogs.create({
       userId: user.id,
       entityType: "Ticket",
       entityId: existing.id,
       action: "ticket.state_updated",
-      metadata: { status: input.status ?? null, priority: input.priority ?? null }
+      metadata: {
+        status: targetSystemStatus ?? null,
+        statusDefinitionId: targetStatus?.id ?? input.statusDefinitionId ?? null,
+        priority: input.priority ?? null
+      }
     });
     return this.getById(existing.id, user);
   }
@@ -1255,8 +1355,38 @@ export class TicketsService {
       return { updated: 0 };
     }
 
-    if (input.status === TicketStatus.MERGED) {
+    const targetStatus = input.statusDefinitionId || input.status
+      ? await this.ticketWorkflow?.resolveTarget(user.organizationId, {
+          statusDefinitionId: input.statusDefinitionId,
+          systemStatus: input.status
+        })
+      : null;
+    if (input.statusDefinitionId && !targetStatus) {
+      throw new BadRequestException("Configurable ticket statuses are not available.");
+    }
+    if ((targetStatus?.systemStatus ?? input.status) === TicketStatus.MERGED) {
       throw new BadRequestException("Use the merge workflow to mark tickets as merged.");
+    }
+    const targetSystemStatus = targetStatus?.systemStatus ?? input.status;
+    if (targetSystemStatus) {
+      const requiredPermission = targetSystemStatus === TicketStatus.CLOSED
+        ? "tickets.close"
+        : targetSystemStatus === TicketStatus.REOPENED
+          ? "tickets.reopen"
+          : "tickets.update";
+      if (!user.permissions.includes(requiredPermission)) {
+        throw new ForbiddenException("You do not have permission to change ticket status.");
+      }
+    }
+    if (input.priority !== undefined && !user.permissions.includes("tickets.update")) {
+      throw new ForbiddenException("You do not have permission to update ticket priority.");
+    }
+    const updatesAssignment = input.assignedUserId !== undefined
+      || input.assignedUserIds !== undefined
+      || input.assignedGroupId !== undefined
+      || input.assignedTeamId !== undefined;
+    if (updatesAssignment && !user.permissions.includes("tickets.assign")) {
+      throw new ForbiddenException("You do not have permission to assign tickets.");
     }
 
     const existingTickets = await this.prisma.ticket.findMany({
@@ -1272,7 +1402,7 @@ export class TicketsService {
       where: { id: { in: existingIds }, organizationId: user.organizationId, deletedAt: null },
       data: {
         priority: input.priority,
-        status: input.status,
+        status: targetStatus ? undefined : input.status,
         assignedUserId: primaryAssignedUserId,
         assignedGroupId: input.assignedTeamId ? null : input.assignedGroupId,
         assignedTeamId: input.assignedTeamId,
@@ -1283,11 +1413,28 @@ export class TicketsService {
 
     await Promise.all(
       existingTickets.map(async (ticket) => {
+        if (targetStatus && this.ticketWorkflow) {
+          await this.ticketWorkflow.transitionTicket({
+            ticketId: ticket.id,
+            organizationId: user.organizationId,
+            statusDefinitionId: targetStatus.id,
+            userId: user.id,
+            reason: "Bulk status update"
+          });
+        }
         if (input.assignedUserIds !== undefined || input.assignedUserId !== undefined) {
           const addedAssignedUserIds = await this.syncTicketAssignees(ticket.id, assignedUserIds, user.id);
           await Promise.all(addedAssignedUserIds.map((assignedUserId) =>
             this.addWatcherAndNotify(ticket.id, assignedUserId, user.id, "Bulk assignment", `Ticket assigned: ${ticket.ticketNumber}`, "ticketAssignedToMe")
           ));
+          if (assignedUserIds.length > 0) {
+            await this.ticketWorkflow?.applyRules({
+              ticketId: ticket.id,
+              organizationId: user.organizationId,
+              trigger: TicketWorkflowTrigger.TICKET_ASSIGNED,
+              userId: user.id
+            });
+          }
         }
         if (input.assignedGroupId) {
           await this.notifyGroupMembers(ticket.id, input.assignedGroupId, user.id, "Bulk group assignment", `Ticket assigned to your group: ${ticket.ticketNumber}`);
@@ -1305,7 +1452,8 @@ export class TicketsService {
       action: "ticket.bulk_updated",
       metadata: {
         ticketIds: existingIds,
-        status: input.status ?? null,
+        status: targetStatus?.systemStatus ?? input.status ?? null,
+        statusDefinitionId: targetStatus?.id ?? input.statusDefinitionId ?? null,
         priority: input.priority ?? null,
         assignedUserId: primaryAssignedUserId ?? null,
         assignedUserIds,
@@ -1451,6 +1599,7 @@ export class TicketsService {
 
     const reason = input.reason?.trim() || null;
     const now = new Date();
+    const mergedStatus = await this.ticketWorkflow?.resolveTarget(user.organizationId, { systemStatus: TicketStatus.MERGED });
 
     await this.prisma.$transaction(async (tx) => {
       await tx.ticketMerge.create({
@@ -1506,6 +1655,7 @@ export class TicketsService {
           where: { id: sourceTicket.id },
           data: {
             status: TicketStatus.MERGED,
+            ...(mergedStatus ? { statusDefinitionId: mergedStatus.id } : {}),
             mergedIntoTicketId: primary.id,
             mergedAt: now,
             mergedByUserId: user.id,
@@ -1642,14 +1792,24 @@ export class TicketsService {
     const internalTicketId = ticket.id;
 
     if (ticket.status !== TicketStatus.CLOSED) {
-      await this.prisma.ticket.update({
-        where: { id: internalTicketId },
-        data: {
-          status: TicketStatus.CLOSED,
-          closedAt: new Date(),
-          updatedAt: new Date()
-        }
-      });
+      if (this.ticketWorkflow) {
+        await this.ticketWorkflow.transitionTicket({
+          ticketId: internalTicketId,
+          organizationId: user.organizationId,
+          systemStatus: TicketStatus.CLOSED,
+          userId: user.id,
+          reason: "Close ticket"
+        });
+      } else {
+        await this.prisma.ticket.update({
+          where: { id: internalTicketId },
+          data: {
+            status: TicketStatus.CLOSED,
+            closedAt: new Date(),
+            updatedAt: new Date()
+          }
+        });
+      }
 
       await this.auditLogs.create({
         userId: user.id,
@@ -1757,6 +1917,25 @@ export class TicketsService {
         ...(action === "send_and_close" || action === "send_note_and_close" ? { status: TicketStatus.CLOSED, closedAt: new Date() } : {})
       }
     });
+    if (!isInternal && action === "send") {
+      await this.ticketWorkflow?.applyRules({
+        ticketId: internalTicketId,
+        organizationId: user.organizationId,
+        trigger: TicketWorkflowTrigger.TECHNICIAN_REPLIED,
+        userId: user.id
+      });
+    } else if (action === "send_and_close" || action === "send_note_and_close") {
+      const closedStatus = await this.ticketWorkflow?.resolveTarget(user.organizationId, { systemStatus: TicketStatus.CLOSED });
+      if (closedStatus) {
+        await this.ticketWorkflow?.transitionTicket({
+          ticketId: internalTicketId,
+          organizationId: user.organizationId,
+          statusDefinitionId: closedStatus.id,
+          userId: user.id,
+          reason: "Send and close"
+        });
+      }
+    }
 
     const shouldNotifyStaff = !isInternal || action === "send_note" || action === "send_note_and_close";
     if (notifiedUserIds.length) {
@@ -2256,8 +2435,11 @@ export class TicketsService {
       });
     }
 
+    const selectedStatusDefinitionIds = this.normalizeUuidList(query.statusDefinitionIds);
     const selectedStatuses = this.normalizeTicketStatuses(query.statuses);
-    if (selectedStatuses.length > 0) {
+    if (selectedStatusDefinitionIds.length > 0) {
+      filters.push({ statusDefinitionId: { in: selectedStatusDefinitionIds } });
+    } else if (selectedStatuses.length > 0) {
       filters.push({ status: { in: selectedStatuses } });
     } else if (query.status) {
       filters.push({ status: query.status });
@@ -2294,6 +2476,11 @@ export class TicketsService {
           .filter((status): status is TicketStatus => allowed.has(status as TicketStatus))
       )
     ];
+  }
+
+  private normalizeUuidList(value?: string) {
+    if (!value?.trim()) return [];
+    return [...new Set(value.split(",").map((item) => item.trim()).filter((item) => this.isUuid(item)))];
   }
 
   private optionalTrim(value: string | null | undefined) {

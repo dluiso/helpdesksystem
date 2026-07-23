@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
+import { humanize, ticketStatusName, ticketStatusStyle, type TicketStatusDefinition } from "@/lib/ticket-statuses";
 
 type WorkKind = "TICKET" | "EVENT" | "EVENT_TASK" | "PROJECT";
 type Period = "ALL" | "TODAY" | "7_DAYS" | "30_DAYS";
@@ -21,6 +22,8 @@ interface WorkItem {
   title: string;
   clientName: string | null;
   status: string;
+  statusDefinitionId?: string | null;
+  statusDefinition?: TicketStatusDefinition | null;
   health?: string | null;
   priority: string | null;
   owner: string | null;
@@ -71,13 +74,15 @@ interface OperationsOverview {
   };
   capabilities: {
     updateTicketStatus: boolean;
+    closeTickets: boolean;
+    reopenTickets: boolean;
     updateEventStatus: boolean;
     exportProjectReports: boolean;
     scheduleProjectReports: boolean;
   };
   items: WorkItem[];
   decisions: OperationsDecision[];
-  workload: Array<{ owner: string; operational: number; projectCommitments: number; total: number; attention: number; capacityPercent: number; capacityStatus: "AVAILABLE" | "NEAR_CAPACITY" | "OVER_CAPACITY"; details: Array<{ id: string; kind: string; reference: string; title: string; dueAt: string | null; clientName: string | null; status: string; priority: string | null; updatedAt: string; href: string; attention: boolean }> }>;
+  workload: Array<{ owner: string; operational: number; projectCommitments: number; total: number; attention: number; capacityPercent: number; capacityStatus: "AVAILABLE" | "NEAR_CAPACITY" | "OVER_CAPACITY"; details: Array<{ id: string; kind: string; reference: string; title: string; dueAt: string | null; clientName: string | null; status: string; statusDefinitionId?: string | null; statusDefinition?: TicketStatusDefinition | null; priority: string | null; updatedAt: string; href: string; attention: boolean }> }>;
   forecast: { weeks: Array<{ startAt: string; endAt: string; label: string }>; owners: Array<{ owner: string; weeks: number[]; unscheduled: number; totalPlanned: number; capacityBaseline: number }> };
 }
 
@@ -87,11 +92,7 @@ interface ExecutiveProjectSummary {
 }
 
 function label(value: string) {
-  return value
-    .toLowerCase()
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+  return humanize(value);
 }
 
 function formatDate(value: string | null) {
@@ -154,13 +155,18 @@ export function OperationsWorkspace() {
   const [executive, setExecutive] = useState<ExecutiveProjectSummary | null>(null);
   const [executiveRecipients, setExecutiveRecipients] = useState("");
   const [executiveFrequency, setExecutiveFrequency] = useState<"weekly" | "monthly">("weekly");
+  const [ticketStatuses, setTicketStatuses] = useState<TicketStatusDefinition[]>([]);
 
   const load = async () => {
     setLoading(true);
     setError("");
     try {
-      const nextOverview = await apiFetch<OperationsOverview>("/operations/overview");
+      const [nextOverview, statuses] = await Promise.all([
+        apiFetch<OperationsOverview>("/operations/overview"),
+        apiFetch<TicketStatusDefinition[]>("/ticket-workflow/statuses").catch(() => [])
+      ]);
       setOverview(nextOverview);
+      setTicketStatuses(statuses);
       try {
         setExecutive(await apiFetch<ExecutiveProjectSummary>("/reports/projects/executive-summary"));
       } catch {
@@ -195,13 +201,18 @@ export function OperationsWorkspace() {
   }, [overview, period, queueMode, search]);
 
   const queueOwners = useMemo(() => [...new Set((overview?.items ?? []).flatMap((item) => item.internalOwners.length ? item.internalOwners : item.owner ? [item.owner] : []))].sort((left, right) => left.localeCompare(right)), [overview?.items]);
-  const queueStatuses = useMemo(() => [...new Set((overview?.items ?? []).map((item) => item.status))].sort((left, right) => label(left).localeCompare(label(right))), [overview?.items]);
+  const queueStatuses = useMemo(() => [...new Set((overview?.items ?? []).map((item) => item.kind === "TICKET" ? item.statusDefinitionId ?? item.status : item.status))].sort((left, right) => {
+    const leftTicket = ticketStatuses.find((status) => status.id === left);
+    const rightTicket = ticketStatuses.find((status) => status.id === right);
+    return (leftTicket?.name ?? label(left)).localeCompare(rightTicket?.name ?? label(right));
+  }), [overview?.items, ticketStatuses]);
 
   const visibleItems = useMemo(() => {
     const filtered = queueCandidates.filter((item) => {
       const ownerMatches = ownerFilter === "ALL" || (ownerFilter === "UNASSIGNED" ? !item.owner : item.owner === ownerFilter || item.internalOwners.includes(ownerFilter));
       const planningMatches = planningFilter === "ALL" || (planningFilter === "PLANNED" ? Boolean(item.dueAt) : !item.dueAt);
-      return (sourceFilter === "ALL" || item.kind === sourceFilter) && ownerMatches && (statusFilter === "ALL" || item.status === statusFilter) && planningMatches;
+      const itemStatusFilter = item.kind === "TICKET" ? item.statusDefinitionId ?? item.status : item.status;
+      return (sourceFilter === "ALL" || item.kind === sourceFilter) && ownerMatches && (statusFilter === "ALL" || itemStatusFilter === statusFilter) && planningMatches;
     });
 
     const valueFor = (item: WorkItem) => {
@@ -209,7 +220,7 @@ export function OperationsWorkspace() {
       if (sortKey === "source") return kindLabel(item.kind);
       if (sortKey === "owner") return item.owner;
       if (sortKey === "client") return `${item.clientName ?? ""} ${item.teamName ?? ""}`;
-      if (sortKey === "status") return `${item.status} ${item.priority ?? item.health ?? ""}`;
+      if (sortKey === "status") return `${item.kind === "TICKET" ? ticketStatusName(item, ticketStatuses) : item.status} ${item.priority ?? item.health ?? ""}`;
       return item[sortKey];
     };
 
@@ -224,7 +235,7 @@ export function OperationsWorkspace() {
         : leftValue.localeCompare(rightValue, undefined, { numeric: true, sensitivity: "base" });
       return (sortDirection === "asc" ? comparison : -comparison) || left.reference.localeCompare(right.reference);
     });
-  }, [ownerFilter, planningFilter, queueCandidates, sortDirection, sortKey, sourceFilter, statusFilter]);
+  }, [ownerFilter, planningFilter, queueCandidates, sortDirection, sortKey, sourceFilter, statusFilter, ticketStatuses]);
 
   useEffect(() => {
     setPage(1);
@@ -292,19 +303,25 @@ export function OperationsWorkspace() {
   }), [decisionAttentionOnly, decisionOwner, decisionStatus, overview?.decisions]);
 
   const statusOptions = (item: WorkItem) => {
-    if (item.kind === "TICKET") return ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_TECHNICIAN", "WAITING_ON_THIRD_PARTY", "RESOLVED", "CLOSED", "REOPENED", "CANCELLED"];
+    if (item.kind === "TICKET") return ticketStatuses.filter((status) => {
+      if (!status.isActive && status.id !== item.statusDefinitionId) return false;
+      if (status.systemStatus === "CLOSED" && !overview?.capabilities.closeTickets) return status.id === item.statusDefinitionId;
+      if (status.systemStatus === "REOPENED" && !overview?.capabilities.reopenTickets) return status.id === item.statusDefinitionId;
+      return true;
+    }).map((status) => status.id);
     if (item.kind === "EVENT") return ["NEW", "UNDER_REVIEW", "SCHEDULED", "ASSIGNED", "IN_PROGRESS", "WAITING_ON_CLIENT", "WAITING_ON_INTERNAL_TEAM", "COMPLETED", "CANCELLED"];
     return ["TODO", "IN_PROGRESS", "BLOCKED", "DONE", "CANCELLED"];
   };
 
   const updateStatus = async (item: WorkItem) => {
-    const status = statusDrafts[item.id] ?? item.status;
-    if (status === item.status || !canUpdateStatus(item)) return;
+    const currentStatus = item.kind === "TICKET" ? item.statusDefinitionId ?? item.status : item.status;
+    const status = statusDrafts[item.id] ?? currentStatus;
+    if (status === currentStatus || !canUpdateStatus(item)) return;
     setUpdatingItemId(item.id);
     setError("");
     try {
       if (item.kind === "TICKET") {
-        await apiFetch("/tickets/bulk", { method: "PATCH", body: JSON.stringify({ ticketIds: [item.id], status }) });
+        await apiFetch("/tickets/bulk", { method: "PATCH", body: JSON.stringify({ ticketIds: [item.id], statusDefinitionId: status }) });
       } else if (item.kind === "EVENT") {
         await apiFetch(`/event-services/${item.id}`, { method: "PATCH", body: JSON.stringify({ status }) });
       } else if (item.requestId) {
@@ -391,7 +408,7 @@ export function OperationsWorkspace() {
             <Filter size={15} aria-hidden="true" />
             <select className="input" value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)} aria-label="Filter by source"><option value="ALL">All sources</option>{(["TICKET", "EVENT", "EVENT_TASK", "PROJECT"] as WorkKind[]).map((kind) => <option value={kind} key={kind}>{kindLabel(kind)}</option>)}</select>
             <select className="input" value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} aria-label="Filter by owner"><option value="ALL">All owners</option><option value="UNASSIGNED">Unassigned</option>{queueOwners.map((owner) => <option value={owner} key={owner}>{owner}</option>)}</select>
-            <select className="input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter by status"><option value="ALL">All statuses</option>{queueStatuses.map((status) => <option value={status} key={status}>{label(status)}</option>)}</select>
+            <select className="input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter by status"><option value="ALL">All statuses</option>{queueStatuses.map((status) => <option value={status} key={status}>{ticketStatuses.find((definition) => definition.id === status)?.name ?? label(status)}</option>)}</select>
             <select className="input" value={planningFilter} onChange={(event) => setPlanningFilter(event.target.value as typeof planningFilter)} aria-label="Filter by planning"><option value="ALL">Any planning</option><option value="PLANNED">Planned</option><option value="UNSCHEDULED">Unscheduled</option></select>
             {filtersActive ? <button className="button secondary icon-button" type="button" onClick={clearQueueFilters} title="Clear queue filters" aria-label="Clear queue filters"><X size={14} aria-hidden="true" /></button> : null}
           </div>
@@ -414,16 +431,16 @@ export function OperationsWorkspace() {
                   <td><span className="operations-kind-pill">{kindLabel(item.kind)}</span></td>
                   <td>{item.owner ?? <span className="operations-unassigned">Unassigned</span>}</td>
                   <td><div className="operations-context-cell"><strong>{item.clientName ?? "No client"}</strong><span>{item.teamName ?? "No team"}</span></div></td>
-                  <td><div className="operations-status-cell"><span>{label(item.status)}</span>{item.health ? <small>{label(item.health)}</small> : item.priority ? <small>{label(item.priority)}</small> : null}</div></td>
+                  <td><div className="operations-status-cell"><span style={item.kind === "TICKET" ? ticketStatusStyle(item, ticketStatuses) : undefined}>{item.kind === "TICKET" ? ticketStatusName(item, ticketStatuses) : label(item.status)}</span>{item.health ? <small>{label(item.health)}</small> : item.priority ? <small>{label(item.priority)}</small> : null}</div></td>
                   <td>{formatDate(item.dueAt)}</td>
                   <td>{formatDate(item.updatedAt)}</td>
                   <td>
                     {canUpdateStatus(item) && editingItemId === item.id ? (
                       <div className="operations-action-control">
-                        <select className="input" value={statusDrafts[item.id] ?? item.status} onChange={(event) => setStatusDrafts((current) => ({ ...current, [item.id]: event.target.value }))} disabled={updatingItemId === item.id} aria-label={`Update ${item.reference} status`}>
-                          {statusOptions(item).map((status) => <option value={status} key={status}>{label(status)}</option>)}
+                        <select className="input" value={statusDrafts[item.id] ?? (item.kind === "TICKET" ? item.statusDefinitionId ?? item.status : item.status)} onChange={(event) => setStatusDrafts((current) => ({ ...current, [item.id]: event.target.value }))} disabled={updatingItemId === item.id} aria-label={`Update ${item.reference} status`}>
+                          {statusOptions(item).map((status) => <option value={status} key={status}>{item.kind === "TICKET" ? ticketStatuses.find((definition) => definition.id === status)?.name ?? label(status) : label(status)}</option>)}
                         </select>
-                        <button className="button secondary icon-button" type="button" onClick={() => void updateStatus(item)} disabled={updatingItemId === item.id || (statusDrafts[item.id] ?? item.status) === item.status} title={`Save ${item.reference} status`} aria-label={`Save ${item.reference} status`}>
+                        <button className="button secondary icon-button" type="button" onClick={() => void updateStatus(item)} disabled={updatingItemId === item.id || (statusDrafts[item.id] ?? (item.kind === "TICKET" ? item.statusDefinitionId ?? item.status : item.status)) === (item.kind === "TICKET" ? item.statusDefinitionId ?? item.status : item.status)} title={`Save ${item.reference} status`} aria-label={`Save ${item.reference} status`}>
                           <Check size={15} aria-hidden="true" />
                         </button>
                       </div>
@@ -471,7 +488,7 @@ export function OperationsWorkspace() {
         <div className="operations-forecast-scroll"><table className="table operations-forecast-table"><thead><tr><th>Specialist</th>{(overview?.forecast.weeks ?? []).map((week) => <th key={week.startAt}>Week of {week.label}</th>)}<th>Unscheduled</th></tr></thead><tbody>{(overview?.forecast.owners ?? []).map((entry) => <tr key={entry.owner}><td><button className="operations-owner-link" type="button" onClick={() => setSelectedWorkloadOwner(entry.owner)}>{entry.owner}</button></td>{entry.weeks.map((count, index) => <td key={`${entry.owner}-${index}`}><span className={count >= entry.capacityBaseline ? "operations-forecast-alert" : ""}>{count}</span></td>)}<td>{entry.unscheduled || "-"}</td></tr>)}{!loading && !overview?.forecast.owners.length ? <tr><td colSpan={6}><div className="dashboard-empty">No assigned capacity to forecast.</div></td></tr> : null}</tbody></table></div>
       </section>
 
-      {selectedWorkload ? <div className="operations-workload-drawer-backdrop" role="presentation" onClick={() => setSelectedWorkloadOwner(null)}><aside className="operations-workload-drawer" role="dialog" aria-modal="true" aria-label={`${selectedWorkload.owner} workload`} onClick={(event) => event.stopPropagation()}><div className="section-heading operations-section-heading"><div><h2>{selectedWorkload.owner}</h2><p>{selectedWorkload.total} projected items · {selectedWorkload.capacityPercent}% of baseline.</p></div><button className="button secondary icon-button" type="button" onClick={() => setSelectedWorkloadOwner(null)} title="Close workload" aria-label="Close workload"><X size={16} aria-hidden="true" /></button></div><div className="operations-drawer-summary"><span>{selectedWorkload.operational} operational</span><span>{selectedWorkload.projectCommitments} project commitments</span><span>{selectedWorkload.attention} need attention</span></div><div className="operations-drawer-list">{selectedWorkload.details.map((item) => <article className={`operations-drawer-item${item.attention ? " attention" : ""}`} key={item.id}><div><Link href={item.href}>{item.reference}</Link><strong>{item.title}</strong><span>{item.clientName ?? label(item.kind)} · {label(item.status)}{item.priority ? ` · ${label(item.priority)}` : ""}</span></div><div><time className={item.attention ? "operations-unassigned" : ""}>{item.dueAt ? `Target ${formatDate(item.dueAt)}` : "Unscheduled"}</time><small>Updated {formatDate(item.updatedAt)}</small></div></article>)}</div></aside></div> : null}
+      {selectedWorkload ? <div className="operations-workload-drawer-backdrop" role="presentation" onClick={() => setSelectedWorkloadOwner(null)}><aside className="operations-workload-drawer" role="dialog" aria-modal="true" aria-label={`${selectedWorkload.owner} workload`} onClick={(event) => event.stopPropagation()}><div className="section-heading operations-section-heading"><div><h2>{selectedWorkload.owner}</h2><p>{selectedWorkload.total} projected items · {selectedWorkload.capacityPercent}% of baseline.</p></div><button className="button secondary icon-button" type="button" onClick={() => setSelectedWorkloadOwner(null)} title="Close workload" aria-label="Close workload"><X size={16} aria-hidden="true" /></button></div><div className="operations-drawer-summary"><span>{selectedWorkload.operational} operational</span><span>{selectedWorkload.projectCommitments} project commitments</span><span>{selectedWorkload.attention} need attention</span></div><div className="operations-drawer-list">{selectedWorkload.details.map((item) => <article className={`operations-drawer-item${item.attention ? " attention" : ""}`} key={item.id}><div><Link href={item.href}>{item.reference}</Link><strong>{item.title}</strong><span>{item.clientName ?? label(item.kind)} · {item.kind === "TICKET" ? ticketStatusName(item, ticketStatuses) : label(item.status)}{item.priority ? ` · ${label(item.priority)}` : ""}</span></div><div><time className={item.attention ? "operations-unassigned" : ""}>{item.dueAt ? `Target ${formatDate(item.dueAt)}` : "Unscheduled"}</time><small>Updated {formatDate(item.updatedAt)}</small></div></article>)}</div></aside></div> : null}
     </div>
   );
 }

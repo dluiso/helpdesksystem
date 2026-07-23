@@ -44,6 +44,25 @@ enum TicketStatus {
   MERGED
 }
 
+enum TicketStatusCategory {
+  NEW
+  ACTIVE
+  WAITING_CUSTOMER
+  WAITING_STAFF
+  WAITING_THIRD_PARTY
+  RESOLVED
+  CLOSED
+  CANCELLED
+  MERGED
+}
+
+enum TicketWorkflowTrigger {
+  CUSTOMER_REPLIED
+  TECHNICIAN_REPLIED
+  TICKET_ASSIGNED
+  MANUAL_REOPEN
+}
+
 enum TicketPriority {
   LOW
   NORMAL
@@ -264,6 +283,8 @@ model Organization {
   clients        Client[]
   mailboxes      Mailbox[]
   tickets        Ticket[]
+  ticketStatusDefinitions TicketStatusDefinition[]
+  ticketWorkflowRules TicketWorkflowRule[]
   ticketTeams    TicketTeam[]
   ticketRoutingRules TicketRoutingRule[]
   ticketMerges   TicketMerge[]
@@ -911,6 +932,7 @@ model Ticket {
   subject                    String
   description                String?
   status                     TicketStatus   @default(NEW)
+  statusDefinitionId         String?        @db.Uuid
   priority                   TicketPriority @default(NORMAL)
   targetDate                 DateTime?
   source                     TicketSource   @default(MANUAL)
@@ -934,6 +956,7 @@ model Ticket {
   createdAt                  DateTime       @default(now())
   updatedAt                  DateTime       @updatedAt
   organization               Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  statusDefinition           TicketStatusDefinition? @relation(fields: [statusDefinitionId], references: [id], onDelete: SetNull)
   client                     Client?        @relation(fields: [clientId], references: [id], onDelete: SetNull)
   contact                    Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
   assignedUser               User?          @relation("AssignedTickets", fields: [assignedUserId], references: [id], onDelete: SetNull)
@@ -964,6 +987,7 @@ model Ticket {
   @@index([senderDomain])
   @@index([mailboxId])
   @@index([status, priority])
+  @@index([statusDefinitionId])
   @@index([targetDate])
   @@index([assignedUserId])
   @@index([firstReadAt])
@@ -975,6 +999,54 @@ model Ticket {
   @@index([mergedByUserId])
   @@index([deletedAt])
   @@map("tickets")
+}
+
+model TicketStatusDefinition {
+  id             String               @id @default(uuid()) @db.Uuid
+  organizationId String               @db.Uuid
+  key            String
+  name           String
+  description    String?
+  systemStatus   TicketStatus
+  category       TicketStatusCategory
+  color          String
+  sortOrder      Int                  @default(0)
+  isDefault      Boolean              @default(false)
+  isProtected    Boolean              @default(false)
+  isActive       Boolean              @default(true)
+  archivedAt     DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tickets        Ticket[]
+  rulesAsTarget  TicketWorkflowRule[] @relation("TicketWorkflowRuleTarget")
+
+  @@unique([organizationId, key])
+  @@index([organizationId, isActive, sortOrder])
+  @@index([organizationId, systemStatus])
+  @@map("ticket_status_definitions")
+}
+
+model TicketWorkflowRule {
+  id                       String                @id @default(uuid()) @db.Uuid
+  organizationId           String                @db.Uuid
+  name                     String
+  trigger                  TicketWorkflowTrigger
+  fromStatusIds            String[]              @default([])
+  targetStatusId           String                @db.Uuid
+  requirePriorPublicReply  Boolean?
+  reopenWindowDays         Int?
+  priority                 Int                   @default(100)
+  stopProcessing           Boolean               @default(true)
+  isActive                 Boolean               @default(true)
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
+  organization             Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  targetStatus             TicketStatusDefinition @relation("TicketWorkflowRuleTarget", fields: [targetStatusId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, trigger, isActive, priority])
+  @@index([targetStatusId])
+  @@map("ticket_workflow_rules")
 }
 
 model TicketMerge {

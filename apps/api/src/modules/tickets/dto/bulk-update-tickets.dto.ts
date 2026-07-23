@@ -11,6 +11,10 @@ export class BulkUpdateTicketsDto {
   status?: TicketStatus;
 
   @IsOptional()
+  @IsUUID("4")
+  statusDefinitionId?: string;
+
+  @IsOptional()
   @IsEnum(TicketPriority)
   priority?: TicketPriority;
 

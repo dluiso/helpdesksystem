@@ -21,12 +21,15 @@ import {
 } from "lucide-react";
 import { MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { TicketStatusDefinition, ticketStatusDefinition, ticketStatusName, ticketStatusStyle } from "@/lib/ticket-statuses";
 
 interface TicketListItem {
   id: string;
   ticketNumber: string;
   subject: string;
   status: string;
+  statusDefinitionId: string | null;
+  statusDefinition: TicketStatusDefinition | null;
   priority: string;
   source: string;
   senderEmail: string | null;
@@ -214,7 +217,6 @@ const defaultColumnWidths: Record<ColumnId, number> = {
   attachments: 120
 };
 const statuses = ["NEW", "OPEN", "IN_PROGRESS", "WAITING_ON_CUSTOMER", "WAITING_ON_TECHNICIAN", "WAITING_ON_THIRD_PARTY", "RESOLVED", "CLOSED", "REOPENED", "CANCELLED", "MERGED"];
-const mutableStatuses = statuses.filter((value) => value !== "MERGED");
 const priorities = ["LOW", "NORMAL", "HIGH", "URGENT", "CRITICAL"];
 const sources = ["MANUAL", "EMAIL", "PORTAL", "API", "SYSTEM"];
 const builtInViews: Array<{ id: string; name: string; state: Partial<TicketViewState> }> = [
@@ -371,6 +373,7 @@ export function TicketsList() {
   const [clients, setClients] = useState<Client[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [ticketTeams, setTicketTeams] = useState<TicketTeam[]>([]);
+  const [ticketStatuses, setTicketStatuses] = useState<TicketStatusDefinition[]>([]);
   const [externalSpecialists, setExternalSpecialists] = useState<ExternalSpecialist[]>([]);
   const [ticketViews, setTicketViews] = useState<TicketView[]>([]);
   const [selectedViewId, setSelectedViewId] = useState("built-in:all");
@@ -417,7 +420,7 @@ export function TicketsList() {
   const [newTicketSubject, setNewTicketSubject] = useState("");
   const [newTicketDescription, setNewTicketDescription] = useState("");
   const [newTicketPriority, setNewTicketPriority] = useState("NORMAL");
-  const [newTicketStatus, setNewTicketStatus] = useState("NEW");
+  const [newTicketStatus, setNewTicketStatus] = useState("");
   const [newTicketAssignedUserId, setNewTicketAssignedUserId] = useState("");
   const [newTicketAssignedTeamId, setNewTicketAssignedTeamId] = useState("");
   const [newTicketBusy, setNewTicketBusy] = useState(false);
@@ -472,7 +475,10 @@ export function TicketsList() {
         params.set("requester", requester.trim());
       }
       if (selectedStatuses.length > 0) {
-        params.set("statuses", selectedStatuses.join(","));
+        const definitionIds = selectedStatuses.filter((status) => /^[0-9a-f-]{36}$/i.test(status));
+        const legacyStatuses = selectedStatuses.filter((status) => !definitionIds.includes(status));
+        if (definitionIds.length) params.set("statusDefinitionIds", definitionIds.join(","));
+        if (legacyStatuses.length) params.set("statuses", legacyStatuses.join(","));
       }
       if (priority) {
         params.set("priority", priority);
@@ -505,10 +511,16 @@ export function TicketsList() {
 
   async function loadClients() {
     try {
-      const [clientData, userData, teamData] = await Promise.all([apiFetch<Client[]>("/clients"), apiFetch<User[]>("/users"), apiFetch<TicketTeam[]>("/ticket-teams")]);
+      const [clientData, userData, teamData, statusData] = await Promise.all([
+        apiFetch<Client[]>("/clients"),
+        apiFetch<User[]>("/users"),
+        apiFetch<TicketTeam[]>("/ticket-teams"),
+        apiFetch<TicketStatusDefinition[]>("/ticket-workflow/statuses")
+      ]);
       setClients(clientData);
       setUsers(userData);
       setTicketTeams(teamData);
+      setTicketStatuses(statusData);
       apiFetch<ExternalSpecialist[]>("/external-specialists")
         .then(setExternalSpecialists)
         .catch(() => setExternalSpecialists([]));
@@ -516,6 +528,7 @@ export function TicketsList() {
       setClients([]);
       setUsers([]);
       setTicketTeams([]);
+      setTicketStatuses([]);
       setExternalSpecialists([]);
     }
   }
@@ -637,7 +650,7 @@ export function TicketsList() {
 
     const body: Record<string, unknown> = { ticketIds: selectedTicketIds };
     if (bulkStatus) {
-      body.status = bulkStatus;
+      body.statusDefinitionId = bulkStatus;
     }
     if (bulkAssignedUserId) {
       body.assignedUserId = bulkAssignedUserId;
@@ -723,7 +736,7 @@ export function TicketsList() {
     setNewTicketSubject("");
     setNewTicketDescription("");
     setNewTicketPriority("NORMAL");
-    setNewTicketStatus("NEW");
+    setNewTicketStatus("");
     setNewTicketAssignedUserId("");
     setNewTicketAssignedTeamId("");
   }
@@ -764,11 +777,11 @@ export function TicketsList() {
         })
       });
 
-      if (newTicketStatus !== "NEW" || newTicketAssignedUserId || newTicketAssignedTeamId) {
+      if (newTicketStatus || newTicketAssignedUserId || newTicketAssignedTeamId) {
         await apiFetch(`/tickets/${created.ticketNumber}/assignment`, {
           method: "PATCH",
           body: JSON.stringify({
-            status: newTicketStatus,
+            ...(newTicketStatus ? { statusDefinitionId: newTicketStatus } : {}),
             assignedUserId: newTicketAssignedUserId || null,
             assignedUserIds: newTicketAssignedUserId ? [newTicketAssignedUserId] : [],
             assignedTeamId: newTicketAssignedTeamId || null
@@ -796,6 +809,13 @@ export function TicketsList() {
       return [...activeTeams, ticket.assignedTeam];
     }
     return activeTeams;
+  }
+
+  function editableTicketStatuses(ticket: TicketListItem) {
+    const current = ticketStatusDefinition(ticket, ticketStatuses);
+    return current && !ticketStatuses.some((status) => status.id === current.id)
+      ? [...ticketStatuses, current]
+      : ticketStatuses;
   }
 
   async function assignTicketInline(ticket: TicketListItem, assignedUserId: string) {
@@ -953,8 +973,12 @@ export function TicketsList() {
     setSelectedTicketIds((current) => (current.includes(ticketId) ? current.filter((id) => id !== ticketId) : [...current, ticketId]));
   }
 
-  function toggleStatusFilter(value: string) {
-    setSelectedStatuses((current) => (current.includes(value) ? current.filter((status) => status !== value) : [...current, value]));
+  function toggleStatusFilter(definition: TicketStatusDefinition) {
+    setSelectedStatuses((current) => {
+      const selected = current.includes(definition.id) || current.includes(definition.systemStatus);
+      const withoutStatus = current.filter((status) => status !== definition.id && status !== definition.systemStatus);
+      return selected ? withoutStatus : [...withoutStatus, definition.id];
+    });
   }
 
   function toggleSelectAllVisible() {
@@ -1054,18 +1078,19 @@ export function TicketsList() {
         return (
           <div className="ticket-status-stack">
             <select
-              className={`input inline-ticket-select inline-status-select ${statusClass(ticket.status)}`}
-              value={ticket.status}
-              onChange={(event) => void updateTicketInline(ticket, "status", { status: event.target.value })}
+              className="input inline-ticket-select inline-status-select"
+              style={ticketStatusStyle(ticket, ticketStatuses)}
+              value={ticketStatusDefinition(ticket, ticketStatuses)?.id ?? ""}
+              onChange={(event) => void updateTicketInline(ticket, "status", { statusDefinitionId: event.target.value })}
               disabled={isTicketInlineBusy(ticket) || ticket.status === "MERGED" || trashMode}
               title="Change status"
             >
-              {mutableStatuses.map((value) => (
-                <option key={value} value={value}>
-                  {label(value)}
+              {editableTicketStatuses(ticket).filter((status) => status.systemStatus !== "MERGED").map((status) => (
+                <option key={status.id} value={status.id}>
+                  {status.name}
                 </option>
               ))}
-              {ticket.status === "MERGED" ? <option value="MERGED">Merged</option> : null}
+              {ticket.status === "MERGED" ? <option value={ticket.statusDefinitionId ?? ""}>Merged</option> : null}
             </select>
             <MergedInIndicator mergedTickets={ticket.mergedTickets} />
           </div>
@@ -1360,10 +1385,11 @@ export function TicketsList() {
               <span>{selectedStatuses.length ? `${selectedStatuses.length} status${selectedStatuses.length === 1 ? "" : "es"}` : "All statuses"}</span>
             </button>
             <div className="ticket-status-filter-menu" onKeyDown={(event) => event.key === "Escape" && setShowStatusFilterMenu(false)}>
-              {statuses.map((value) => (
-                <label className="checkbox-row" key={value}>
-                  <input type="checkbox" checked={selectedStatuses.includes(value)} onChange={() => toggleStatusFilter(value)} />
-                  {label(value)}
+              {ticketStatuses.map((status) => (
+                <label className="checkbox-row" key={status.id}>
+                  <input type="checkbox" checked={selectedStatuses.includes(status.id) || selectedStatuses.includes(status.systemStatus)} onChange={() => toggleStatusFilter(status)} />
+                  <span className="ticket-status-swatch" style={{ backgroundColor: status.color }} />
+                  {status.name}
                 </label>
               ))}
               {selectedStatuses.length ? (
@@ -1453,9 +1479,9 @@ export function TicketsList() {
           <div className="bulk-actions-grid">
             <select className="input" value={bulkStatus} onChange={(event) => setBulkStatus(event.target.value)}>
               <option value="">Change status</option>
-              {mutableStatuses.map((value) => (
-                <option key={value} value={value}>
-                  {label(value)}
+              {ticketStatuses.filter((status) => status.systemStatus !== "MERGED").map((status) => (
+                <option key={status.id} value={status.id}>
+                  {status.name}
                 </option>
               ))}
             </select>
@@ -1598,7 +1624,7 @@ export function TicketsList() {
                   />
                   <span>{ticket.ticketNumber}</span>
                 </label>
-                <span className={`status-pill ${statusClass(ticket.status)}`}>{label(ticket.status)}</span>
+                <span className={`status-pill ${statusClass(ticket.status)}`} style={ticketStatusStyle(ticket, ticketStatuses)}>{ticketStatusName(ticket, ticketStatuses)}</span>
               </div>
               <Link className="mobile-ticket-subject" href={`/tickets/${ticket.ticketNumber}`}>
                 <strong>{ticket.subject}</strong>
@@ -1726,9 +1752,10 @@ export function TicketsList() {
               <label className="field">
                 <span>Status</span>
                 <select className="input" value={newTicketStatus} onChange={(event) => setNewTicketStatus(event.target.value)}>
-                  {mutableStatuses.map((value) => (
-                    <option key={value} value={value}>
-                      {label(value)}
+                  <option value="">Default status</option>
+                  {ticketStatuses.filter((status) => status.systemStatus !== "MERGED").map((status) => (
+                    <option key={status.id} value={status.id}>
+                      {status.name}
                     </option>
                   ))}
                 </select>
@@ -1787,7 +1814,7 @@ export function TicketsList() {
                   <span>
                     <strong>{ticket.ticketNumber}</strong>
                     <span>{ticket.subject}</span>
-                    <span className="muted">{ticket.client?.name ?? "Unassigned"} - {label(ticket.status)}</span>
+                    <span className="muted">{ticket.client?.name ?? "Unassigned"} - {ticketStatusName(ticket, ticketStatuses)}</span>
                   </span>
                 </label>
               ))}

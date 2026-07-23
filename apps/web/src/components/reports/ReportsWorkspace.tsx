@@ -53,6 +53,7 @@ interface TicketReportSummary {
     clientName: string;
     requester: string;
     status: string;
+    statusDefinition: { id: string; name: string; color: string } | null;
     priority: string;
     source: string;
     assignedTo: string;
@@ -958,7 +959,7 @@ export function ReportsWorkspace() {
                         </span>
                       </td>
                       <td>{ticket.clientName}</td>
-                      <td><span className={`status-pill ticket-status-${ticket.status.toLowerCase().replaceAll("_", "-")}`}>{label(ticket.status)}</span></td>
+                      <td><span className="status-pill" style={ticket.statusDefinition ? { color: ticket.statusDefinition.color, borderColor: `${ticket.statusDefinition.color}55`, backgroundColor: `${ticket.statusDefinition.color}18` } : undefined}>{ticket.statusDefinition?.name ?? label(ticket.status)}</span></td>
                       <td>{label(ticket.priority)}</td>
                       <td>
                         <span className="report-cell-stack">

@@ -72,7 +72,7 @@ export class TicketsController {
   }
 
   @Patch("bulk")
-  @RequirePermissions("tickets.assign")
+  @RequirePermissions("tickets.view")
   bulkUpdate(@Body() body: BulkUpdateTicketsDto, @CurrentUser() user: AuthenticatedUser) {
     return this.ticketsService.bulkUpdate(body, user);
   }

@@ -36,6 +36,7 @@ import { TicketAttachmentsModule } from "./modules/ticket-attachments/ticket-att
 import { TicketTeamsModule } from "./modules/ticket-teams/ticket-teams.module";
 import { TicketMessagesModule } from "./modules/ticket-messages/ticket-messages.module";
 import { TicketRoutingModule } from "./modules/ticket-routing/ticket-routing.module";
+import { TicketWorkflowModule } from "./modules/ticket-workflow/ticket-workflow.module";
 import { TicketsModule } from "./modules/tickets/tickets.module";
 import { UsersModule } from "./modules/users/users.module";
 
@@ -82,6 +83,7 @@ import { UsersModule } from "./modules/users/users.module";
     TicketMessagesModule,
     TicketTeamsModule,
     TicketRoutingModule,
+    TicketWorkflowModule,
     TicketAttachmentsModule,
     FileStorageModule,
     MaintenanceModule,

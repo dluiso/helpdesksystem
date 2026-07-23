@@ -6,6 +6,7 @@ import { EventServicesConfigPanel } from "@/components/settings/EventServicesCon
 import { KnowledgeConfigPanel } from "@/components/settings/KnowledgeConfigPanel";
 import { RmmConfigPanel } from "@/components/settings/RmmConfigPanel";
 import { SupportPortalConfigPanel } from "@/components/settings/SupportPortalConfigPanel";
+import { TicketWorkflowConfigPanel } from "@/components/settings/TicketWorkflowConfigPanel";
 import { UsersWorkspace } from "@/components/users/UsersWorkspace";
 import { apiBaseUrl, apiFetch } from "@/lib/api";
 
@@ -513,6 +514,7 @@ type ActiveSection =
   | "mailboxes"
   | "autoReplies"
   | "teams"
+  | "ticketWorkflow"
   | "routing"
   | "domains"
   | "supportPortal"
@@ -545,6 +547,7 @@ const SETTINGS_GROUPS: Array<{ label: string; sections: Array<{ key: ActiveSecti
     sections: [
       { key: "mailboxes", label: "Mailboxes" },
       { key: "autoReplies", label: "Auto Replies" },
+      { key: "ticketWorkflow", label: "Ticket Workflow" },
       { key: "routing", label: "Ticket Routing" },
       { key: "domains", label: "Domain Mapping" },
       { key: "notifications", label: "Notifications" },
@@ -4006,6 +4009,8 @@ export function SettingsWorkspace() {
         </div>
       </section>
           ) : null}
+
+          {activeSection === "ticketWorkflow" ? <TicketWorkflowConfigPanel /> : null}
 
           {activeSection === "routing" ? (
       <section className="panel settings-section">

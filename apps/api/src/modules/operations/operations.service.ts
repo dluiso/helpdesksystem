@@ -27,6 +27,20 @@ export interface OperationsWorkItem {
   title: string;
   clientName: string | null;
   status: string;
+  statusDefinitionId?: string | null;
+  statusDefinition?: {
+    id: string;
+    key: string;
+    name: string;
+    systemStatus: string;
+    category: string;
+    color: string;
+    sortOrder: number;
+    isDefault: boolean;
+    isProtected: boolean;
+    isActive: boolean;
+    description: string | null;
+  } | null;
   health?: ProjectHealth | null;
   priority: TicketPriority | null;
   owner: string | null;
@@ -62,6 +76,8 @@ export interface WorkloadDetail {
   dueAt: Date | null;
   clientName: string | null;
   status: string;
+  statusDefinitionId?: string | null;
+  statusDefinition?: OperationsWorkItem["statusDefinition"];
   priority: TicketPriority | null;
   updatedAt: Date;
   href: string;
@@ -89,6 +105,8 @@ export class OperationsService {
           ticketNumber: true,
           subject: true,
           status: true,
+          statusDefinitionId: true,
+          statusDefinition: true,
           priority: true,
           targetDate: true,
           updatedAt: true,
@@ -191,6 +209,8 @@ export class OperationsService {
         title: ticket.subject,
         clientName: ticket.client?.name ?? null,
         status: ticket.status,
+        statusDefinitionId: ticket.statusDefinitionId,
+        statusDefinition: ticket.statusDefinition,
         priority: ticket.priority,
         owner: this.uniqueNames(owners),
         teamName: ticket.assignedTeam?.name ?? null,
@@ -344,7 +364,9 @@ export class OperationsService {
         dueSoonDays: settings.dueSoonDays
       },
       capabilities: {
-        updateTicketStatus: user.permissions.includes("tickets.assign"),
+        updateTicketStatus: user.permissions.includes("tickets.update"),
+        closeTickets: user.permissions.includes("tickets.close"),
+        reopenTickets: user.permissions.includes("tickets.reopen"),
         updateEventStatus: user.permissions.includes("event_services.update"),
         exportProjectReports: user.permissions.includes("reports.export"),
         scheduleProjectReports: user.permissions.includes("reports.manage")
@@ -381,7 +403,7 @@ export class OperationsService {
         current.operational += 1;
         current.total += 1;
         if (item.attention) current.attention += 1;
-        current.details.push({ id: `${item.kind}-${item.id}`, kind: item.kind, reference: item.reference, title: item.title, dueAt: item.dueAt, clientName: item.clientName, status: item.status, priority: item.priority, updatedAt: item.updatedAt, href: item.href, attention: item.attention });
+        current.details.push({ id: `${item.kind}-${item.id}`, kind: item.kind, reference: item.reference, title: item.title, dueAt: item.dueAt, clientName: item.clientName, status: item.status, statusDefinitionId: item.statusDefinitionId, statusDefinition: item.statusDefinition, priority: item.priority, updatedAt: item.updatedAt, href: item.href, attention: item.attention });
         work.set(owner, current);
       }
     }

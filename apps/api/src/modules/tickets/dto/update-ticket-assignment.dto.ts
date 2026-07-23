@@ -26,4 +26,8 @@ export class UpdateTicketAssignmentDto {
   @IsOptional()
   @IsEnum(TicketStatus)
   status?: TicketStatus;
+
+  @IsOptional()
+  @IsUUID()
+  statusDefinitionId?: string;
 }
