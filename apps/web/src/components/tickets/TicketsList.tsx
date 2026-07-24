@@ -126,6 +126,7 @@ interface ColumnDefinition {
 }
 
 interface TicketViewState {
+  version: number;
   search: string;
   clientId: string;
   scope: string;
@@ -142,6 +143,8 @@ interface TicketViewState {
   density: TableDensity;
   columnOrder: ColumnId[];
   visibleColumns: ColumnId[];
+  columnWidths: Record<ColumnId, number>;
+  trashMode: boolean;
 }
 
 interface TicketView {
@@ -154,6 +157,7 @@ interface TicketView {
 const COLUMN_STORAGE_KEY = "avidity.ticketTable.columns";
 const COLUMN_WIDTH_STORAGE_KEY = "avidity.ticketTable.columnWidths.v2";
 const DENSITY_STORAGE_KEY = "avidity.ticketTable.density.v1";
+const TICKET_VIEW_VERSION = 2;
 const defaultColumnOrder: ColumnId[] = [
   "ticketNumber",
   "subject",
@@ -318,53 +322,68 @@ function normalizeDensity(value: unknown): TableDensity {
   return value === "compact" || value === "comfortable" ? value : "comfortable";
 }
 
+function isTicketStatusFilter(value: unknown): value is string {
+  return typeof value === "string"
+    && (statuses.includes(value) || /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
+}
+
 function normalizeTicketViewState(value: unknown): TicketViewState {
   const state = value && typeof value === "object" ? (value as Partial<TicketViewState>) : {};
   const nextSortBy = allColumns.some((column) => column.sortable === state.sortBy) ? state.sortBy as SortBy : "updatedAt";
   const nextPageSize = state.pageSize === "20" || state.pageSize === "50" || state.pageSize === "100" || state.pageSize === "all" ? state.pageSize : "20";
   const legacyStatus = typeof (state as { status?: unknown }).status === "string" ? (state as { status: string }).status : "";
   const nextStatuses = Array.isArray(state.statuses)
-    ? state.statuses.filter((status): status is string => typeof status === "string" && statuses.includes(status))
-    : legacyStatus && statuses.includes(legacyStatus)
+    ? state.statuses.filter(isTicketStatusFilter)
+    : isTicketStatusFilter(legacyStatus)
       ? [legacyStatus]
       : [];
 
   return {
+    version: TICKET_VIEW_VERSION,
     search: typeof state.search === "string" ? state.search : "",
     clientId: typeof state.clientId === "string" ? state.clientId : "",
-    scope: typeof state.scope === "string" ? state.scope : "all",
+    scope: typeof state.scope === "string" && ["all", "assigned_to_me", "my_teams", "unassigned"].includes(state.scope) ? state.scope : "all",
     assignedUserId: typeof state.assignedUserId === "string" ? state.assignedUserId : "",
     assignedTeamId: typeof state.assignedTeamId === "string" ? state.assignedTeamId : "",
     externalSpecialistId: typeof state.externalSpecialistId === "string" ? state.externalSpecialistId : "",
     requester: typeof state.requester === "string" ? state.requester : "",
     statuses: [...new Set(nextStatuses)],
-    priority: typeof state.priority === "string" ? state.priority : "",
+    priority: typeof state.priority === "string" && (state.priority === "" || priorities.includes(state.priority)) ? state.priority : "",
     source: typeof state.source === "string" && sources.includes(state.source) ? state.source : "",
     sortBy: nextSortBy,
     sortDirection: state.sortDirection === "asc" || state.sortDirection === "desc" ? state.sortDirection : "desc",
     pageSize: nextPageSize,
     density: normalizeDensity(state.density),
     columnOrder: normalizeColumnOrder(state.columnOrder),
-    visibleColumns: normalizeVisibleColumns(state.visibleColumns)
+    visibleColumns: normalizeVisibleColumns(state.visibleColumns),
+    columnWidths: normalizeColumnWidths(state.columnWidths),
+    trashMode: state.trashMode === true
   };
 }
 
+function ticketViewStateSignature(value: unknown) {
+  return JSON.stringify(normalizeTicketViewState(value));
+}
+
+const ticketUrlFilterKeys = [
+  "search",
+  "clientId",
+  "scope",
+  "assignedUserId",
+  "assignedTeamId",
+  "externalSpecialistId",
+  "requester",
+  "statuses",
+  "statusDefinitionIds",
+  "priority",
+  "source",
+  "deletedScope",
+  "sortBy",
+  "sortDirection"
+];
+
 function hasExplicitTicketUrlFilters(searchParams: URLSearchParams) {
-  return [
-    "search",
-    "clientId",
-    "scope",
-    "assignedUserId",
-    "assignedTeamId",
-    "externalSpecialistId",
-    "requester",
-    "statuses",
-    "priority",
-    "source",
-    "deletedScope",
-    "sortBy",
-    "sortDirection"
-  ].some((key) => searchParams.has(key));
+  return ticketUrlFilterKeys.some((key) => searchParams.has(key));
 }
 
 export function TicketsList() {
@@ -425,6 +444,13 @@ export function TicketsList() {
   const [newTicketAssignedTeamId, setNewTicketAssignedTeamId] = useState("");
   const [newTicketBusy, setNewTicketBusy] = useState(false);
   const [inlineUpdatingTicket, setInlineUpdatingTicket] = useState<{ ticketId: string; field: InlineTicketField } | null>(null);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [viewName, setViewName] = useState("");
+  const [viewIsDefault, setViewIsDefault] = useState(false);
+  const [viewBusy, setViewBusy] = useState(false);
+  const [viewDeleteConfirm, setViewDeleteConfirm] = useState(false);
+  const [viewError, setViewError] = useState<string | null>(null);
+  const [viewNotice, setViewNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -442,6 +468,9 @@ export function TicketsList() {
   );
 
   const hasActiveFilters = Boolean(search || clientId || requester || selectedStatuses.length > 0 || priority || source || scope !== "all" || assignedUserId || assignedTeamId || externalSpecialistId);
+  const selectedSavedView = selectedViewId.startsWith("saved:")
+    ? ticketViews.find((view) => `saved:${view.id}` === selectedViewId) ?? null
+    : null;
   const selectedCount = selectedTicketIds.length;
   const allVisibleSelected = tickets.length > 0 && tickets.every((ticket) => selectedTicketIds.includes(ticket.id));
   const selectedTickets = useMemo(() => selectedTicketIds.map((id) => tickets.find((ticket) => ticket.id === id)).filter((ticket): ticket is TicketListItem => Boolean(ticket)), [selectedTicketIds, tickets]);
@@ -533,25 +562,30 @@ export function TicketsList() {
     }
   }
 
-  async function loadTicketViews(applyDefault = false) {
+  async function loadTicketViews(options: { applyDefault?: boolean; preferredViewId?: string | null } = {}) {
     try {
       const viewData = await apiFetch<TicketView[]>("/tickets/views");
       const normalizedViews = viewData.map((view) => ({ ...view, state: normalizeTicketViewState(view.state) }));
       setTicketViews(normalizedViews);
-      if (applyDefault) {
-        const defaultView = normalizedViews.find((view) => view.isDefault);
-        if (defaultView) {
-          applyViewState(defaultView.state);
-          setSelectedViewId(`saved:${defaultView.id}`);
-        }
+      const preferredView = options.preferredViewId
+        ? normalizedViews.find((view) => view.id === options.preferredViewId)
+        : null;
+      const viewToApply = preferredView ?? (options.applyDefault ? normalizedViews.find((view) => view.isDefault) : null);
+      if (viewToApply) {
+        applyViewState(viewToApply.state);
+        setSelectedViewId(`saved:${viewToApply.id}`);
       }
-    } catch {
+      return normalizedViews;
+    } catch (cause) {
       setTicketViews([]);
+      setError(cause instanceof Error ? cause.message : "Unable to load saved ticket views.");
+      return [];
     }
   }
 
   function currentViewState(): TicketViewState {
     return {
+      version: TICKET_VIEW_VERSION,
       search,
       clientId,
       scope,
@@ -567,12 +601,18 @@ export function TicketsList() {
       pageSize,
       density,
       columnOrder,
-      visibleColumns: [...visibleColumns]
+      visibleColumns: [...visibleColumns],
+      columnWidths,
+      trashMode
     };
   }
 
+  const viewHasUnsavedChanges = selectedSavedView
+    ? ticketViewStateSignature(currentViewState()) !== ticketViewStateSignature(selectedSavedView.state)
+    : false;
+
   function applyViewState(nextState: Partial<TicketViewState>) {
-    const normalized = normalizeTicketViewState({ ...currentViewState(), ...nextState });
+    const normalized = normalizeTicketViewState(nextState);
     setSearch(normalized.search);
     setClientId(normalized.clientId);
     setScope(normalized.scope);
@@ -589,15 +629,26 @@ export function TicketsList() {
     setDensity(normalized.density);
     setColumnOrder(normalized.columnOrder);
     setVisibleColumns(new Set(normalized.visibleColumns));
+    setColumnWidths(normalized.columnWidths);
+    setTrashMode(normalized.trashMode);
     setPage(1);
+  }
+
+  function updateViewUrl(value: string) {
+    const url = new URL(window.location.href);
+    ticketUrlFilterKeys.forEach((key) => url.searchParams.delete(key));
+    url.searchParams.set("view", value);
+    window.history.replaceState(null, "", `${url.pathname}?${url.searchParams.toString()}`);
   }
 
   function changeView(value: string) {
     setSelectedViewId(value);
+    setViewNotice(null);
     if (value.startsWith("built-in:")) {
       const builtIn = builtInViews.find((view) => `built-in:${view.id}` === value);
       if (builtIn) {
         applyViewState(builtIn.state);
+        updateViewUrl(value);
       }
       return;
     }
@@ -605,42 +656,66 @@ export function TicketsList() {
     const savedView = ticketViews.find((view) => `saved:${view.id}` === value);
     if (savedView) {
       applyViewState(savedView.state);
+      updateViewUrl(savedView.id);
     }
   }
 
-  async function saveCurrentView() {
-    const existingView = selectedViewId.startsWith("saved:")
-      ? ticketViews.find((view) => `saved:${view.id}` === selectedViewId)
-      : null;
-    const name = window.prompt("View name", existingView?.name ?? "");
-    if (!name?.trim()) {
-      return;
-    }
+  function openViewManager() {
+    const builtIn = builtInViews.find((view) => `built-in:${view.id}` === selectedViewId);
+    setViewName(selectedSavedView?.name ?? (builtIn ? `${builtIn.name} view` : ""));
+    setViewIsDefault(selectedSavedView?.isDefault ?? false);
+    setViewDeleteConfirm(false);
+    setViewError(null);
+    setViewNotice(null);
+    setShowViewModal(true);
+  }
 
-    const isDefault = window.confirm("Make this your default ticket view?");
-    const saved = await apiFetch<TicketView>(existingView ? `/tickets/views/${existingView.id}` : "/tickets/views", {
-      method: existingView ? "PATCH" : "POST",
-      body: JSON.stringify({
-        name: name.trim(),
-        state: currentViewState(),
-        isDefault
-      })
-    });
-    await loadTicketViews();
-    setSelectedViewId(`saved:${saved.id}`);
+  async function saveTicketView(mode: "CREATE" | "UPDATE") {
+    if (!viewName.trim() || (mode === "UPDATE" && !selectedSavedView)) return;
+    setViewBusy(true);
+    setError(null);
+    setViewError(null);
+    setViewNotice(null);
+    try {
+      const saved = await apiFetch<TicketView>(mode === "UPDATE" ? `/tickets/views/${selectedSavedView!.id}` : "/tickets/views", {
+        method: mode === "UPDATE" ? "PATCH" : "POST",
+        body: JSON.stringify({
+          name: viewName.trim(),
+          state: currentViewState(),
+          isDefault: viewIsDefault
+        })
+      });
+      await loadTicketViews();
+      setSelectedViewId(`saved:${saved.id}`);
+      updateViewUrl(saved.id);
+      setShowViewModal(false);
+      setViewNotice(mode === "UPDATE" ? `View "${saved.name}" updated.` : `View "${saved.name}" created.`);
+    } catch (cause) {
+      setViewError(cause instanceof Error ? cause.message : "Unable to save ticket view.");
+    } finally {
+      setViewBusy(false);
+    }
   }
 
   async function deleteCurrentView() {
-    const savedView = selectedViewId.startsWith("saved:")
-      ? ticketViews.find((view) => `saved:${view.id}` === selectedViewId)
-      : null;
-    if (!savedView || !window.confirm(`Delete saved view "${savedView.name}"?`)) {
-      return;
+    if (!selectedSavedView || !viewDeleteConfirm) return;
+    setViewBusy(true);
+    setError(null);
+    setViewError(null);
+    try {
+      const deletedName = selectedSavedView.name;
+      await apiFetch(`/tickets/views/${selectedSavedView.id}`, { method: "DELETE" });
+      await loadTicketViews();
+      applyViewState(builtInViews[0].state);
+      setSelectedViewId("built-in:all");
+      updateViewUrl("built-in:all");
+      setShowViewModal(false);
+      setViewNotice(`View "${deletedName}" deleted.`);
+    } catch (cause) {
+      setViewError(cause instanceof Error ? cause.message : "Unable to delete ticket view.");
+    } finally {
+      setViewBusy(false);
     }
-
-    await apiFetch(`/tickets/views/${savedView.id}`, { method: "DELETE" });
-    setSelectedViewId("built-in:all");
-    await loadTicketViews();
   }
 
   async function applyBulkUpdate() {
@@ -1129,6 +1204,7 @@ export function TicketsList() {
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const hasUrlFilters = hasExplicitTicketUrlFilters(searchParams);
+    const requestedView = searchParams.get("view")?.trim() ?? "";
     const initialSearch = searchParams.get("search")?.trim();
     const initialClientId = searchParams.get("clientId")?.trim();
     const initialScope = searchParams.get("scope")?.trim();
@@ -1137,12 +1213,20 @@ export function TicketsList() {
     const initialExternalSpecialistId = searchParams.get("externalSpecialistId")?.trim();
     const initialRequester = searchParams.get("requester")?.trim();
     const initialStatuses = searchParams.get("statuses")?.trim();
+    const initialStatusDefinitionIds = searchParams.get("statusDefinitionIds")?.trim();
     const initialPriority = searchParams.get("priority")?.trim();
     const initialSource = searchParams.get("source")?.trim();
     const initialDeletedScope = searchParams.get("deletedScope")?.trim();
     const initialSortBy = searchParams.get("sortBy")?.trim();
     const initialSortDirection = searchParams.get("sortDirection")?.trim();
 
+    if (requestedView.startsWith("built-in:")) {
+      const builtIn = builtInViews.find((view) => `built-in:${view.id}` === requestedView);
+      if (builtIn) {
+        applyViewState(builtIn.state);
+        setSelectedViewId(requestedView);
+      }
+    }
     if (initialSearch) {
       setSearch(initialSearch);
     }
@@ -1164,8 +1248,13 @@ export function TicketsList() {
     if (initialRequester) {
       setRequester(initialRequester);
     }
-    if (initialStatuses) {
-      setSelectedStatuses(initialStatuses.split(",").map((status) => status.trim()).filter((status) => statuses.includes(status)));
+    if (initialStatuses || initialStatusDefinitionIds) {
+      const requestedStatuses = [initialStatuses, initialStatusDefinitionIds]
+        .filter((value): value is string => Boolean(value))
+        .flatMap((value) => value.split(","))
+        .map((status) => status.trim())
+        .filter(isTicketStatusFilter);
+      setSelectedStatuses([...new Set(requestedStatuses)]);
     }
     if (initialPriority && priorities.includes(initialPriority)) {
       setPriority(initialPriority);
@@ -1183,8 +1272,6 @@ export function TicketsList() {
       setSortDirection(initialSortDirection);
     }
 
-    void loadClients();
-    void loadTicketViews(!hasUrlFilters);
     const savedColumns = window.localStorage.getItem(COLUMN_STORAGE_KEY);
     if (savedColumns) {
       try {
@@ -1207,6 +1294,12 @@ export function TicketsList() {
     }
     const savedDensity = window.localStorage.getItem(DENSITY_STORAGE_KEY);
     setDensity(normalizeDensity(savedDensity));
+
+    void loadClients();
+    void loadTicketViews({
+      preferredViewId: requestedView && !requestedView.startsWith("built-in:") ? requestedView : null,
+      applyDefault: !hasUrlFilters && !requestedView
+    });
   }, []);
 
   useEffect(() => {
@@ -1258,6 +1351,12 @@ export function TicketsList() {
     void loadNewTicketContacts(newTicketClientId);
   }, [newTicketClientId]);
 
+  useEffect(() => {
+    if (!viewNotice) return;
+    const timeoutId = window.setTimeout(() => setViewNotice(null), 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [viewNotice]);
+
   return (
     <>
       <div className="tickets-compact-header">
@@ -1290,6 +1389,10 @@ export function TicketsList() {
               </optgroup>
             ) : null}
           </select>
+          <div className="tickets-view-state" aria-live="polite">
+            {selectedSavedView?.isDefault ? <span className="tickets-view-badge">Default</span> : null}
+            {viewHasUnsavedChanges ? <span className="tickets-view-dirty">Unsaved changes</span> : null}
+          </div>
           <div className="form-actions tickets-header-actions">
             <button className={`button ${hasActiveFilters ? "" : "secondary"}`} type="button" onClick={() => setShowAdvancedFilters((current) => !current)}>
               <SlidersHorizontal size={16} aria-hidden="true" />
@@ -1309,16 +1412,10 @@ export function TicketsList() {
                 <Plus size={16} aria-hidden="true" />
                 <span>New Ticket</span>
               </button>
-              <button className="button secondary" type="button" onClick={saveCurrentView}>
+              <button className={`button ${viewHasUnsavedChanges ? "" : "secondary"}`} type="button" onClick={openViewManager}>
                 <Save size={16} aria-hidden="true" />
-                <span>Save View</span>
+                <span>{viewHasUnsavedChanges ? "Save Changes" : selectedSavedView ? "View Options" : "Save View"}</span>
               </button>
-              {selectedViewId.startsWith("saved:") ? (
-                <button className="button secondary" type="button" onClick={deleteCurrentView}>
-                  <X size={16} aria-hidden="true" />
-                  <span>Delete View</span>
-                </button>
-              ) : null}
               <button className="button secondary" type="button" onClick={() => void loadTickets()} disabled={loading}>
                 <RefreshCcw size={16} aria-hidden="true" />
                 <span>Refresh</span>
@@ -1336,6 +1433,7 @@ export function TicketsList() {
         </div>
       </div>
       {error ? <div className="error-banner">{error}</div> : null}
+      {viewNotice ? <div className="success-banner">{viewNotice}</div> : null}
       {showAdvancedFilters ? (
         <section className="panel tickets-toolbar-panel">
           <div className="tickets-filter-grid">
@@ -1696,6 +1794,83 @@ export function TicketsList() {
           </div>
         </div>
       </section>
+      {showViewModal ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-panel compact-modal ticket-view-modal" role="dialog" aria-modal="true" aria-labelledby="ticket-view-modal-title">
+            <div className="modal-header">
+              <div>
+                <h2 id="ticket-view-modal-title">{selectedSavedView ? "Manage Ticket View" : "Save Ticket View"}</h2>
+                <p className="muted">Store the current filters, sorting, columns, row density, and page size.</p>
+              </div>
+              <button className="icon-button" type="button" onClick={() => setShowViewModal(false)} aria-label="Close ticket view dialog" disabled={viewBusy}>
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+            <label className="field">
+              <span>View name</span>
+              <input
+                className="input"
+                value={viewName}
+                onChange={(event) => setViewName(event.target.value)}
+                maxLength={80}
+                autoFocus
+              />
+            </label>
+            {viewError ? <div className="error-banner ticket-view-error">{viewError}</div> : null}
+            <label className="checkbox-card ticket-view-default-toggle">
+              <input type="checkbox" checked={viewIsDefault} onChange={(event) => setViewIsDefault(event.target.checked)} />
+              <span>
+                <strong>Use as my default ticket view</strong>
+                <small>This view opens automatically when Tickets has no explicit filters.</small>
+              </span>
+            </label>
+            <div className="ticket-view-summary" aria-label="Current view summary">
+              <span><strong>{hasActiveFilters ? "Filtered" : "All tickets"}</strong><small>Scope</small></span>
+              <span><strong>{selectedStatuses.length || "All"}</strong><small>Statuses</small></span>
+              <span><strong>{label(sortBy)}</strong><small>{sortDirection === "asc" ? "Ascending" : "Descending"}</small></span>
+              <span><strong>{pageSize === "all" ? "All" : pageSize}</strong><small>Rows</small></span>
+              <span><strong>{visibleColumns.size}</strong><small>Columns</small></span>
+              <span><strong>{trashMode ? "Recycle bin" : label(density)}</strong><small>Mode</small></span>
+            </div>
+            {selectedSavedView ? (
+              <p className="muted ticket-view-copy-note">To create a separate view, enter a unique name and choose Save as New.</p>
+            ) : null}
+            {viewDeleteConfirm ? (
+              <div className="ticket-view-delete-confirm" role="alert">
+                <span>Delete “{selectedSavedView?.name}”? Tickets and filters will not be deleted.</span>
+                <div className="form-actions">
+                  <button className="button secondary" type="button" onClick={() => setViewDeleteConfirm(false)} disabled={viewBusy}>Cancel</button>
+                  <button className="button danger" type="button" onClick={() => void deleteCurrentView()} disabled={viewBusy}>
+                    <Trash2 size={15} aria-hidden="true" />
+                    <span>{viewBusy ? "Deleting..." : "Delete View"}</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="modal-actions ticket-view-actions">
+                {selectedSavedView ? (
+                  <button className="button danger ghost-danger" type="button" onClick={() => setViewDeleteConfirm(true)} disabled={viewBusy}>
+                    <Trash2 size={15} aria-hidden="true" />
+                    <span>Delete</span>
+                  </button>
+                ) : null}
+                <span className="ticket-view-actions-spacer" />
+                <button className="button secondary" type="button" onClick={() => setShowViewModal(false)} disabled={viewBusy}>Cancel</button>
+                {selectedSavedView ? (
+                  <button className="button secondary" type="button" onClick={() => void saveTicketView("CREATE")} disabled={viewBusy || !viewName.trim()}>
+                    <Plus size={15} aria-hidden="true" />
+                    <span>Save as New</span>
+                  </button>
+                ) : null}
+                <button className="button" type="button" onClick={() => void saveTicketView(selectedSavedView ? "UPDATE" : "CREATE")} disabled={viewBusy || !viewName.trim()}>
+                  <Save size={15} aria-hidden="true" />
+                  <span>{viewBusy ? "Saving..." : selectedSavedView ? "Update View" : "Create View"}</span>
+                </button>
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
       {showNewTicketModal ? (
         <div className="modal-backdrop" role="presentation">
           <section className="modal-panel compact-modal" role="dialog" aria-modal="true" aria-labelledby="new-ticket-modal-title">

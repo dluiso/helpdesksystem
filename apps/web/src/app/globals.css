@@ -11079,7 +11079,7 @@ button.operations-summary-card {
 
 .tickets-toolbar-row {
   display: grid;
-  grid-template-columns: minmax(320px, 1fr) minmax(180px, 240px) max-content;
+  grid-template-columns: minmax(320px, 1fr) minmax(180px, 240px) max-content max-content;
   gap: 12px;
   align-items: center;
 }
@@ -11147,6 +11147,134 @@ button.operations-summary-card {
 
 .tickets-view-select {
   min-width: 170px;
+}
+
+.tickets-view-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 28px;
+  white-space: nowrap;
+}
+
+.tickets-view-badge,
+.tickets-view-dirty {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.tickets-view-badge {
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 28%, var(--line));
+  color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 8%, var(--surface-raised));
+}
+
+.tickets-view-dirty {
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, var(--line));
+  color: var(--warning-text, #b45309);
+  background: var(--warning-surface);
+}
+
+.ticket-view-modal {
+  display: grid;
+  gap: 14px;
+}
+
+.ticket-view-modal .modal-header {
+  margin-bottom: 0;
+}
+
+.ticket-view-default-toggle > span {
+  display: grid;
+  gap: 2px;
+}
+
+.ticket-view-error {
+  margin-bottom: 0;
+  font-size: 12px;
+}
+
+.ticket-view-default-toggle small {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.ticket-view-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface-subtle);
+}
+
+.ticket-view-summary > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.ticket-view-summary > span:nth-child(3n) {
+  border-right: 0;
+}
+
+.ticket-view-summary > span:nth-last-child(-n + 3) {
+  border-bottom: 0;
+}
+
+.ticket-view-summary strong,
+.ticket-view-summary small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticket-view-summary strong {
+  font-size: 12px;
+}
+
+.ticket-view-summary small {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.ticket-view-copy-note {
+  margin: -2px 0 0;
+  font-size: 12px;
+}
+
+.ticket-view-actions {
+  align-items: center;
+  margin-top: 0;
+}
+
+.ticket-view-actions-spacer {
+  flex: 1;
+}
+
+.ticket-view-delete-confirm {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 36%, var(--line));
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+  background: var(--danger-surface);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ticket-view-delete-confirm .form-actions {
+  justify-content: flex-end;
 }
 
 .bulk-actions-panel {
@@ -13372,7 +13500,7 @@ button.operations-summary-card {
 
 @media (max-width: 1600px) {
   .tickets-toolbar-row {
-    grid-template-columns: minmax(260px, 1fr) minmax(170px, 230px);
+    grid-template-columns: minmax(260px, 1fr) minmax(170px, 230px) max-content;
   }
 
   .tickets-toolbar-row .tickets-header-actions {
@@ -14268,6 +14396,10 @@ button.operations-summary-card {
     width: 100%;
   }
 
+  .tickets-view-state {
+    min-height: 22px;
+  }
+
   .tickets-toolbar-panel,
   .bulk-actions-panel,
   .tickets-table-panel {
@@ -14287,6 +14419,25 @@ button.operations-summary-card {
 
   .column-config-panel {
     grid-template-columns: 1fr;
+  }
+
+  .ticket-view-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ticket-view-summary > span,
+  .ticket-view-summary > span:nth-child(3n),
+  .ticket-view-summary > span:nth-last-child(-n + 3) {
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .ticket-view-summary > span:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .ticket-view-summary > span:nth-last-child(-n + 2) {
+    border-bottom: 0;
   }
 
   .bulk-actions-summary {

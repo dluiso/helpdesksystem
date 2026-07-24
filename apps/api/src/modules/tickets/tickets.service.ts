@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { MessageDirection, MessageVisibility, Prisma, TicketPriority, TicketSource, TicketStatus, TicketWorkflowTrigger } from "@prisma/client";
 import { AuditLogsService } from "../audit-logs/audit-logs.service";
 import { AuthenticatedUser } from "../auth/auth.types";
@@ -913,7 +913,15 @@ export class TicketsService {
 
   async saveView(input: UpsertTicketViewDto, user: AuthenticatedUser) {
     const name = input.name.trim();
+    this.assertTicketViewState(input.state);
     return this.prisma.$transaction(async (tx) => {
+      const duplicate = await tx.userTicketView.findUnique({
+        where: { userId_name: { userId: user.id, name } },
+        select: { id: true }
+      });
+      if (duplicate) {
+        throw new ConflictException("A ticket view with this name already exists.");
+      }
       if (input.isDefault) {
         await tx.userTicketView.updateMany({
           where: { userId: user.id },
@@ -921,18 +929,8 @@ export class TicketsService {
         });
       }
 
-      return tx.userTicketView.upsert({
-        where: {
-          userId_name: {
-            userId: user.id,
-            name
-          }
-        },
-        update: {
-          state: input.state as Prisma.InputJsonValue,
-          isDefault: input.isDefault ?? false
-        },
-        create: {
+      return tx.userTicketView.create({
+        data: {
           userId: user.id,
           name,
           state: input.state as Prisma.InputJsonValue,
@@ -945,14 +943,22 @@ export class TicketsService {
   async updateView(viewId: string, input: UpsertTicketViewDto, user: AuthenticatedUser) {
     const existing = await this.prisma.userTicketView.findFirst({
       where: { id: viewId, userId: user.id },
-      select: { id: true }
+      select: { id: true, isDefault: true }
     });
     if (!existing) {
       throw new NotFoundException("Ticket view was not found.");
     }
 
     const name = input.name.trim();
+    this.assertTicketViewState(input.state);
     return this.prisma.$transaction(async (tx) => {
+      const duplicate = await tx.userTicketView.findFirst({
+        where: { userId: user.id, name, id: { not: viewId } },
+        select: { id: true }
+      });
+      if (duplicate) {
+        throw new ConflictException("A ticket view with this name already exists.");
+      }
       if (input.isDefault) {
         await tx.userTicketView.updateMany({
           where: { userId: user.id, id: { not: viewId } },
@@ -965,7 +971,7 @@ export class TicketsService {
         data: {
           name,
           state: input.state as Prisma.InputJsonValue,
-          isDefault: input.isDefault ?? false
+          isDefault: input.isDefault ?? existing.isDefault
         }
       });
     });
@@ -982,6 +988,35 @@ export class TicketsService {
 
     await this.prisma.userTicketView.delete({ where: { id: viewId } });
     return { deleted: true };
+  }
+
+  private assertTicketViewState(state: UpsertTicketViewDto["state"]) {
+    const serialized = JSON.stringify(state);
+    if (serialized.length > 64_000) {
+      throw new BadRequestException("Ticket view configuration is too large.");
+    }
+
+    const validColumns = new Set([
+      "ticketNumber", "subject", "client", "requester", "readState", "assignees", "team",
+      "status", "priority", "source", "createdAt", "updatedAt", "messages", "attachments"
+    ]);
+    for (const column of [...(state.columnOrder ?? []), ...(state.visibleColumns ?? [])]) {
+      if (!validColumns.has(column)) {
+        throw new BadRequestException("Ticket view contains an unsupported column.");
+      }
+    }
+
+    for (const [column, width] of Object.entries(state.columnWidths ?? {})) {
+      if (!validColumns.has(column) || typeof width !== "number" || !Number.isFinite(width) || width < 60 || width > 600) {
+        throw new BadRequestException("Ticket view contains an invalid column width.");
+      }
+    }
+
+    const legacyStatuses = new Set(Object.values(TicketStatus));
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if ((state.statuses ?? []).some((status) => !legacyStatuses.has(status as TicketStatus) && !uuidPattern.test(status))) {
+      throw new BadRequestException("Ticket view contains an invalid ticket status.");
+    }
   }
 
   async createFromInboundEmail(input: CreateInboundEmailTicketInput) {

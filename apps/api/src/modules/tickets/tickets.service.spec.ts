@@ -846,4 +846,165 @@ describe("TicketsService", () => {
       permissions: ["tickets.update"]
     })).rejects.toThrow("permission to change this ticket status");
   });
+
+  it("creates a separate non-default ticket view without overwriting another view", async () => {
+    const createdView = { id: "view-2", name: "Waiting for customer", isDefault: false };
+    const tx = {
+      userTicketView: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        updateMany: jest.fn(),
+        create: jest.fn().mockResolvedValue(createdView)
+      }
+    };
+    const prisma = {
+      $transaction: jest.fn((callback: (transaction: typeof tx) => unknown) => callback(tx))
+    };
+    const service = new TicketsService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never
+    );
+    const user = {
+      id: "user-1",
+      organizationId: "org-1",
+      email: "user@example.com",
+      firstName: "Test",
+      lastName: "User",
+      forcePasswordChange: false,
+      permissions: []
+    };
+
+    await expect(service.saveView({
+      name: "Waiting for customer",
+      state: { statuses: ["WAITING_ON_CUSTOMER"], pageSize: "20" },
+      isDefault: false
+    }, user)).resolves.toEqual(createdView);
+
+    expect(tx.userTicketView.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId: "user-1",
+        name: "Waiting for customer",
+        isDefault: false
+      })
+    });
+    expect(tx.userTicketView.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects duplicate ticket view names instead of silently overwriting the saved view", async () => {
+    const tx = {
+      userTicketView: {
+        findUnique: jest.fn().mockResolvedValue({ id: "existing-view" }),
+        updateMany: jest.fn(),
+        create: jest.fn()
+      }
+    };
+    const prisma = {
+      $transaction: jest.fn((callback: (transaction: typeof tx) => unknown) => callback(tx))
+    };
+    const service = new TicketsService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never
+    );
+
+    await expect(service.saveView({
+      name: "My queue",
+      state: { statuses: ["NEW"] }
+    }, {
+      id: "user-1",
+      organizationId: "org-1",
+      email: "user@example.com",
+      firstName: "Test",
+      lastName: "User",
+      forcePasswordChange: false,
+      permissions: []
+    })).rejects.toThrow("already exists");
+    expect(tx.userTicketView.create).not.toHaveBeenCalled();
+  });
+
+  it("accepts custom status identifiers and makes a selected default view exclusive", async () => {
+    const customStatusId = "8db34f63-c551-4fab-8f0a-e2ac2ad122ef";
+    const createdView = { id: "view-3", name: "Equipment orders", isDefault: true };
+    const tx = {
+      userTicketView: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        create: jest.fn().mockResolvedValue(createdView)
+      }
+    };
+    const prisma = {
+      $transaction: jest.fn((callback: (transaction: typeof tx) => unknown) => callback(tx))
+    };
+    const service = new TicketsService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never
+    );
+
+    await expect(service.saveView({
+      name: "Equipment orders",
+      state: {
+        statuses: [customStatusId],
+        columnWidths: { subject: 280 },
+        trashMode: false
+      },
+      isDefault: true
+    }, {
+      id: "user-1",
+      organizationId: "org-1",
+      email: "user@example.com",
+      firstName: "Test",
+      lastName: "User",
+      forcePasswordChange: false,
+      permissions: []
+    })).resolves.toEqual(createdView);
+
+    expect(tx.userTicketView.updateMany).toHaveBeenCalledWith({
+      where: { userId: "user-1" },
+      data: { isDefault: false }
+    });
+  });
+
+  it("rejects malformed custom status identifiers in saved ticket views", async () => {
+    const prisma = { $transaction: jest.fn() };
+    const service = new TicketsService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never
+    );
+
+    await expect(service.saveView({
+      name: "Invalid status",
+      state: { statuses: ["not-a-status"] }
+    }, {
+      id: "user-1",
+      organizationId: "org-1",
+      email: "user@example.com",
+      firstName: "Test",
+      lastName: "User",
+      forcePasswordChange: false,
+      permissions: []
+    })).rejects.toThrow("invalid ticket status");
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
 });
