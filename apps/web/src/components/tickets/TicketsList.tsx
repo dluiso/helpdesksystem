@@ -158,6 +158,7 @@ const COLUMN_STORAGE_KEY = "avidity.ticketTable.columns";
 const COLUMN_WIDTH_STORAGE_KEY = "avidity.ticketTable.columnWidths.v2";
 const DENSITY_STORAGE_KEY = "avidity.ticketTable.density.v1";
 const TICKET_VIEW_VERSION = 2;
+const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const defaultColumnOrder: ColumnId[] = [
   "ticketNumber",
   "subject",
@@ -327,6 +328,10 @@ function isTicketStatusFilter(value: unknown): value is string {
     && (statuses.includes(value) || /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
 }
 
+function normalizeUuidV4(value: unknown) {
+  return typeof value === "string" && UUID_V4_PATTERN.test(value) ? value : "";
+}
+
 function normalizeTicketViewState(value: unknown): TicketViewState {
   const state = value && typeof value === "object" ? (value as Partial<TicketViewState>) : {};
   const nextSortBy = allColumns.some((column) => column.sortable === state.sortBy) ? state.sortBy as SortBy : "updatedAt";
@@ -340,13 +345,13 @@ function normalizeTicketViewState(value: unknown): TicketViewState {
 
   return {
     version: TICKET_VIEW_VERSION,
-    search: typeof state.search === "string" ? state.search : "",
-    clientId: typeof state.clientId === "string" ? state.clientId : "",
+    search: typeof state.search === "string" ? state.search.slice(0, 160) : "",
+    clientId: normalizeUuidV4(state.clientId),
     scope: typeof state.scope === "string" && ["all", "assigned_to_me", "my_teams", "unassigned"].includes(state.scope) ? state.scope : "all",
-    assignedUserId: typeof state.assignedUserId === "string" ? state.assignedUserId : "",
-    assignedTeamId: typeof state.assignedTeamId === "string" ? state.assignedTeamId : "",
-    externalSpecialistId: typeof state.externalSpecialistId === "string" ? state.externalSpecialistId : "",
-    requester: typeof state.requester === "string" ? state.requester : "",
+    assignedUserId: normalizeUuidV4(state.assignedUserId),
+    assignedTeamId: normalizeUuidV4(state.assignedTeamId),
+    externalSpecialistId: normalizeUuidV4(state.externalSpecialistId),
+    requester: typeof state.requester === "string" ? state.requester.slice(0, 160) : "",
     statuses: [...new Set(nextStatuses)],
     priority: typeof state.priority === "string" && (state.priority === "" || priorities.includes(state.priority)) ? state.priority : "",
     source: typeof state.source === "string" && sources.includes(state.source) ? state.source : "",
@@ -388,6 +393,7 @@ function hasExplicitTicketUrlFilters(searchParams: URLSearchParams) {
 
 export function TicketsList() {
   const statusFilterRef = useRef<HTMLDivElement>(null);
+  const ticketRequestIdRef = useRef(0);
   const [tickets, setTickets] = useState<TicketListItem[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -478,12 +484,13 @@ export function TicketsList() {
   const mergeSourceTickets = selectedTickets.filter((ticket) => ticket.id !== mergePrimaryTicket?.id);
 
   async function loadTickets() {
+    const requestId = ++ticketRequestIdRef.current;
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams();
       if (search.trim()) {
-        params.set("search", search.trim());
+        params.set("search", search.trim().slice(0, 160));
       }
       if (clientId) {
         params.set("clientId", clientId);
@@ -501,7 +508,7 @@ export function TicketsList() {
         params.set("externalSpecialistId", externalSpecialistId);
       }
       if (requester.trim()) {
-        params.set("requester", requester.trim());
+        params.set("requester", requester.trim().slice(0, 160));
       }
       if (selectedStatuses.length > 0) {
         const definitionIds = selectedStatuses.filter((status) => /^[0-9a-f-]{36}$/i.test(status));
@@ -521,6 +528,7 @@ export function TicketsList() {
       params.set("page", String(page));
       params.set("pageSize", pageSize);
       const response = await apiFetch<PaginatedTickets | TicketListItem[]>(`/tickets?${params.toString()}`);
+      if (requestId !== ticketRequestIdRef.current) return;
       const nextTickets = Array.isArray(response) ? response : Array.isArray(response.items) ? response.items : [];
       if (Array.isArray(response)) {
         setTickets(nextTickets);
@@ -531,10 +539,14 @@ export function TicketsList() {
         setTotalTickets(response.total ?? nextTickets.length);
         setTotalPages(response.totalPages ?? 1);
       }
-    } catch {
-      setError("Unable to load tickets.");
+    } catch (cause) {
+      if (requestId !== ticketRequestIdRef.current) return;
+      const message = cause instanceof Error ? cause.message : "";
+      setError(message ? `Unable to load tickets. ${message}` : "Unable to load tickets.");
     } finally {
-      setLoading(false);
+      if (requestId === ticketRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }
 
@@ -1230,19 +1242,19 @@ export function TicketsList() {
     if (initialSearch) {
       setSearch(initialSearch);
     }
-    if (initialClientId) {
+    if (initialClientId && UUID_V4_PATTERN.test(initialClientId)) {
       setClientId(initialClientId);
     }
     if (initialScope && ["all", "assigned_to_me", "my_teams", "unassigned"].includes(initialScope)) {
       setScope(initialScope);
     }
-    if (initialAssignedUserId) {
+    if (initialAssignedUserId && UUID_V4_PATTERN.test(initialAssignedUserId)) {
       setAssignedUserId(initialAssignedUserId);
     }
-    if (initialAssignedTeamId) {
+    if (initialAssignedTeamId && UUID_V4_PATTERN.test(initialAssignedTeamId)) {
       setAssignedTeamId(initialAssignedTeamId);
     }
-    if (initialExternalSpecialistId) {
+    if (initialExternalSpecialistId && UUID_V4_PATTERN.test(initialExternalSpecialistId)) {
       setExternalSpecialistId(initialExternalSpecialistId);
     }
     if (initialRequester) {
@@ -1339,6 +1351,7 @@ export function TicketsList() {
   }, [showStatusFilterMenu]);
 
   useEffect(() => {
+    ticketRequestIdRef.current += 1;
     setSelectedTicketIds([]);
     const timeoutId = window.setTimeout(() => {
       void loadTickets();
@@ -1369,7 +1382,7 @@ export function TicketsList() {
         <div className="tickets-toolbar-row">
           <label className="input-with-icon tickets-search-field">
             <Search size={16} aria-hidden="true" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search number, subject, body, client, domain, or requester" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} maxLength={160} placeholder="Search number, subject, body, client, domain, or requester" />
           </label>
           <select className="input tickets-view-select" value={selectedViewId} onChange={(event) => changeView(event.target.value)}>
             <optgroup label="Standard views">
@@ -1467,7 +1480,7 @@ export function TicketsList() {
               </option>
             ))}
           </select>
-          <input className="input" value={requester} onChange={(event) => setRequester(event.target.value)} placeholder="Requester name or email" />
+          <input className="input" value={requester} onChange={(event) => setRequester(event.target.value)} maxLength={160} placeholder="Requester name or email" />
           <div className={`ticket-status-filter ${showStatusFilterMenu ? "open" : ""}`} ref={statusFilterRef}>
             <button
               className="ticket-status-filter-trigger"
