@@ -391,6 +391,10 @@ function hasExplicitTicketUrlFilters(searchParams: URLSearchParams) {
   return ticketUrlFilterKeys.some((key) => searchParams.has(key));
 }
 
+function isUnsupportedTicketSortError(message: string) {
+  return /sortBy must be one of the following values:/i.test(message);
+}
+
 export function TicketsList() {
   const statusFilterRef = useRef<HTMLDivElement>(null);
   const ticketRequestIdRef = useRef(0);
@@ -542,6 +546,10 @@ export function TicketsList() {
     } catch (cause) {
       if (requestId !== ticketRequestIdRef.current) return;
       const message = cause instanceof Error ? cause.message : "";
+      if (sortBy !== "updatedAt" && isUnsupportedTicketSortError(message)) {
+        setSortBy("updatedAt");
+        return;
+      }
       setError(message ? `Unable to load tickets. ${message}` : "Unable to load tickets.");
     } finally {
       if (requestId === ticketRequestIdRef.current) {
