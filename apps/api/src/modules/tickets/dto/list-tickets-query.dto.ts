@@ -54,8 +54,8 @@ export class ListTicketsQueryDto {
   source?: TicketSource;
 
   @IsOptional()
-  @IsIn(["ticketNumber", "subject", "status", "priority", "source", "createdAt", "updatedAt"])
-  sortBy?: "ticketNumber" | "subject" | "status" | "priority" | "source" | "createdAt" | "updatedAt";
+  @IsIn(["ticketNumber", "subject", "client", "status", "priority", "source", "createdAt", "updatedAt"])
+  sortBy?: "ticketNumber" | "subject" | "client" | "status" | "priority" | "source" | "createdAt" | "updatedAt";
 
   @IsOptional()
   @IsIn(["asc", "desc"])

@@ -99,7 +99,7 @@ interface PaginatedTickets {
   totalPages: number;
 }
 
-type SortBy = "ticketNumber" | "subject" | "status" | "priority" | "source" | "createdAt" | "updatedAt";
+type SortBy = "ticketNumber" | "subject" | "client" | "status" | "priority" | "source" | "createdAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
 type TableDensity = "compact" | "comfortable";
 type InlineTicketField = "assignees" | "team" | "status" | "priority";
@@ -192,7 +192,7 @@ const defaultVisibleColumns: ColumnId[] = [
 const allColumns: ColumnDefinition[] = [
   { id: "ticketNumber", label: "Number", sortable: "ticketNumber" },
   { id: "subject", label: "Subject", sortable: "subject" },
-  { id: "client", label: "Client" },
+  { id: "client", label: "Client", sortable: "client" },
   { id: "requester", label: "Requester" },
   { id: "readState", label: "Read" },
   { id: "assignees", label: "Specialists" },
@@ -1277,7 +1277,7 @@ export function TicketsList() {
     if (initialDeletedScope === "deleted") {
       setTrashMode(true);
     }
-    if (initialSortBy && ["ticketNumber", "subject", "status", "priority", "source", "createdAt", "updatedAt"].includes(initialSortBy)) {
+    if (initialSortBy && ["ticketNumber", "subject", "client", "status", "priority", "source", "createdAt", "updatedAt"].includes(initialSortBy)) {
       setSortBy(initialSortBy as SortBy);
     }
     if (initialSortDirection === "asc" || initialSortDirection === "desc") {

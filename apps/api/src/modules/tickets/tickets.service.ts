@@ -85,6 +85,9 @@ export class TicketsService {
     const pageSize = query.pageSize ?? "20";
     const take = pageSize === "all" ? undefined : Number(pageSize);
     const skip = take ? (page - 1) * take : undefined;
+    const orderBy: Prisma.TicketOrderByWithRelationInput[] = sortBy === "client"
+      ? [{ client: { name: sortDirection } }, { ticketNumber: "asc" }]
+      : [{ [sortBy]: sortDirection }, { ticketNumber: "asc" }];
     const [items, total] = await Promise.all([
       this.prisma.ticket.findMany({
         where,
@@ -155,7 +158,7 @@ export class TicketsService {
             }
           }
         },
-        orderBy: { [sortBy]: sortDirection },
+        orderBy,
         ...(take ? { take, skip } : {})
       }),
       this.prisma.ticket.count({ where })

@@ -895,6 +895,52 @@ describe("TicketsService", () => {
     expect(tx.userTicketView.updateMany).not.toHaveBeenCalled();
   });
 
+  it("sorts ticket views by client name without passing an invalid scalar order to Prisma", async () => {
+    const prisma = {
+      ticket: {
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0)
+      }
+    };
+    const service = new TicketsService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never
+    );
+
+    await expect(service.list({
+      id: "user-1",
+      organizationId: "org-1",
+      email: "user@example.com",
+      firstName: "Test",
+      lastName: "User",
+      forcePasswordChange: false,
+      permissions: []
+    }, {
+      sortBy: "client",
+      sortDirection: "asc",
+      pageSize: "20"
+    })).resolves.toEqual({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: "20",
+      totalPages: 1
+    });
+
+    expect(prisma.ticket.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      orderBy: [
+        { client: { name: "asc" } },
+        { ticketNumber: "asc" }
+      ]
+    }));
+  });
+
   it("rejects duplicate ticket view names instead of silently overwriting the saved view", async () => {
     const tx = {
       userTicketView: {
